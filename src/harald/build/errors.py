@@ -33,3 +33,20 @@ class BuildFailed(BuildError):
         super().__init__(f"build failed in {stage}: {detail}")
         self.stage = stage
         self.detail = detail
+
+
+class BuildLocked(BuildError):
+    def __init__(self, lock: Path) -> None:
+        super().__init__(f"another build holds {lock}")
+        self.lock = lock
+
+
+class StagingNotSameFilesystem(BuildError):
+    def __init__(self, staging: Path, target: Path) -> None:
+        super().__init__(
+            f"staging dir {staging} and {target} are on different filesystems, "
+            "so the publish could not be an atomic rename. Point staging_dir at the same "
+            "filesystem, outside the synced folder."
+        )
+        self.staging = staging
+        self.target = target

@@ -29,20 +29,26 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="harald")
     parser.add_argument("--config", type=Path, default=None)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("build", help="build lexicon.db from the locally kept sources")
+    build = sub.add_parser("build", help="build lexicon.db from the locally kept sources")
+    build.add_argument("--force", action="store_true", help="rebuild even if nothing changed")
     lookup = sub.add_parser("lookup", help="look up a German word")
     lookup.add_argument("--conj", action="store_true", help="show every tense")
     lookup.add_argument("words", nargs="+", metavar="WORD")
     return parser
 
 
-def _build(config: Config) -> int:
+def _build(config: Config, force: bool) -> int:
     from harald.build.run import build
 
-    res = build(config)
+    res = build(config, force)
     if res.is_err:
         return _fail(res.unwrap_err())
     report = res.unwrap()
+    if report.unchanged:
+        print(f"unchanged: {config.lexicon} left untouched")
+        return 0
+    if not report.published:
+        print("rebuilt identical bytes: published file left untouched")
     print(f"{report.entries} entries, {report.bad_lines} bad lines")
     print(f"{config.lexicon} ({report.size_bytes / 1_000_000:.1f} MB) in {report.seconds:.1f} s")
     return 0
@@ -76,7 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _fail(loaded.unwrap_err())
         config = loaded.unwrap()
         if args.command == "build":
-            return _build(config)
+            return _build(config, args.force)
         return _lookup(config, args.words, args.conj)
     except KeyboardInterrupt:
         return _EXIT_INTERRUPTED

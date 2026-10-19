@@ -1,10 +1,20 @@
+import gzip
+import hashlib
 import sqlite3
 from pathlib import Path
 
 import pytest
 
-from harald.build.errors import SourceMissing, TooFewEntries
+from harald.build.errors import (
+    BuildFailed,
+    BuildLocked,
+    SourceMissing,
+    StagingNotSameFilesystem,
+    TooFewEntries,
+)
+from harald.build.publish import build_lock
 from harald.build.run import build
+from harald.build.sources import EN_FILENAME
 from harald.config import Config
 from tests.conftest import Workspace
 
@@ -94,7 +104,7 @@ def test_too_few_entries_refuses_to_publish(workspace: Workspace) -> None:
 
 
 def test_build_leaves_no_staging_files(built: Workspace) -> None:
-    assert list(built.config.staging_dir.iterdir()) == []
+    assert list(built.config.staging_dir.glob("*.db")) == []
 
 
 def test_only_the_importer_reads_source_files() -> None:
@@ -109,7 +119,86 @@ def test_only_the_importer_reads_source_files() -> None:
     assert offenders == []
 
 
-@pytest.mark.skip(reason="placeholder")
-def test_placeholder() -> None:
-    # TODO: byte-identical rebuild (004a), atomic failure, reverse-order task hook (004b)
-    ...
+def _stat_and_hash(path: Path) -> tuple[int, str]:
+    return path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_forced_rebuild_leaves_published_file_untouched(built: Workspace) -> None:
+    before = _stat_and_hash(built.config.lexicon)
+
+    res = build(built.config, force=True)
+
+    assert res.is_ok
+    assert not res.unwrap().published
+    assert _stat_and_hash(built.config.lexicon) == before
+
+
+def test_rebuild_with_nothing_new_takes_the_fast_path(built: Workspace) -> None:
+    before = _stat_and_hash(built.config.lexicon)
+
+    res = build(built.config)
+
+    assert res.unwrap().unchanged
+    assert _stat_and_hash(built.config.lexicon) == before
+
+
+def test_changed_source_republishes(built: Workspace) -> None:
+    source = built.config.sources_dir / EN_FILENAME
+    lines = gzip.decompress(source.read_bytes()).splitlines(keepends=True)
+    source.write_bytes(gzip.compress(b"".join(lines[:-1])))
+
+    res = build(built.config)
+
+    assert res.is_ok
+    assert not res.unwrap().unchanged
+
+
+def test_interrupted_build_keeps_previous_lexicon(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = _stat_and_hash(built.config.lexicon)
+
+    def interrupt(*_: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("harald.build.run._vacuum_into", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        build(built.config, force=True)
+
+    assert _stat_and_hash(built.config.lexicon) == before
+    assert list(built.config.staging_dir.glob("*.db")) == []
+
+
+def test_crashed_build_keeps_previous_lexicon(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = _stat_and_hash(built.config.lexicon)
+
+    def crash(*_: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("harald.build.run._vacuum_into", crash)
+    res = build(built.config, force=True)
+
+    assert isinstance(res.unwrap_err(), BuildFailed)
+    assert _stat_and_hash(built.config.lexicon) == before
+    assert list(built.config.staging_dir.glob("*.db")) == []
+
+
+def test_concurrent_build_is_refused(workspace: Workspace) -> None:
+    workspace.config.staging_dir.mkdir()
+    with build_lock(workspace.config.staging_dir):
+        res = build(workspace.config)
+
+    assert isinstance(res.unwrap_err(), BuildLocked)
+
+
+def test_staging_on_another_filesystem_is_refused(
+    workspace: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("harald.build.run._same_filesystem", lambda a, b: False)
+
+    res = build(workspace.config)
+
+    assert isinstance(res.unwrap_err(), StagingNotSameFilesystem)
+    assert not workspace.config.lexicon.exists()
