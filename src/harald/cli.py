@@ -49,6 +49,9 @@ def _build(config: Config, force: bool) -> int:
         return 0
     if not report.published:
         print("rebuilt identical bytes: published file left untouched")
+    for t in report.timings:
+        jobs = f" (jobs {t.job_seconds:.1f} s)" if t.job_seconds is not None else ""
+        print(f"  {t.node:<14}{t.seconds:7.1f} s{jobs}")
     print(f"{report.entries} entries, {report.bad_lines} bad lines")
     print(f"{config.lexicon} ({report.size_bytes / 1_000_000:.1f} MB) in {report.seconds:.1f} s")
     return 0

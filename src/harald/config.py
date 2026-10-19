@@ -19,6 +19,7 @@ class Config:
     sources_dir: Path
     staging_dir: Path
     build_min_entries: int
+    build_workers: int = max(1, (os.cpu_count() or 2) - 1)
 
 
 def _xdg(var: str, fallback: str) -> Path:
@@ -46,13 +47,16 @@ def load_config(path: Path | None = None) -> Result[Config, ConfigError]:
         "staging_dir": _xdg("XDG_CACHE_HOME", ".cache") / "harald" / "staging",
     }
     min_entries = 50_000
+    workers = Config.build_workers
     for key, value in values.items():
         if key in paths and isinstance(value, str):
             paths[key] = Path(value).expanduser()
         elif key == "build_min_entries" and isinstance(value, int):
             min_entries = value
+        elif key == "build_workers" and isinstance(value, int) and value >= 0:
+            workers = value
         else:
             return Result.err(ConfigError(path, f"unknown or invalid key {key!r}"))
     return Result.ok(
-        Config(paths["lexicon"], paths["sources_dir"], paths["staging_dir"], min_entries)
+        Config(paths["lexicon"], paths["sources_dir"], paths["staging_dir"], min_entries, workers)
     )

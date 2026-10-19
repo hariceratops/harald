@@ -1,3 +1,4 @@
+import dataclasses
 import gzip
 import hashlib
 import sqlite3
@@ -202,3 +203,84 @@ def test_staging_on_another_filesystem_is_refused(
 
     assert isinstance(res.unwrap_err(), StagingNotSameFilesystem)
     assert not workspace.config.lexicon.exists()
+
+
+def _built_hash(workspace: Workspace, workers: int) -> str:
+    config = dataclasses.replace(workspace.config, build_workers=workers)
+    assert build(config, force=True).is_ok
+    return hashlib.sha256(config.lexicon.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("workers", [1, 2, 3])
+def test_output_is_byte_identical_for_any_worker_count(
+    workspace: Workspace, workers: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inline = _built_hash(workspace, 0)
+    workspace.config.lexicon.unlink()
+
+    # one line per chunk, so chunks finish out of order across workers
+    monkeypatch.setattr("harald.build.run.CHUNK_BYTES", 1)
+
+    assert _built_hash(workspace, workers) == inline
+    assert list(workspace.config.staging_dir.glob("*.db")) == []
+
+
+def test_ids_follow_source_order_whatever_the_chunking(
+    workspace: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("harald.build.run.CHUNK_BYTES", 1)
+    config = dataclasses.replace(workspace.config, build_workers=2)
+    assert build(config).is_ok
+
+    order = _rows(
+        config.lexicon,
+        "SELECT h.lemma FROM entry e JOIN headword h ON h.id = e.headword_id ORDER BY e.id",
+    )
+
+    assert [r[0] for r in order][:2] == ["Hund", "Band"]
+
+
+@pytest.mark.parametrize("workers", [0, 2])
+def test_failing_task_publishes_nothing_and_cleans_up(built: Workspace, workers: int) -> None:
+    source = built.config.sources_dir / EN_FILENAME
+    poisoned = b'{"lang_code": "de", "pos": "noun", "senses": [{"glosses": ["x"]}]}\n'
+    source.write_bytes(gzip.compress(gzip.decompress(source.read_bytes()) + poisoned))
+    before = _stat_and_hash(built.config.lexicon)
+    config = dataclasses.replace(built.config, build_workers=workers)
+
+    res = build(config, force=True)
+
+    assert isinstance(res.unwrap_err(), BuildFailed)
+    assert "en.parse" in str(res.unwrap_err())
+    assert _stat_and_hash(config.lexicon) == before
+    assert list(config.staging_dir.glob("*.db")) == []
+
+
+def test_interrupt_in_a_pooled_build_leaves_no_files(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = _stat_and_hash(built.config.lexicon)
+
+    def interrupt(*_: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("harald.build.run.merge_keys", interrupt)
+    config = dataclasses.replace(built.config, build_workers=2)
+    with pytest.raises(KeyboardInterrupt):
+        build(config, force=True)
+
+    assert _stat_and_hash(config.lexicon) == before
+    assert list(config.staging_dir.glob("*.db")) == []
+
+
+def test_build_reports_per_node_timings(workspace: Workspace) -> None:
+    report = build(workspace.config).unwrap()
+
+    assert [t.node for t in report.timings] == [
+        "en.read+parse",
+        "lexicon.merge",
+        "keys.merge",
+        "fuzzy",
+        "fuzzy.merge",
+        "finalize",
+    ]

@@ -50,3 +50,14 @@ class StagingNotSameFilesystem(BuildError):
         )
         self.staging = staging
         self.target = target
+
+
+class TaskFailed(BuildError):
+    def __init__(self, task: str, detail: str) -> None:
+        super().__init__(f"task {task} failed: {detail}")
+        self.task = task
+        self.detail = detail
+
+    def __reduce__(self) -> tuple[type["TaskFailed"], tuple[str, str]]:
+        # crosses the process boundary inside a Result; the default would re-call __init__ wrongly
+        return (TaskFailed, (self.task, self.detail))
