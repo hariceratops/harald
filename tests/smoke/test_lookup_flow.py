@@ -51,3 +51,12 @@ def test_lookup_does_not_import_heavy_modules(built: Workspace) -> None:
     res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
 
     assert "IMPORTED []" in res.stdout, res.stdout + res.stderr
+
+
+def test_lookup_typo_returns_schnell(workspace: Workspace) -> None:
+    _harald(workspace, "build")
+
+    res = _harald(workspace, "lookup", "schnel")
+
+    assert res.returncode == 0, res.stderr
+    assert "schnell" in res.stdout

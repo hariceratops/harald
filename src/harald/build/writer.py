@@ -4,6 +4,7 @@ from pathlib import Path
 
 from harald.build.records import EntryRecord, FormOfRecord
 from harald.db.connection import make_engine
+from harald.lexicon.fuzzy import fuzzy_deletes
 from harald.lexicon.models import Base
 from harald.lexicon.schema import SCHEMA_VERSION
 from harald.text import fold
@@ -54,6 +55,8 @@ def write_lexicon(
     key_id = {k: i for i, k in enumerate(keys, 1)}
     key_rows = sorted((key_id[k], hw, kind) for (k, hw), kind in matches.items())
 
+    fuzzy_rows = sorted((d, key_id[k]) for k in keys for d in fuzzy_deletes(k))
+
     counts: dict[tuple[str, str], int] = {}
     examples: dict[tuple[str, str], tuple[str, str]] = {}
     for r in records:
@@ -79,6 +82,7 @@ def write_lexicon(
             "INSERT INTO search_key VALUES (?, 'de', ?)", [(i, k) for k, i in key_id.items()]
         )
         con.executemany("INSERT INTO key_headword VALUES (?, ?, ?)", key_rows)
+        con.executemany("INSERT INTO fuzzy_delete VALUES (?, ?)", fuzzy_rows)
         con.commit()
     finally:
         con.close()

@@ -54,10 +54,39 @@ def test_schema_mismatch_names_both_versions(built: Workspace) -> None:
 
     assert isinstance(err, SchemaMismatch)
     assert "schema 99" in str(err)
-    assert "needs schema 2" in str(err)
+    assert "needs schema 3" in str(err)
 
 
 @pytest.mark.skip(reason="placeholder")
 def test_placeholder() -> None:
     # TODO: lookup_en, phrase AND-tier ('repeats itself')
     ...
+
+
+def test_typo_finds_the_word(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    result = lookup_de(lex, "schnel")
+
+    assert result.shown[0].lemma == "schnell"
+
+
+def test_transposition_finds_band(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    assert lookup_de(lex, "bnad").shown[0].lemma == "Band"
+
+
+def test_exact_form_match_ranks_above_fuzzy_lemma(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    result = lookup_de(lex, "hunde")
+
+    assert result.shown[0].lemma == "Hund"
+    assert result.shown[0].via_form == "hunde"
+
+
+def test_fuzzy_match_is_not_reported_as_a_form(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    assert lookup_de(lex, "hudn").shown[0].via_form is None

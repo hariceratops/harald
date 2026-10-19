@@ -69,6 +69,14 @@ class KeyHeadword(Base):
     kind: Mapped[int]  # 0 lemma, 1 inflected form
 
 
+class FuzzyDelete(Base):
+    __tablename__ = "fuzzy_delete"
+    __table_args__ = {"sqlite_with_rowid": False}
+
+    d: Mapped[str] = mapped_column(primary_key=True)
+    key_id: Mapped[int] = mapped_column(primary_key=True)
+
+
 class VerbForm(Base):
     __tablename__ = "verb_form"
     __table_args__ = {"sqlite_with_rowid": False}

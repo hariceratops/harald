@@ -3,53 +3,80 @@ from sqlalchemy.orm import selectinload
 
 from harald.lexicon import model
 from harald.lexicon.db import Lexicon
-from harald.lexicon.models import Entry, Headword, KeyHeadword, SearchKey, VerbForm
+from harald.lexicon.fuzzy import fuzzy_deletes, max_distance, osa_within
+from harald.lexicon.models import Entry, FuzzyDelete, Headword, KeyHeadword, SearchKey, VerbForm
 from harald.text import fold
 
 _FULL_LIMIT = 3
 _ALSO_LIMIT = 8
+_RESULT_CAP = 20
 
 
 def lookup_de(lex: Lexicon, query: str) -> model.LookupResult:
     typed = " ".join(query.split())
     key = fold(typed)
+    limit = max_distance(key)
     with lex.sessions() as session:
-        rows = session.execute(
-            select(Headword, KeyHeadword.kind)
-            .join(KeyHeadword, KeyHeadword.headword_id == Headword.id)
-            .join(SearchKey, SearchKey.id == KeyHeadword.key_id)
-            .where(SearchKey.lang == "de", SearchKey.key == key)
-            .options(
-                selectinload(Headword.entries).selectinload(Entry.senses),
-                selectinload(Headword.entries).selectinload(Entry.verb_forms),
-            )
+        candidates = session.execute(
+            select(SearchKey.id, SearchKey.key)
+            .join(FuzzyDelete, FuzzyDelete.key_id == SearchKey.id)
+            .where(SearchKey.lang == "de", FuzzyDelete.d.in_(fuzzy_deletes(key)))
+            .distinct()
         ).all()
+        distance = {
+            key_id: d
+            for key_id, cand in candidates
+            if (d := osa_within(key, cand, limit)) is not None
+        }
+        if not distance:
+            return model.LookupResult(query, (), ())
+        rows = session.execute(
+            select(Headword, KeyHeadword.kind, KeyHeadword.key_id)
+            .join(KeyHeadword, KeyHeadword.headword_id == Headword.id)
+            .where(KeyHeadword.key_id.in_(distance))
+        ).all()
+        # one entry per headword, keeping its best (distance, kind)
+        best: dict[int, tuple[int, int, Headword]] = {}
+        for hw, kind, key_id in rows:
+            match = (distance[key_id], kind)
+            if hw.id not in best or match < best[hw.id][:2]:
+                best[hw.id] = (*match, hw)
         # proper nouns rank after common words at the same distance
         ranked = sorted(
-            rows, key=lambda r: (r[0].pos == "name", r[1], -r[0].richness, r[0].lemma, r[0].pos)
-        )
-        if not ranked:
-            return model.LookupResult(query, (), ())
-        first, first_kind = ranked[0]
+            best.values(),
+            key=lambda m: (m[0], m[2].pos == "name", m[1], -m[2].richness, m[2].lemma, m[2].pos),
+        )[:_RESULT_CAP]
+        first_dist, first_kind, first = ranked[0]
         tier = [
-            r
-            for r in ranked
-            if (r[0].pos == "name") == (first.pos == "name") and r[1] == first_kind
+            m
+            for m in ranked
+            if (m[0], m[1], m[2].pos == "name") == (first_dist, first_kind, first.pos == "name")
         ][:_FULL_LIMIT]
-        shown_ids = {r[0].id for r in tier}
-        shown = tuple(_to_model(r[0], r[1], typed) for r in tier)
-        also = tuple((r[0].lemma, r[0].pos) for r in ranked if r[0].id not in shown_ids)[
+        shown_ids = [m[2].id for m in tier]
+        loaded = {
+            hw.id: hw
+            for hw in session.scalars(
+                select(Headword)
+                .where(Headword.id.in_(shown_ids))
+                .options(
+                    selectinload(Headword.entries).selectinload(Entry.senses),
+                    selectinload(Headword.entries).selectinload(Entry.verb_forms),
+                )
+            )
+        }
+        shown = tuple(_to_model(loaded[m[2].id], m[0] == 0 and m[1] == 1, typed) for m in tier)
+        also = tuple((m[2].lemma, m[2].pos) for m in ranked if m[2].id not in shown_ids)[
             :_ALSO_LIMIT
         ]
         return model.LookupResult(query, shown, also)
 
 
-def _to_model(hw: Headword, kind: int, typed: str) -> model.Headword:
+def _to_model(hw: Headword, via_form: bool, typed: str) -> model.Headword:
     return model.Headword(
         hw.lemma,
         hw.pos,
         tuple(_entry_model(e) for e in hw.entries),
-        via_form=typed if kind == 1 else None,
+        via_form=typed if via_form else None,
     )
 
 
