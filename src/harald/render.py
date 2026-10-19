@@ -1,8 +1,8 @@
-from rich.console import Console, ConsoleOptions, RenderResult
+from rich.console import Console, ConsoleOptions, Group, RenderResult
 from rich.table import Table
 from rich.text import Text
 
-from harald.lexicon.model import Entry, Headword, LookupResult, PrincipalParts
+from harald.lexicon.model import Entry, Headword, LexiconInfo, LookupResult, PrincipalParts
 
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
 _NARROW_BELOW = 60
@@ -125,3 +125,16 @@ class RenderLookup:
 
 def render_lookup(result: LookupResult, full_conjugation: bool = False) -> RenderLookup:
     return RenderLookup(result, full_conjugation)
+
+
+def render_info(info: LexiconInfo) -> Group:
+    lines = [Text(f"Lexicon schema {info.schema_version}"), Text("Sources", style="bold")]
+    for s in info.sources:
+        lines.append(Text(f"  {s.title}"))
+        lines.append(Text(f"    {s.date}   {s.licence}"))
+        lines.append(Text(f"    {s.attribution}", style="dim"))
+    lines.append(Text("Coverage (informational)", style="bold"))
+    for c in info.coverage:
+        lines.append(Text(f"  {c.label}"))
+        lines.append(Text(f"    {c.percent:.1f} % ({c.numerator}/{c.denominator})"))
+    return Group(*lines)

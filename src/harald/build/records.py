@@ -23,6 +23,7 @@ class EntryRecord:
     gender: str
     plural: str | None
     glosses: tuple[str, ...]
+    translated_senses: int
     separable_prefix: str | None
     verb_forms: tuple[VerbFormRecord, ...]
     index_forms: tuple[str, ...]

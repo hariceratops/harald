@@ -3,7 +3,7 @@ import filecmp
 import hashlib
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -33,16 +33,19 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def fingerprint(sources: list[Path]) -> str:
-    """Covers everything that can change the output: schema, importer code, source bytes."""
+def fingerprint(source_files: Sequence[tuple[str, str, str, str]]) -> str:
+    """Covers everything that can change the output: schema, importer code, source files.
+
+    Rows are (filename, source, source_date, sha256), as written to `source_file`.
+    """
     digest = hashlib.sha256()
     digest.update(f"schema:{SCHEMA_VERSION}\n".encode())
     package = Path(harald.__file__).parent
     for py in sorted(package.rglob("*.py")):
         digest.update(py.relative_to(package).as_posix().encode() + b"\0")
         digest.update(py.read_bytes() + b"\0")
-    for source in sorted(sources):
-        digest.update(f"{source.name}:{sha256_file(source)}\n".encode())
+    for row in sorted(source_files):
+        digest.update(("\0".join(row) + "\n").encode())
     return digest.hexdigest()
 
 

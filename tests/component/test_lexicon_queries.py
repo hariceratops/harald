@@ -3,6 +3,7 @@ import pytest
 from harald.lexicon.db import open_lexicon
 from harald.lexicon.errors import LexiconMissing, NotALexicon, SchemaMismatch
 from harald.lexicon.lookup import lookup_de
+from harald.lexicon.schema import SCHEMA_VERSION
 from tests.conftest import Workspace
 
 
@@ -54,7 +55,7 @@ def test_schema_mismatch_names_both_versions(built: Workspace) -> None:
 
     assert isinstance(err, SchemaMismatch)
     assert "schema 99" in str(err)
-    assert "needs schema 3" in str(err)
+    assert f"needs schema {SCHEMA_VERSION}" in str(err)
 
 
 @pytest.mark.skip(reason="placeholder")

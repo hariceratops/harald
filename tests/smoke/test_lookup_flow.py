@@ -1,6 +1,7 @@
 import subprocess
 import sys
 
+from harald.lexicon.schema import SCHEMA_VERSION
 from tests.conftest import Workspace
 
 
@@ -75,5 +76,17 @@ def test_schema_mismatch_refuses_with_exit_2_naming_both_versions(workspace: Wor
 
     assert res.returncode == 2
     assert "schema 99" in res.stderr
-    assert "needs schema 3" in res.stderr
+    assert f"needs schema {SCHEMA_VERSION}" in res.stderr
     assert "Harald" in res.stderr
+
+
+def test_info_shows_sources_dates_attribution_and_coverage(workspace: Workspace) -> None:
+    assert _harald(workspace, "build").returncode == 0
+
+    res = _harald(workspace, "info", columns=40)
+
+    assert res.returncode == 0
+    assert "CC BY-SA 4.0" in res.stdout
+    assert "Tatoeba contributors" in res.stdout
+    assert "verbs with complete Stammformen" in res.stdout
+    assert "2026" not in res.stdout and "unknown" in res.stdout

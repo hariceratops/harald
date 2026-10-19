@@ -2,7 +2,8 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from harald.build.jobs import ParseCounts
+from harald.build.jobs import CoverageCounts, ParseCounts
+from harald.build.sources import SOURCES
 from harald.build.stage import WRITER_DDL, WRITER_TABLES
 from harald.db.connection import make_engine
 from harald.lexicon.models import Base
@@ -132,8 +133,17 @@ def merge_fuzzy(con: sqlite3.Connection, shards: Sequence[str]) -> None:
     _merge_shards(con, shards, merge)
 
 
-def finalize(con: sqlite3.Connection, parsed: dict[int, ParseCounts]) -> None:
-    """Merges the unmapped-tagset tallies by key, in chunk order, and drops the stage tables."""
+def finalize(
+    con: sqlite3.Connection,
+    parsed: dict[int, ParseCounts],
+    source_files: Sequence[tuple[str, str, str, str]],
+) -> None:
+    """Writes the bookkeeping tables and drops the stage tables.
+
+    Unmapped-tagset tallies merge by key, in chunk order. `source_files` rows are
+    (filename, source, source_date, sha256).
+    """
+    cov = sum((p.coverage for p in parsed.values()), CoverageCounts())
     counts: dict[tuple[str, str], int] = {}
     examples: dict[tuple[str, str], tuple[str, str]] = {}
     for seq in sorted(parsed):
@@ -142,6 +152,20 @@ def finalize(con: sqlite3.Connection, parsed: dict[int, ParseCounts]) -> None:
             examples.setdefault((pos, tagset), (word, form))
     con.execute("BEGIN")
     con.execute("INSERT INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
+    con.executemany(
+        "INSERT INTO source VALUES (?, ?, ?, ?)",
+        [(s.name, s.title, s.licence, s.attribution) for s in SOURCES],
+    )
+    con.executemany("INSERT INTO source_file VALUES (?, ?, ?, ?)", source_files)
+    con.executemany(
+        "INSERT INTO build_stat VALUES (?, ?, ?)",
+        [
+            ("bad_lines.wiktionary-en", sum(p.bad_lines for p in parsed.values()), None),
+            ("coverage.stammformen", cov.verbs_complete, cov.verbs),
+            ("coverage.noun_gender", cov.nouns_gendered, cov.nouns),
+            ("coverage.translated_example", cov.senses_translated, cov.senses),
+        ],
+    )
     con.executemany(
         "INSERT INTO unmapped_tagset VALUES (?, ?, ?, ?, ?)",
         [(*k, counts[k], *examples[k]) for k in sorted(counts)],

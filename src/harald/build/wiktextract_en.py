@@ -23,9 +23,10 @@ def parse_line(line: bytes) -> EntryRecord | FormOfRecord | None:
         return None
     if all(_is_form_of(s) for s in senses):
         return _form_of(rec, senses)
-    glosses = tuple(s["glosses"][-1] for s in senses if s.get("glosses"))
-    if not glosses:
+    glossed = [s for s in senses if s.get("glosses")]
+    if not glossed:
         return None
+    glosses = tuple(s["glosses"][-1] for s in glossed)
     lemma = rec["word"]
     is_noun = rec["pos"] in ("noun", "name")
     parsed = parse_forms(lemma, rec["pos"], rec.get("forms") or [])
@@ -35,11 +36,16 @@ def parse_line(line: bytes) -> EntryRecord | FormOfRecord | None:
         gender=_gender(rec, senses) if is_noun else "",
         plural=_plural(rec) if is_noun else None,
         glosses=glosses,
+        translated_senses=sum(_has_translated_example(s) for s in glossed),
         separable_prefix=_separable_prefix(rec) if rec["pos"] == "verb" else None,
         verb_forms=parsed.verb_forms,
         index_forms=parsed.index_forms,
         unmapped=parsed.unmapped,
     )
+
+
+def _has_translated_example(sense: dict[str, Any]) -> bool:
+    return any(ex.get("translation") or ex.get("english") for ex in sense.get("examples") or ())
 
 
 def _form_of(rec: dict[str, Any], senses: list[dict[str, Any]]) -> FormOfRecord | None:

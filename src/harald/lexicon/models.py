@@ -97,3 +97,32 @@ class UnmappedTagset(Base):
     occurrences: Mapped[int]
     example_word: Mapped[str]
     example_form: Mapped[str]
+
+
+class Source(Base):
+    __tablename__ = "source"
+    __table_args__ = {"sqlite_with_rowid": False}
+
+    name: Mapped[str] = mapped_column(primary_key=True)
+    title: Mapped[str]
+    licence: Mapped[str]
+    attribution: Mapped[str]
+
+
+class SourceFile(Base):
+    __tablename__ = "source_file"
+    __table_args__ = {"sqlite_with_rowid": False}
+
+    filename: Mapped[str] = mapped_column(primary_key=True)
+    source: Mapped[str]
+    source_date: Mapped[str]
+    sha256: Mapped[str]
+
+
+class BuildStat(Base):
+    __tablename__ = "build_stat"
+    __table_args__ = {"sqlite_with_rowid": False}
+
+    metric: Mapped[str] = mapped_column(primary_key=True)
+    numerator: Mapped[int]
+    denominator: Mapped[int | None]

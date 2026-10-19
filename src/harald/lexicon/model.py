@@ -34,3 +34,30 @@ class LookupResult:
     query: str
     shown: tuple[Headword, ...]
     also: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class SourceInfo:
+    title: str
+    licence: str
+    attribution: str
+    # the newest of the source's files, or "unknown"
+    date: str
+
+
+@dataclass(frozen=True)
+class CoverageFigure:
+    label: str
+    numerator: int
+    denominator: int
+
+    @property
+    def percent(self) -> float:
+        return 100 * self.numerator / self.denominator if self.denominator else 0.0
+
+
+@dataclass(frozen=True)
+class LexiconInfo:
+    schema_version: int
+    sources: tuple[SourceInfo, ...]
+    coverage: tuple[CoverageFigure, ...]

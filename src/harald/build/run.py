@@ -15,10 +15,18 @@ from harald.build.errors import (
     StagingNotSameFilesystem,
     TooFewEntries,
 )
+from harald.build.fetch import UNKNOWN_DATE, FetchOutcome, fetch_all, source_date
 from harald.build.graph import JobOutput, Jobs
 from harald.build.jobs import ParseCounts, fuzzy_range, parse_chunk
-from harald.build.publish import build_lock, fingerprint, is_unchanged, publish, record_build
-from harald.build.sources import EN_FILENAME
+from harald.build.publish import (
+    build_lock,
+    fingerprint,
+    is_unchanged,
+    publish,
+    record_build,
+    sha256_file,
+)
+from harald.build.sources import EN_FILENAME, SOURCE_FILES
 from harald.build.stage import SHARD_DDL
 from harald.build.writer import (
     finalize,
@@ -49,18 +57,23 @@ class BuildReport:
     unchanged: bool = False
     published: bool = True
     timings: tuple[Timing, ...] = ()
+    fetched: tuple[FetchOutcome, ...] = ()
+    # source files whose date could not be established, so the lexicon records "unknown"
+    unknown_dates: tuple[str, ...] = ()
 
 
-def build(config: Config, force: bool = False) -> Result[BuildReport, BuildError]:
+def build(
+    config: Config, fetch: bool = False, force: bool = False
+) -> Result[BuildReport, BuildError]:
     started = time.monotonic()
     source = config.sources_dir / EN_FILENAME
-    if not source.exists():
+    if not fetch and not source.exists():
         return Result.err(SourceMissing(source))
     config.staging_dir.mkdir(parents=True, exist_ok=True)
     config.lexicon.parent.mkdir(parents=True, exist_ok=True)
     try:
         with build_lock(config.staging_dir):
-            return _build_locked(config, source, force, started)
+            return _build_locked(config, source, fetch, force, started)
     except BuildLocked as e:
         return Result.err(e)
 
@@ -70,7 +83,7 @@ def _same_filesystem(a: Path, b: Path) -> bool:
 
 
 def _build_locked(
-    config: Config, source: Path, force: bool, started: float
+    config: Config, source: Path, fetch: bool, force: bool, started: float
 ) -> Result[BuildReport, BuildError]:
     for leftover in config.staging_dir.glob("*.db"):
         leftover.unlink()
@@ -79,13 +92,30 @@ def _build_locked(
     staging = config.staging_dir / f"lexicon.{os.getpid()}.db"
     final = config.staging_dir / f"lexicon.final.{os.getpid()}.db"
     try:
-        current = fingerprint([source])
+        fetched: tuple[FetchOutcome, ...] = ()
+        if fetch:
+            fetch_res = fetch_all(config.sources_dir)
+            if fetch_res.is_err:
+                return Result.err(fetch_res.unwrap_err())
+            fetched = fetch_res.unwrap().outcomes
+        source_files = _source_files(config.sources_dir)
+        unknown = tuple(f for f, _, date, _ in source_files if date == UNKNOWN_DATE)
+        current = fingerprint(source_files)
         if not force and is_unchanged(config.staging_dir, config.lexicon, current):
             size = config.lexicon.stat().st_size
             return Result.ok(
-                BuildReport(0, 0, size, time.monotonic() - started, unchanged=True, published=False)
+                BuildReport(
+                    0,
+                    0,
+                    size,
+                    time.monotonic() - started,
+                    unchanged=True,
+                    published=False,
+                    fetched=fetched,
+                    unknown_dates=unknown,
+                )
             )
-        graph = _run_graph(config, source, staging, final)
+        graph = _run_graph(config, source, source_files, staging, final)
         if graph.is_err:
             return Result.err(graph.unwrap_err())
         entries, bad_lines, timings = graph.unwrap()
@@ -104,12 +134,18 @@ def _build_locked(
             time.monotonic() - started,
             published=replaced,
             timings=tuple(timings),
+            fetched=fetched,
+            unknown_dates=unknown,
         )
     )
 
 
 def _run_graph(
-    config: Config, source: Path, staging: Path, final: Path
+    config: Config,
+    source: Path,
+    source_files: list[tuple[str, str, str, str]],
+    staging: Path,
+    final: Path,
 ) -> Result[tuple[int, int, list[Timing]], BuildError]:
     timings: list[Timing] = []
     con = open_staging(staging)
@@ -149,7 +185,7 @@ def _run_graph(
         timings.append(Timing("fuzzy.merge", time.monotonic() - t))
 
         t = time.monotonic()
-        finalize(con, parsed)
+        finalize(con, parsed, source_files)
         con.close()
         _vacuum_into(staging, final)
         timings.append(Timing("finalize", time.monotonic() - t))
@@ -158,6 +194,16 @@ def _run_graph(
         jobs.close()
         con.close()
     return Result.ok((entries, sum(p.bad_lines for p in parsed.values()), timings))
+
+
+def _source_files(sources_dir: Path) -> list[tuple[str, str, str, str]]:
+    rows = []
+    for f in SOURCE_FILES:
+        path = sources_dir / f.filename
+        if path.exists():
+            sha = sha256_file(path)
+            rows.append((f.filename, f.source, source_date(sources_dir, f.filename, sha), sha))
+    return sorted(rows)
 
 
 def _cpu(outputs: Iterable[JobOutput]) -> float:
