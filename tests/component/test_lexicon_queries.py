@@ -54,7 +54,7 @@ def test_schema_mismatch_names_both_versions(built: Workspace) -> None:
 
     assert isinstance(err, SchemaMismatch)
     assert "schema 99" in str(err)
-    assert "needs schema 1" in str(err)
+    assert "needs schema 2" in str(err)
 
 
 @pytest.mark.skip(reason="placeholder")

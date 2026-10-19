@@ -21,7 +21,7 @@ def test_build_writes_lexicon_from_local_source(workspace: Workspace) -> None:
     res = build(workspace.config)
 
     assert res.is_ok
-    assert res.unwrap().entries == 5
+    assert res.unwrap().entries == 7
     assert res.unwrap().bad_lines == 1
     assert workspace.config.lexicon.exists()
 
@@ -57,7 +57,7 @@ def test_gender_falls_back_to_head_template(built: Workspace) -> None:
 def test_form_of_character_and_non_german_entries_are_skipped(built: Workspace) -> None:
     lemmas = {r[0] for r in _rows(built.config.lexicon, "SELECT lemma FROM headword")}
 
-    assert lemmas == {"Hund", "Band", "Berlin", "Aufenthaltsgenehmigung"}
+    assert lemmas == {"Hund", "Band", "Berlin", "Aufenthaltsgenehmigung", "laufen", "anrufen"}
 
 
 def test_proper_nouns_are_imported(built: Workspace) -> None:

@@ -31,6 +31,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("build", help="build lexicon.db from the locally kept sources")
     lookup = sub.add_parser("lookup", help="look up a German word")
+    lookup.add_argument("--conj", action="store_true", help="show every tense")
     lookup.add_argument("words", nargs="+", metavar="WORD")
     return parser
 
@@ -47,7 +48,7 @@ def _build(config: Config) -> int:
     return 0
 
 
-def _lookup(config: Config, words: list[str]) -> int:
+def _lookup(config: Config, words: list[str], full_conjugation: bool) -> int:
     from rich.console import Console
 
     from harald.lexicon.db import open_lexicon
@@ -62,7 +63,7 @@ def _lookup(config: Config, words: list[str]) -> int:
     if not result.shown:
         print(f"No match for {query!r}", file=sys.stderr)
         return _EXIT_FAILED
-    Console().print(render_lookup(result))
+    Console().print(render_lookup(result, full_conjugation))
     return 0
 
 
@@ -76,6 +77,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = loaded.unwrap()
         if args.command == "build":
             return _build(config)
-        return _lookup(config, args.words)
+        return _lookup(config, args.words, args.conj)
     except KeyboardInterrupt:
         return _EXIT_INTERRUPTED
