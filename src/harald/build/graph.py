@@ -91,12 +91,12 @@ class Jobs:
         try:
             for key, args in items:
                 while len(pending) >= limit:
-                    if (err := self._reap(task, pending, outputs)) is not None:
-                        return Result.err(err)
+                    if (reaped := self._reap(task, pending, outputs)).is_err:
+                        return Result.err(reaped.unwrap_err())
                 pending[self.submit(task, job, *args)] = key
             while pending:
-                if (err := self._reap(task, pending, outputs)) is not None:
-                    return Result.err(err)
+                if (reaped := self._reap(task, pending, outputs)).is_err:
+                    return Result.err(reaped.unwrap_err())
         except SourceUnreadable as e:
             return Result.err(e)
         except BrokenProcessPool:
@@ -108,15 +108,15 @@ class Jobs:
         task: str,
         pending: dict[Future[Result[JobOutput, TaskFailed]], int],
         outputs: dict[int, JobOutput],
-    ) -> BuildError | None:
+    ) -> Result[None, BuildError]:
         done, _ = wait(pending, return_when=FIRST_COMPLETED)
         for future in done:
             key = pending.pop(future)
             result = future.result()
             if result.is_err:
-                return BuildFailed(task, str(result.unwrap_err()))
+                return Result.err(BuildFailed(task, str(result.unwrap_err())))
             outputs[key] = result.unwrap()
-        return None
+        return Result.ok(None)
 
     def close(self) -> None:
         if self._pool is not None:
