@@ -17,12 +17,28 @@ class UnmappedRow:
 
 
 @dataclass(frozen=True)
+class ExampleRecord:
+    text: str
+    translation: str | None
+    kind: str
+    ref: str | None
+
+
+@dataclass(frozen=True)
+class SenseRecord:
+    gloss: str
+    labels: tuple[str, ...]
+    examples: tuple[ExampleRecord, ...]
+
+
+@dataclass(frozen=True)
 class EntryRecord:
     lemma: str
     pos: str
     gender: str
     plural: str | None
-    glosses: tuple[str, ...]
+    ipa: str | None
+    senses: tuple[SenseRecord, ...]
     translated_senses: int
     separable_prefix: str | None
     verb_forms: tuple[VerbFormRecord, ...]

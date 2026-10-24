@@ -15,7 +15,7 @@ def test_lookup_hund_returns_gender_plural_and_senses(built: Workspace) -> None:
     (hw,) = result.shown
     assert (hw.lemma, hw.pos) == ("Hund", "noun")
     assert (hw.entries[0].gender, hw.entries[0].plural) == ("m", "Hunde")
-    assert hw.entries[0].senses[0] == "dog (Canis familiaris)"
+    assert hw.entries[0].senses[0].gloss == "dog (Canis familiaris)"
 
 
 def test_band_groups_both_entries_under_one_headword(built: Workspace) -> None:
@@ -91,3 +91,24 @@ def test_fuzzy_match_is_not_reported_as_a_form(built: Workspace) -> None:
     lex = open_lexicon(built.config.lexicon).unwrap()
 
     assert lookup_de(lex, "hudn").shown[0].via_form is None
+
+
+def test_hund_carries_ipa_labels_and_examples(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    (hw,) = lookup_de(lex, "Hund").shown
+    entry = hw.entries[0]
+
+    assert entry.ipa == "/hʊnt/"
+    assert entry.senses[2].labels == ("derogatory",)
+    first = entry.senses[0].examples
+    assert [(e.text, e.translation, e.quotation) for e in first] == [
+        ("Der Hund bellt.", "The dog barks.", False),
+        ("Hund.", None, False),
+    ]
+    (quotation,) = entry.senses[1].examples
+    assert (quotation.text, quotation.ref, quotation.quotation) == (
+        "Der  Hundt lief  daron.",
+        "Anon., 1850",
+        True,
+    )

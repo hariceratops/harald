@@ -2,7 +2,15 @@ from rich.console import Console, ConsoleOptions, Group, RenderResult
 from rich.table import Table
 from rich.text import Text
 
-from harald.lexicon.model import Entry, Headword, LexiconInfo, LookupResult, PrincipalParts
+from harald.lexicon.model import (
+    Entry,
+    Example,
+    Headword,
+    LexiconInfo,
+    LookupResult,
+    PrincipalParts,
+    Sense,
+)
 
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
 _NARROW_BELOW = 60
@@ -40,6 +48,23 @@ def _principal_parts_line(parts: PrincipalParts) -> str:
     auxiliary = "/".join(_AUX_FORMS.get(a, a) for a in parts.auxiliaries)
     participle = " ".join(x for x in (auxiliary, parts.part2) if x)
     return " / ".join(x for x in (parts.pres3sg, parts.pret, participle) if x)
+
+
+def _example_line(ex: Example) -> Text:
+    line = Text("  " + ex.text)
+    if ex.translation:
+        line.append(f" — {ex.translation}", style="dim")
+    if ex.ref:
+        line.append(f"  {ex.ref}", style="dim")
+    return line
+
+
+def _sense_body(sense: Sense) -> Group:
+    gloss = Text()
+    if sense.labels:
+        gloss.append(f"[{', '.join(sense.labels)}] ", style="italic")
+    gloss.append(sense.gloss)
+    return Group(gloss, *(_example_line(ex) for ex in sense.examples))
 
 
 class RenderConjugation:
@@ -89,10 +114,14 @@ class RenderHeadword:
                 yield Text(label, style="dim")
                 if entry.plural:
                     yield Text(f"Plural: {entry.plural}")
+                if entry.ipa:
+                    yield Text(entry.ipa)
             else:
                 line = Text.assemble(title, f"  {label}", style="")
                 if entry.plural:
                     line.append(f"  Plural: {entry.plural}")
+                if entry.ipa:
+                    line.append(f"  {entry.ipa}")
                 yield line
             if entry.separable_prefix:
                 stem = self.hw.lemma.removeprefix(entry.separable_prefix)
@@ -102,8 +131,8 @@ class RenderHeadword:
             senses = Table.grid(padding=(0, 1))
             senses.add_column(justify="right", no_wrap=True)
             senses.add_column(ratio=1, overflow="fold")
-            for i, gloss in enumerate(entry.senses, 1):
-                senses.add_row(f"{i}.", gloss)
+            for i, sense in enumerate(entry.senses, 1):
+                senses.add_row(f"{i}.", _sense_body(sense))
             yield senses
             if entry.conjugation:
                 yield RenderConjugation(entry, self.full_conjugation)

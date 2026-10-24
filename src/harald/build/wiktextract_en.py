@@ -3,10 +3,19 @@ import re
 from typing import Any
 
 from harald.build.forms import parse_forms
-from harald.build.records import EntryRecord, FormOfRecord
+from harald.build.records import EntryRecord, ExampleRecord, FormOfRecord, SenseRecord
 
 SKIPPED_POS = {"character", "symbol", "punct"}
 _GENDER_TAGS = {"masculine": "m", "feminine": "f", "neuter": "n"}
+# the importer maps wiktextract tags to Harald's label vocabulary, so the runtime never sees
+# wiktextract's; a tag outside this set is not shown
+_LABELS = frozenset({
+    "colloquial", "informal", "formal", "slang", "vulgar", "derogatory", "offensive",
+    "humorous", "euphemistic", "archaic", "obsolete", "dated", "rare", "poetic", "literary",
+    "figuratively", "idiomatic", "regional", "dialectal", "nonstandard", "childish",
+    "Austria", "Switzerland", "Southern-Germany", "Northern-Germany", "Central-Germany",
+    "transitive", "intransitive", "reflexive", "impersonal",
+})  # fmt: skip
 _VARIANT_TAGS = {
     "formal", "rare", "nonstandard", "figuratively", "poetic",
     "error-unknown-tag", "error-unrecognized-form",
@@ -26,7 +35,6 @@ def parse_line(line: bytes) -> EntryRecord | FormOfRecord | None:
     glossed = [s for s in senses if s.get("glosses")]
     if not glossed:
         return None
-    glosses = tuple(s["glosses"][-1] for s in glossed)
     lemma = rec["word"]
     is_noun = rec["pos"] in ("noun", "name")
     parsed = parse_forms(lemma, rec["pos"], rec.get("forms") or [])
@@ -35,13 +43,36 @@ def parse_line(line: bytes) -> EntryRecord | FormOfRecord | None:
         pos=rec["pos"],
         gender=_gender(rec, senses) if is_noun else "",
         plural=_plural(rec) if is_noun else None,
-        glosses=glosses,
+        ipa=_ipa(rec),
+        senses=tuple(_sense(s) for s in glossed),
         translated_senses=sum(_has_translated_example(s) for s in glossed),
         separable_prefix=_separable_prefix(rec) if rec["pos"] == "verb" else None,
         verb_forms=parsed.verb_forms,
         index_forms=parsed.index_forms,
         unmapped=parsed.unmapped,
     )
+
+
+def _sense(sense: dict[str, Any]) -> SenseRecord:
+    labels = tuple(dict.fromkeys(t for t in sense.get("tags", ()) if t in _LABELS))
+    examples = tuple(
+        ExampleRecord(
+            ex["text"],
+            ex.get("translation") or ex.get("english") or None,
+            ex.get("type", "example"),
+            ex.get("ref") or None,
+        )
+        for ex in sense.get("examples") or ()
+        if ex.get("text")
+    )
+    return SenseRecord(sense["glosses"][-1], labels, examples)
+
+
+def _ipa(rec: dict[str, Any]) -> str | None:
+    found = [s["ipa"] for s in rec.get("sounds") or () if s.get("ipa")]
+    phonemic = [i for i in found if i.startswith("/")]
+    best: str | None = (phonemic or found or [None])[0]
+    return best
 
 
 def _has_translated_example(sense: dict[str, Any]) -> bool:

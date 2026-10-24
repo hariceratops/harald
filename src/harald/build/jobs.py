@@ -32,7 +32,7 @@ class CoverageCounts:
             return self
         counts = replace(
             self,
-            senses=self.senses + len(record.glosses),
+            senses=self.senses + len(record.senses),
             senses_translated=self.senses_translated + record.translated_senses,
         )
         if record.pos == "verb":
@@ -75,6 +75,7 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
     entry_rows: list[tuple[object, ...]] = []
     sense_rows: list[tuple[object, ...]] = []
     form_rows: list[tuple[object, ...]] = []
+    example_rows: list[tuple[object, ...]] = []
     keys: dict[tuple[str, str, str, int], None] = {}
     counts: dict[tuple[str, str], int] = {}
     examples: dict[tuple[str, str], tuple[str, str]] = {}
@@ -97,12 +98,16 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
         cov = cov.add(record)
         local = len(entry_rows) + 1
         entry_rows.append(
-            (seq, local, record.lemma, record.pos, record.gender, record.plural,
+            (seq, local, record.lemma, record.pos, record.gender, record.plural, record.ipa,
              record.separable_prefix)
         )  # fmt: skip
-        for n, gloss in enumerate(record.glosses, 1):
+        for n, sense in enumerate(record.senses, 1):
             senses += 1
-            sense_rows.append((seq, senses, local, n, gloss))
+            sense_rows.append((seq, senses, local, n, sense.gloss, json.dumps(sense.labels)))
+            example_rows.extend(
+                (seq, senses, k, ex.text, ex.translation, ex.kind, ex.ref)
+                for k, ex in enumerate(sense.examples, 1)
+            )
         per_slot: dict[str, int] = {}
         for vf in record.verb_forms:
             per_slot[vf.slot] = per_slot.get(vf.slot, 0) + 1
@@ -114,8 +119,9 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
             counts[(u.pos, u.tagset)] = counts.get((u.pos, u.tagset), 0) + 1
             examples.setdefault((u.pos, u.tagset), (u.word, u.form))
 
-    shard.executemany("INSERT INTO entry_stage VALUES (?, ?, ?, ?, ?, ?, ?)", entry_rows)
-    shard.executemany("INSERT INTO sense_stage VALUES (?, ?, ?, ?, ?)", sense_rows)
+    shard.executemany("INSERT INTO entry_stage VALUES (?, ?, ?, ?, ?, ?, ?, ?)", entry_rows)
+    shard.executemany("INSERT INTO sense_stage VALUES (?, ?, ?, ?, ?, ?)", sense_rows)
+    shard.executemany("INSERT INTO example_stage VALUES (?, ?, ?, ?, ?, ?, ?)", example_rows)
     shard.executemany("INSERT INTO verb_form_stage VALUES (?, ?, ?, ?, ?, ?)", form_rows)
     shard.executemany(
         "INSERT INTO key_stage VALUES (?, ?, ?, ?, ?)",

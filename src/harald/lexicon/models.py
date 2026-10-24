@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Index
+from sqlalchemy import CheckConstraint, ForeignKey, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -35,6 +35,7 @@ class Entry(Base):
     ord: Mapped[int]
     gender: Mapped[str]
     plural: Mapped[str | None]
+    ipa: Mapped[str | None]
     separable_prefix: Mapped[str | None]
 
     senses: Mapped[list["Sense"]] = relationship(lazy="raise", order_by="Sense.ord")
@@ -49,6 +50,25 @@ class Sense(Base):
     entry_id: Mapped[int] = mapped_column(ForeignKey("entry.id"))
     ord: Mapped[int]
     gloss: Mapped[str]
+    labels: Mapped[str]  # JSON array of register and valency labels
+
+    examples: Mapped[list["Example"]] = relationship(lazy="raise", order_by="Example.ord")
+
+
+class Example(Base):
+    __tablename__ = "example"
+    __table_args__ = (
+        Index("example_sense_ord", "sense_id", "ord"),
+        CheckConstraint("kind IN ('example','quotation')"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sense_id: Mapped[int] = mapped_column(ForeignKey("sense.id"))
+    ord: Mapped[int]
+    text: Mapped[str]
+    translation: Mapped[str | None]
+    kind: Mapped[str]
+    ref: Mapped[str | None]
 
 
 class SearchKey(Base):

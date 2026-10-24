@@ -11,10 +11,26 @@ class PrincipalParts:
 
 
 @dataclass(frozen=True)
+class Example:
+    text: str
+    translation: str | None
+    quotation: bool
+    ref: str | None
+
+
+@dataclass(frozen=True)
+class Sense:
+    gloss: str
+    labels: tuple[str, ...]
+    examples: tuple[Example, ...]
+
+
+@dataclass(frozen=True)
 class Entry:
     gender: str
     plural: str | None
-    senses: tuple[str, ...]
+    senses: tuple[Sense, ...]
+    ipa: str | None = None
     separable_prefix: str | None = None
     principal_parts: PrincipalParts | None = None
     # slot (e.g. "ind.pres.3sg") -> display forms, subordinate-clause slots left out

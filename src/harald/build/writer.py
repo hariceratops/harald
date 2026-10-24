@@ -69,16 +69,25 @@ def merge_lexicon(
         for a in aliases:
             con.execute(
                 "INSERT INTO entry "
-                "SELECT o.entry_off + e.local_id, h.id, 0, e.gender, e.plural, e.separable_prefix "
+                "SELECT o.entry_off + e.local_id, h.id, 0, e.gender, e.plural, e.ipa, "
+                "e.separable_prefix "
                 f"FROM {a}.entry_stage e JOIN offset_stage o ON o.seq = e.seq "
                 "JOIN headword h ON h.lemma = e.lemma AND h.pos = e.pos "
                 "ORDER BY e.seq, e.local_id"
             )
             con.execute(
                 "INSERT INTO sense "
-                "SELECT o.sense_off + s.local_id, o.entry_off + s.entry_local, s.ord, s.gloss "
+                "SELECT o.sense_off + s.local_id, o.entry_off + s.entry_local, s.ord, s.gloss, "
+                "s.labels "
                 f"FROM {a}.sense_stage s JOIN offset_stage o ON o.seq = s.seq "
                 "ORDER BY s.seq, s.local_id"
+            )
+            # ids follow insertion order, which is shard order then source order
+            con.execute(
+                "INSERT INTO example (sense_id, ord, text, translation, kind, ref) "
+                "SELECT o.sense_off + x.sense_local, x.ord, x.text, x.translation, x.kind, x.ref "
+                f"FROM {a}.example_stage x JOIN offset_stage o ON o.seq = x.seq "
+                "ORDER BY x.seq, x.rowid"
             )
             con.execute(
                 "INSERT INTO verb_form "

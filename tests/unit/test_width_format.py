@@ -3,15 +3,37 @@ import io
 import pytest
 from rich.console import Console
 
-from harald.lexicon.model import Entry, Headword, LookupResult
+from harald.lexicon.model import Entry, Example, Headword, LookupResult, Sense
 from harald.render import render_lookup
 
 LONG = "a very long gloss with Aufenthaltsgenehmigungsverlängerungsantragsformular inside"
 RESULT = LookupResult(
     "Hund",
     (
-        Headword("Hund", "noun", (Entry("m", "Hunde", ("dog", LONG)),)),
-        Headword("Berlin", "name", (Entry("n", None, ("Berlin",)),)),
+        Headword(
+            "Hund",
+            "noun",
+            (
+                Entry(
+                    "m",
+                    "Hunde",
+                    (
+                        Sense(
+                            "dog",
+                            ("colloquial",),
+                            (Example("Der Hund bellt.", "The dog barks.", False, None),),
+                        ),
+                        Sense(
+                            LONG,
+                            (),
+                            (Example("Der  Hundt lief  daron.", None, True, "Anon., 1850"),),
+                        ),
+                    ),
+                    ipa="/hʊnt/",
+                ),
+            ),
+        ),
+        Headword("Berlin", "name", (Entry("n", None, (Sense("Berlin", (), ()),)),)),
     ),
     (("Hunde", "noun"), ("Hundi", "noun")),
 )
@@ -29,8 +51,11 @@ def test_lookup_fits_width_and_loses_nothing(width: int) -> None:
     for part in (
         "derHund",
         "Plural:Hunde",
-        "1.dog",
         LONG.replace(" ", ""),
+        "/hʊnt/",
+        "[colloquial]dog",
+        "DerHundbellt.—Thedogbarks.",
+        "DerHundtliefdaron.Anon.,1850",
         "propernoun",
         "Also:Hunde,Hundi",
     ):

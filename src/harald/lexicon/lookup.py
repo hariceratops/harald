@@ -1,10 +1,20 @@
+import json
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from harald.lexicon import model
 from harald.lexicon.db import Lexicon
 from harald.lexicon.fuzzy import fuzzy_deletes, max_distance, osa_within
-from harald.lexicon.models import Entry, FuzzyDelete, Headword, KeyHeadword, SearchKey, VerbForm
+from harald.lexicon.models import (
+    Entry,
+    FuzzyDelete,
+    Headword,
+    KeyHeadword,
+    SearchKey,
+    Sense,
+    VerbForm,
+)
 from harald.text import fold
 
 _FULL_LIMIT = 3
@@ -59,7 +69,9 @@ def lookup_de(lex: Lexicon, query: str) -> model.LookupResult:
                 select(Headword)
                 .where(Headword.id.in_(shown_ids))
                 .options(
-                    selectinload(Headword.entries).selectinload(Entry.senses),
+                    selectinload(Headword.entries)
+                    .selectinload(Entry.senses)
+                    .selectinload(Sense.examples),
                     selectinload(Headword.entries).selectinload(Entry.verb_forms),
                 )
             )
@@ -85,10 +97,22 @@ def _entry_model(e: Entry) -> model.Entry:
     return model.Entry(
         e.gender,
         e.plural,
-        tuple(s.gloss for s in e.senses),
+        tuple(_sense_model(s) for s in e.senses),
+        e.ipa,
         e.separable_prefix,
         _principal_parts(slots) if slots else None,
         {s: f for s, f in slots.items() if not s.endswith(".sub")},
+    )
+
+
+def _sense_model(s: Sense) -> model.Sense:
+    return model.Sense(
+        s.gloss,
+        tuple(json.loads(s.labels)),
+        tuple(
+            model.Example(ex.text, ex.translation, ex.kind == "quotation", ex.ref)
+            for ex in s.examples
+        ),
     )
 
 

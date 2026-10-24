@@ -3,10 +3,15 @@
 SHARD_DDL = """
 CREATE TABLE entry_stage (
     seq INTEGER, local_id INTEGER, lemma TEXT, pos TEXT, gender TEXT, plural TEXT,
-    separable_prefix TEXT
+    ipa TEXT, separable_prefix TEXT
 );
 CREATE TABLE sense_stage (
-    seq INTEGER, local_id INTEGER, entry_local INTEGER, ord INTEGER, gloss TEXT
+    seq INTEGER, local_id INTEGER, entry_local INTEGER, ord INTEGER, gloss TEXT,
+    labels TEXT
+);
+CREATE TABLE example_stage (
+    seq INTEGER, sense_local INTEGER, ord INTEGER, text TEXT, translation TEXT, kind TEXT,
+    ref TEXT
 );
 CREATE TABLE verb_form_stage (
     seq INTEGER, entry_local INTEGER, slot TEXT, ord INTEGER, form TEXT, variant TEXT
