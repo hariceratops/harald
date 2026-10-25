@@ -39,3 +39,4 @@ Built with `harald-cli build --fetch`: 7 m 14 s, 468.2 MB, 102,897 entries.
 in the fuzzy candidate query, now fixed (about 1.1 s cold); the TUI's German
 lookup runs the same query. Output wraps
 correctly at 40 and 80 columns. Details in design §14.9.
+- Search runs on Enter only, not as you type. Accepted by the user for now (2026-10-25).
