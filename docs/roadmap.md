@@ -16,7 +16,7 @@ Each item is a vertical slice; the numbers are the issue files in
 
 ## Next
 
-- [ ] 009 TUI browsing, verified in Termux
+- [ ] 009 TUI browsing, verified in Termux (built; the Termux checks are outstanding)
 - [ ] 010 Add a word; meaning cards and study
 - [ ] 011 Article cards
 - [ ] 012 Stammformen cards

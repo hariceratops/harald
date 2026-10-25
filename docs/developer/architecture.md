@@ -17,6 +17,7 @@ session, a connection or a file.
 | Package | Role |
 |---|---|
 | `harald.cli` | click commands; exit codes |
+| `harald.tui` | Textual app: home, lookup, entry and info screens |
 | `harald.render` | width-adaptive rendering with rich |
 | `harald.use_cases` | `BuildLexicon`, `QueryLexiconInfo`, `LookUpGerman`, `LookUpEnglish` |
 | `harald.lexicon` | schema, models, lookup, fuzzy matching over `lexicon.db` |

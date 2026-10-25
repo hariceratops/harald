@@ -31,7 +31,24 @@ def _print(renderable: Any) -> None:
     Console().print(renderable)
 
 
-@click.group()
+def _run_tui(config_path: Path | None) -> int:
+    from harald.use_cases.lexicon import QueryLexiconInfo
+
+    loaded = load_config(config_path)
+    if loaded.is_err:
+        return _fail(loaded.unwrap_err())
+    config = loaded.unwrap()
+    # refuse before Textual is imported, so a startup error is never drawn inside the UI
+    checked = QueryLexiconInfo(config).execute()
+    if checked.is_err:
+        return _fail(checked.unwrap_err())
+    from harald.tui.app import HaraldApp
+
+    HaraldApp(config).run()
+    return 0
+
+
+@click.group(invoke_without_command=True)
 @click.option(
     "--config",
     "config_path",
@@ -40,9 +57,18 @@ def _print(renderable: Any) -> None:
     help="path to config.toml",
 )
 @click.pass_context
-def cli(ctx: click.Context, config_path: Path | None) -> None:
+def cli(ctx: click.Context, config_path: Path | None) -> int | None:
     # the config is loaded by each command, so a broken one cannot break `--help`
     ctx.obj = config_path
+    if ctx.invoked_subcommand is None:
+        return _run_tui(config_path)
+    return None
+
+
+@cli.command(help="open the terminal UI (the default with no command)")
+@click.pass_obj
+def tui(config_path: Path | None) -> int:
+    return _run_tui(config_path)
 
 
 @cli.command(help="build lexicon.db from the locally kept sources")

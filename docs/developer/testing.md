@@ -13,7 +13,7 @@ uv run mypy
 | `tests/unit/` | pure logic: `Result`/`Option`, fuzzy matching, width formatting, text normalisation, the layering rule |
 | `tests/component/` | a package against a real SQLite file: build, lexicon queries, use cases, fetch, schema drift |
 | `tests/smoke/` | the `harald` command end to end, as a subprocess, at a fixed terminal width |
-| `tests/tui/` | Textual screens (placeholders until the TUI lands) |
+| `tests/tui/` | Textual screens, driven headlessly with the pilot at 40x30, 40x12 and 100x30 |
 
 `tests/unit/test_layering.py` enforces the dependency direction described in
 [Architecture](architecture.md): front-ends import only use cases.

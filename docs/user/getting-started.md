@@ -33,6 +33,16 @@ uv run harald lookup --conj gehen  # every tense
 uv run harald lookup --en use      # English → German
 ```
 
+## Browse in the TUI
+
+```sh
+uv run harald        # same as: uv run harald tui
+```
+
+`l` opens lookup, `i` shows the sources, `q` quits. In a lookup, Enter
+searches, then pick a result to open the entry; `c` toggles full conjugation
+and `esc` goes back. The layout adapts down to 40 columns.
+
 ## See what you built from
 
 ```sh

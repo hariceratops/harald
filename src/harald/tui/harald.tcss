@@ -1,0 +1,29 @@
+Screen.-short Header {
+    display: none;
+}
+
+Input {
+    border: none;
+    height: 1;
+    padding: 0 1;
+}
+
+#results {
+    height: 1fr;
+    border: none;
+    border-top: solid $primary;
+}
+
+#body {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#menu {
+    height: auto;
+    border: none;
+}
+
+#status {
+    padding: 1 1 0 1;
+}

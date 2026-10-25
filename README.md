@@ -28,8 +28,10 @@ Working today:
   ("lief" finds *laufen*) and typos, with English glosses, German definitions,
   register labels, IPA and examples. `--conj` shows every tense.
 - `harald lookup --en WORD` lists German words under each English sense.
+- `harald` (or `harald tui`) opens a Textual TUI for German lookup and entry
+  browsing, down to 40 columns. Not yet verified on the phone.
 
-Planned: Textual TUI, spaced-repetition cards (FSRS), Tatoeba phrase search,
+Planned: TUI study screens, spaced-repetition cards (FSRS), Tatoeba phrase search,
 `harald check`, backups. See the [roadmap](#roadmap).
 
 ## Quick start
@@ -80,7 +82,7 @@ Test layers, build internals and workflow are in the
 - [x] Full English-edition entry (IPA, register, examples)
 - [x] German-edition definitions and examples
 - [x] English → German lookup
-- [ ] TUI browsing, verified in Termux
+- [ ] TUI browsing, verified in Termux (built; Termux checks outstanding)
 - [ ] Add a word; meaning cards and study
 - [ ] Article, Stammformen and per-tense conjugation cards
 - [ ] German → German cards
