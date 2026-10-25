@@ -94,7 +94,8 @@ Test layers, build internals and workflow are in the
 
 ## Licence and data
 
-The code's licence is not yet chosen. Dictionary data comes from Wiktionary
+The code is licensed under the Apache License 2.0 (see [`LICENSE`](LICENSE)).
+Dictionary data comes from Wiktionary
 (CC BY-SA 4.0, via wiktextract/kaikki.org) and Tatoeba (CC BY 2.0 FR). The
 built `lexicon.db` is never redistributed. See
 [Data and licences](docs/user/data.md).
