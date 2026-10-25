@@ -5,8 +5,6 @@ from typing import Any
 import click
 
 from harald.config import ConfigError, load_config
-from harald.core.result import Result
-from harald.lexicon.db import Lexicon
 from harald.lexicon.errors import LexiconError
 
 _EXIT_FAILED = 1
@@ -31,18 +29,6 @@ def _print(renderable: Any) -> None:
     from rich.console import Console
 
     Console().print(renderable)
-
-
-def _open_lexicon(config_path: Path | None) -> Result[Lexicon, ConfigError | LexiconError]:
-    from harald.lexicon.db import open_lexicon
-
-    loaded = load_config(config_path)
-    if loaded.is_err:
-        return Result.err(loaded.unwrap_err())
-    opened = open_lexicon(loaded.unwrap().lexicon)
-    if opened.is_err:
-        return Result.err(opened.unwrap_err())
-    return Result.ok(opened.unwrap())
 
 
 @click.group()
@@ -104,10 +90,13 @@ def info(config_path: Path | None) -> int:
     from harald.render import render_info
     from harald.use_cases.lexicon import QueryLexiconInfo
 
-    opened = _open_lexicon(config_path)
-    if opened.is_err:
-        return _fail(opened.unwrap_err())
-    _print(render_info(QueryLexiconInfo(opened.unwrap()).execute()))
+    loaded = load_config(config_path)
+    if loaded.is_err:
+        return _fail(loaded.unwrap_err())
+    queried = QueryLexiconInfo(loaded.unwrap()).execute()
+    if queried.is_err:
+        return _fail(queried.unwrap_err())
+    _print(render_info(queried.unwrap()))
     return 0
 
 
@@ -119,11 +108,14 @@ def lookup(config_path: Path | None, conj: bool, words: tuple[str, ...]) -> int:
     from harald.render import render_lookup
     from harald.use_cases.lexicon import LookUpGerman
 
-    opened = _open_lexicon(config_path)
-    if opened.is_err:
-        return _fail(opened.unwrap_err())
+    loaded = load_config(config_path)
+    if loaded.is_err:
+        return _fail(loaded.unwrap_err())
     query = " ".join(words)
-    result = LookUpGerman(opened.unwrap()).execute(query)
+    looked_up = LookUpGerman(loaded.unwrap()).execute(query)
+    if looked_up.is_err:
+        return _fail(looked_up.unwrap_err())
+    result = looked_up.unwrap()
     if not result.shown:
         click.echo(f"No match for {query!r}", err=True)
         return _EXIT_FAILED

@@ -9,7 +9,6 @@ ALLOWED = (
     "harald.render",
     "harald.config",
     "harald.core.result",
-    "harald.lexicon.db",
     "harald.lexicon.errors",
     "harald.lexicon.model",
 )
