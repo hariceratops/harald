@@ -1,7 +1,7 @@
 import sqlite3
 
 from harald.lexicon.schema import SCHEMA_VERSION
-from harald.use_cases.lexicon import LookUpGerman, QueryLexiconInfo
+from harald.use_cases.lexicon import LookUpEnglish, LookUpGerman, QueryLexiconInfo
 from tests.conftest import Workspace
 
 
@@ -33,3 +33,9 @@ def test_source_date_is_the_newest_trusted_one(built: Workspace) -> None:
 
     assert info["Tatoeba"] == "2026-10-17"
     assert info["Wiktionary (de)"] == "unknown"
+
+
+def test_look_up_english_finds_use(built: Workspace) -> None:
+    result = LookUpEnglish(built.config).execute("use").unwrap()
+
+    assert result.shown

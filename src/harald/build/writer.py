@@ -48,13 +48,14 @@ def merge_lexicon(
     de_parsed: dict[int, DeParseCounts],
 ) -> None:
     """Ids come from rules: chunk offsets in seq order, sorted (lemma, pos) for headwords."""
-    entry_off = sense_off = 0
+    entry_off = sense_off = en_word_off = 0
     offsets = []
     for seq in sorted(parsed):
-        offsets.append((seq, entry_off, sense_off))
+        offsets.append((seq, entry_off, sense_off, en_word_off))
         entry_off += parsed[seq].entries
         sense_off += parsed[seq].senses
-    con.executemany("INSERT INTO offset_stage VALUES (?, ?, ?)", offsets)
+        en_word_off += parsed[seq].en_words
+    con.executemany("INSERT INTO offset_stage VALUES (?, ?, ?, ?)", offsets)
     de_entry_off = de_sense_off = de_example_off = 0
     de_offsets = []
     for seq in sorted(de_parsed):
@@ -107,6 +108,21 @@ def merge_lexicon(
                 f"FROM {a}.verb_form_stage v JOIN offset_stage o ON o.seq = v.seq"
             )
             con.execute(
+                "INSERT INTO en_word (id, word, pos, ord) "
+                "SELECT o.en_word_off + w.local_id, w.word, w.pos, 0 "
+                f"FROM {a}.en_word_stage w JOIN offset_stage o ON o.seq = w.seq"
+            )
+            con.execute(
+                "INSERT INTO enkey_stage "
+                "SELECT w.key, o.en_word_off + w.local_id "
+                f"FROM {a}.en_word_stage w JOIN offset_stage o ON o.seq = w.seq"
+            )
+            con.execute(
+                "INSERT INTO en_translation "
+                "SELECT o.en_word_off + t.word_local, t.ord, t.sense, t.german, t.gender, t.note "
+                f"FROM {a}.en_translation_stage t JOIN offset_stage o ON o.seq = t.seq"
+            )
+            con.execute(
                 "INSERT INTO de_entry (id, headword_id, ord, label) "
                 "SELECT o.entry_off + e.local_id, h.id, 0, e.label "
                 f"FROM {a}.de_entry_stage e JOIN de_offset_stage o ON o.seq = e.seq "
@@ -131,6 +147,10 @@ def merge_lexicon(
         "(PARTITION BY headword_id ORDER BY id) AS n FROM entry) r WHERE entry.id = r.id"
     )
     con.execute(
+        "UPDATE en_word SET ord = r.n FROM (SELECT id, row_number() OVER "
+        "(PARTITION BY word ORDER BY id) AS n FROM en_word) r WHERE en_word.id = r.id"
+    )
+    con.execute(
         "UPDATE de_entry SET ord = r.n FROM (SELECT id, row_number() OVER "
         "(PARTITION BY headword_id ORDER BY id) AS n FROM de_entry) r WHERE de_entry.id = r.id"
     )
@@ -146,7 +166,10 @@ def merge_lexicon(
 
 
 def merge_keys(con: sqlite3.Connection, shards: Sequence[str]) -> None:
-    """A lemma match (kind 0) wins over a form match (kind 1); form-of pairs need a headword."""
+    """A lemma match (kind 0) wins over a form match (kind 1); form-of pairs need a headword.
+
+    German keys take the low ids and English ones follow, both in sorted key order.
+    """
 
     def collect(aliases: list[str]) -> None:
         for a in aliases:
@@ -164,6 +187,14 @@ def merge_keys(con: sqlite3.Connection, shards: Sequence[str]) -> None:
     con.execute(
         "INSERT INTO key_headword SELECT s.id, k.headword_id, min(k.kind) "
         "FROM keyall_stage k JOIN search_key s ON s.key = k.key GROUP BY s.id, k.headword_id"
+    )
+    con.execute(
+        "INSERT INTO search_key SELECT (SELECT count(*) FROM search_key) + "
+        "row_number() OVER (ORDER BY key), 'en', key FROM (SELECT DISTINCT key FROM enkey_stage)"
+    )
+    con.execute(
+        "INSERT INTO key_en_word SELECT s.id, k.en_word_id "
+        "FROM enkey_stage k JOIN search_key s ON s.key = k.key AND s.lang = 'en'"
     )
     con.execute("COMMIT")
 

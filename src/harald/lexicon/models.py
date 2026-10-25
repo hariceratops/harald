@@ -109,6 +109,31 @@ class DeExample(Base):
     ref: Mapped[str | None]
 
 
+class EnWord(Base):
+    __tablename__ = "en_word"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    word: Mapped[str]
+    pos: Mapped[str]
+    ord: Mapped[int]
+
+    translations: Mapped[list["EnTranslation"]] = relationship(
+        lazy="raise", order_by="EnTranslation.ord"
+    )
+
+
+class EnTranslation(Base):
+    __tablename__ = "en_translation"
+    __table_args__ = {"sqlite_with_rowid": False}
+
+    en_word_id: Mapped[int] = mapped_column(ForeignKey("en_word.id"), primary_key=True)
+    ord: Mapped[int] = mapped_column(primary_key=True)
+    sense: Mapped[str]  # '' when the source gives none
+    german: Mapped[str]
+    gender: Mapped[str]
+    note: Mapped[str | None]
+
+
 class SearchKey(Base):
     __tablename__ = "search_key"
     __table_args__ = (Index("search_key_lang_key", "lang", "key", unique=True),)
@@ -125,6 +150,14 @@ class KeyHeadword(Base):
     key_id: Mapped[int] = mapped_column(primary_key=True)
     headword_id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[int]  # 0 lemma, 1 inflected form
+
+
+class KeyEnWord(Base):
+    __tablename__ = "key_en_word"
+    __table_args__ = {"sqlite_with_rowid": False}
+
+    key_id: Mapped[int] = mapped_column(primary_key=True)
+    en_word_id: Mapped[int] = mapped_column(primary_key=True)
 
 
 class FuzzyDelete(Base):

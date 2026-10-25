@@ -1,7 +1,7 @@
 import json
 
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from harald.core.option import Option
 from harald.lexicon import model
@@ -11,8 +11,10 @@ from harald.lexicon.models import (
     DeEntry,
     DeSense,
     Entry,
+    EnWord,
     FuzzyDelete,
     Headword,
+    KeyEnWord,
     KeyHeadword,
     SearchKey,
     Sense,
@@ -25,22 +27,58 @@ _ALSO_LIMIT = 8
 _RESULT_CAP = 20
 
 
+def _key_distances(session: Session, lang: str, key: str) -> dict[int, int]:
+    limit = max_distance(key)
+    candidates = session.execute(
+        select(SearchKey.id, SearchKey.key)
+        .join(FuzzyDelete, FuzzyDelete.key_id == SearchKey.id)
+        .where(SearchKey.lang == lang, FuzzyDelete.d.in_(fuzzy_deletes(key)))
+        .distinct()
+    ).all()
+    return {
+        key_id: d.unwrap()
+        for key_id, cand in candidates
+        if (d := osa_within(key, cand, limit)).is_some
+    }
+
+
+def lookup_en(lex: Lexicon, query: str) -> model.EnLookupResult:
+    typed = " ".join(query.split())
+    with lex.sessions() as session:
+        distance = _key_distances(session, "en", fold(typed))
+        if not distance:
+            return model.EnLookupResult(query, ())
+        rows = session.execute(
+            select(EnWord, KeyEnWord.key_id)
+            .join(KeyEnWord, KeyEnWord.en_word_id == EnWord.id)
+            .where(KeyEnWord.key_id.in_(distance))
+            .options(selectinload(EnWord.translations))
+        ).all()
+        ranked = sorted(
+            ((distance[key_id], w) for w, key_id in rows), key=lambda m: (m[0], m[1].id)
+        )
+        best = ranked[0][0]
+        shown = tuple(_en_word_model(w) for d, w in ranked if d == best)[:_RESULT_CAP]
+        return model.EnLookupResult(query, shown)
+
+
+def _en_word_model(w: EnWord) -> model.EnWord:
+    # one group per distinct sense string, in source order
+    by_sense: dict[str, list[model.GermanTranslation]] = {}
+    for t in w.translations:
+        by_sense.setdefault(t.sense, []).append(model.GermanTranslation(t.german, t.gender, t.note))
+    return model.EnWord(
+        w.word,
+        w.pos,
+        tuple(model.TranslationGroup(sense, tuple(words)) for sense, words in by_sense.items()),
+    )
+
+
 def lookup_de(lex: Lexicon, query: str) -> model.LookupResult:
     typed = " ".join(query.split())
     key = fold(typed)
-    limit = max_distance(key)
     with lex.sessions() as session:
-        candidates = session.execute(
-            select(SearchKey.id, SearchKey.key)
-            .join(FuzzyDelete, FuzzyDelete.key_id == SearchKey.id)
-            .where(SearchKey.lang == "de", FuzzyDelete.d.in_(fuzzy_deletes(key)))
-            .distinct()
-        ).all()
-        distance = {
-            key_id: d.unwrap()
-            for key_id, cand in candidates
-            if (d := osa_within(key, cand, limit)).is_some
-        }
+        distance = _key_distances(session, "de", key)
         if not distance:
             return model.LookupResult(query, (), ())
         rows = session.execute(

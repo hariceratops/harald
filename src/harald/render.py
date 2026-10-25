@@ -1,10 +1,13 @@
 from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
+from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
 from harald.core.option import Option
 from harald.lexicon.model import (
+    EnLookupResult,
     Entry,
+    EnWord,
     Example,
     GermanEntry,
     GermanExample,
@@ -205,6 +208,31 @@ class RenderLookup:
 
 def render_lookup(result: LookupResult, full_conjugation: bool = False) -> RenderLookup:
     return RenderLookup(result, full_conjugation)
+
+
+def _translation_line(article: str, word: str, note: str | None) -> Text:
+    line = Text(f"{article}{word}")
+    if note:
+        line.append(f"  ({note})", style="dim")
+    return line
+
+
+def _en_word_block(w: EnWord) -> Group:
+    parts: list[RenderableType] = [Text.assemble((w.word, "bold"), f" ({w.pos})")]
+    for group in w.groups:
+        words_indent = 4 if group.sense else 2
+        if group.sense:
+            parts.append(Padding(Text(group.sense), (0, 0, 0, 2)))
+        for t in group.words:
+            article = "/".join(_ARTICLES[g] for g in t.gender) + " " if t.gender else ""
+            parts.append(
+                Padding(_translation_line(article, t.german, t.note), (0, 0, 0, words_indent))
+            )
+    return Group(*parts)
+
+
+def render_en_lookup(result: EnLookupResult) -> Group:
+    return Group(*(_en_word_block(w) for w in result.shown))
 
 
 def render_info(info: LexiconInfo) -> Group:

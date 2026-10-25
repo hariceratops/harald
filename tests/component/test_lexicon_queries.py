@@ -2,7 +2,7 @@ import pytest
 
 from harald.lexicon.db import open_lexicon
 from harald.lexicon.errors import LexiconMissing, NotALexicon, SchemaMismatch
-from harald.lexicon.lookup import lookup_de
+from harald.lexicon.lookup import lookup_de, lookup_en
 from harald.lexicon.schema import SCHEMA_VERSION
 from tests.conftest import Workspace
 
@@ -147,3 +147,42 @@ def test_hund_carries_ipa_labels_and_examples(built: Workspace) -> None:
         "Anon., 1850",
         True,
     )
+
+
+def test_use_lists_german_words_under_each_english_sense(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    result = lookup_en(lex, "use")
+
+    verb, noun = result.shown
+    assert (verb.word, verb.pos) == ("use", "verb")
+    assert [(g.sense, [t.german for t in g.words]) for g in verb.groups] == [
+        ("employ, apply", ["benutzen", "verwenden"]),
+        ("to exhaust the supply of, to consume", ["verbrauchen"]),
+        ("to exploit", ["ausnutzen", "zum Vorwand nehmen"]),
+    ]
+    assert verb.groups[2].words[1].note == "use as a pretext"
+    assert (noun.word, noun.pos) == ("use", "noun")
+    assert [(g.sense, [(t.german, t.gender) for t in g.words]) for g in noun.groups] == [
+        ("act of using", [("Benutzung", "f"), ("Gebrauch", "m")]),
+        ("", [("Anwendung", "f")]),
+    ]
+
+
+def test_english_lookup_is_fuzzy(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    assert [w.word for w in lookup_en(lex, "usee").shown] == ["use", "use"]
+
+
+def test_english_lookup_without_translations_finds_nothing(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    assert lookup_en(lex, "dog").shown == ()
+    assert lookup_en(lex, "Hund").shown == ()
+
+
+def test_german_lookup_ignores_english_keys(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    assert lookup_de(lex, "use").shown == ()

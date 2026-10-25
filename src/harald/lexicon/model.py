@@ -75,6 +75,33 @@ class LookupResult:
 
 
 @dataclass(frozen=True)
+class GermanTranslation:
+    german: str
+    gender: str
+    note: str | None
+
+
+@dataclass(frozen=True)
+class TranslationGroup:
+    # the English sense the words translate; empty when the source names none
+    sense: str
+    words: tuple[GermanTranslation, ...]
+
+
+@dataclass(frozen=True)
+class EnWord:
+    word: str
+    pos: str
+    groups: tuple[TranslationGroup, ...]
+
+
+@dataclass(frozen=True)
+class EnLookupResult:
+    query: str
+    shown: tuple[EnWord, ...]
+
+
+@dataclass(frozen=True)
 class SourceInfo:
     title: str
     licence: str

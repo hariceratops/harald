@@ -100,18 +100,29 @@ def info(config_path: Path | None) -> int:
     return 0
 
 
-@cli.command(help="look up a German word")
+@cli.command(help="look up a German word, or an English one with --en")
 @click.option("--conj", is_flag=True, help="show every tense")
+@click.option("--en", "english", is_flag=True, help="look up an English word, list German words")
 @click.argument("words", nargs=-1, required=True, metavar="WORD...")
 @click.pass_obj
-def lookup(config_path: Path | None, conj: bool, words: tuple[str, ...]) -> int:
-    from harald.render import render_lookup
-    from harald.use_cases.lexicon import LookUpGerman
+def lookup(config_path: Path | None, conj: bool, english: bool, words: tuple[str, ...]) -> int:
+    from harald.render import render_en_lookup, render_lookup
+    from harald.use_cases.lexicon import LookUpEnglish, LookUpGerman
 
     loaded = load_config(config_path)
     if loaded.is_err:
         return _fail(loaded.unwrap_err())
     query = " ".join(words)
+    if english:
+        found = LookUpEnglish(loaded.unwrap()).execute(query)
+        if found.is_err:
+            return _fail(found.unwrap_err())
+        en_result = found.unwrap()
+        if not en_result.shown:
+            click.echo(f"No match for {query!r}", err=True)
+            return _EXIT_FAILED
+        _print(render_en_lookup(en_result))
+        return 0
     looked_up = LookUpGerman(loaded.unwrap()).execute(query)
     if looked_up.is_err:
         return _fail(looked_up.unwrap_err())

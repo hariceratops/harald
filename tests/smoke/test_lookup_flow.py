@@ -133,3 +133,26 @@ def test_lookup_german_only_word_shows_the_german_block(workspace: Workspace) ->
     assert "Fernweh" in res.stdout
     assert "[1] Sehnsucht nach der Ferne" in res.stdout
     assert "German examples" not in res.stdout
+
+
+def test_lookup_en_lists_german_words_under_each_sense(workspace: Workspace) -> None:
+    _harald(workspace, "build")
+
+    res = _harald(workspace, "lookup", "--en", "use", columns=40)
+
+    assert res.returncode == 0, res.stderr
+    assert max(len(line) for line in res.stdout.splitlines()) <= 40
+    lines = [line.rstrip() for line in res.stdout.splitlines()]
+    assert lines[:4] == ["use (verb)", "  employ, apply", "    benutzen", "    verwenden"]
+    assert "  to exhaust the supply of, to consume" in lines
+    assert "    verbrauchen" in lines
+    assert "    zum Vorwand nehmen  (use as a" in lines
+    assert "    die Benutzung" in lines
+    assert "    der Gebrauch" in lines
+    assert "  die Anwendung" in lines
+
+
+def test_lookup_en_no_match_exits_1(workspace: Workspace) -> None:
+    _harald(workspace, "build")
+
+    assert _harald(workspace, "lookup", "--en", "zzzzzz").returncode == 1

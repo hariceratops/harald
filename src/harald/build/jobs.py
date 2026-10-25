@@ -3,7 +3,7 @@ import sqlite3
 from dataclasses import dataclass, replace
 
 from harald.build import wiktextract_de, wiktextract_en
-from harald.build.records import EntryRecord
+from harald.build.records import EntryRecord, EnWordRecord
 from harald.lexicon.fuzzy import fuzzy_deletes
 from harald.text import fold
 
@@ -64,6 +64,7 @@ class CoverageCounts:
 class ParseCounts:
     entries: int
     senses: int
+    en_words: int
     bad_lines: int
     # (pos, tagset, occurrences, example word, example form), in first-seen order
     unmapped: tuple[tuple[str, str, int, str, str], ...]
@@ -76,6 +77,8 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
     sense_rows: list[tuple[object, ...]] = []
     form_rows: list[tuple[object, ...]] = []
     example_rows: list[tuple[object, ...]] = []
+    en_word_rows: list[tuple[object, ...]] = []
+    en_translation_rows: list[tuple[object, ...]] = []
     keys: dict[tuple[str, str, str, int], None] = {}
     counts: dict[tuple[str, str], int] = {}
     examples: dict[tuple[str, str], tuple[str, str]] = {}
@@ -93,6 +96,14 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
         if parsed.is_none:
             continue
         record = parsed.unwrap()
+        if isinstance(record, EnWordRecord):
+            word_local = len(en_word_rows) + 1
+            en_word_rows.append((seq, word_local, record.word, fold(record.word), record.pos))
+            en_translation_rows.extend(
+                (seq, word_local, n, t.sense, t.german, t.gender, t.note)
+                for n, t in enumerate(record.translations, 1)
+            )
+            continue
         if not isinstance(record, EntryRecord):
             keys[(fold(record.form), record.lemma, record.pos, 1)] = None
             continue
@@ -124,12 +135,16 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
     shard.executemany("INSERT INTO sense_stage VALUES (?, ?, ?, ?, ?, ?)", sense_rows)
     shard.executemany("INSERT INTO example_stage VALUES (?, ?, ?, ?, ?, ?, ?)", example_rows)
     shard.executemany("INSERT INTO verb_form_stage VALUES (?, ?, ?, ?, ?, ?)", form_rows)
+    shard.executemany("INSERT INTO en_word_stage VALUES (?, ?, ?, ?, ?)", en_word_rows)
+    shard.executemany(
+        "INSERT INTO en_translation_stage VALUES (?, ?, ?, ?, ?, ?, ?)", en_translation_rows
+    )
     shard.executemany(
         "INSERT INTO key_stage VALUES (?, ?, ?, ?, ?)",
         [(seq, k, lemma, pos, kind) for k, lemma, pos, kind in keys],
     )
     unmapped = tuple((*k, counts[k], *examples[k]) for k in counts)
-    return ParseCounts(len(entry_rows), senses, bad_lines, unmapped, cov)
+    return ParseCounts(len(entry_rows), senses, len(en_word_rows), bad_lines, unmapped, cov)
 
 
 @dataclass(frozen=True)
