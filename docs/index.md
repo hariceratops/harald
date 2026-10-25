@@ -13,7 +13,7 @@ from reading, TV and conversation. It does two jobs:
 
 - **[Getting started](user/getting-started.md)** — install, build the lexicon,
   first lookup.
-- **[Lookup](user/lookup.md)** — what `harald lookup` shows and how it matches.
+- **[Lookup](user/lookup.md)** — what `harald-cli lookup` shows and how it matches.
 - **[Building the lexicon](user/build.md)** — sources, fetching, determinism.
 - **[Configuration](user/configuration.md)** — `config.toml` and file locations.
 - **[Data and licences](user/data.md)** — where the data comes from and what you
@@ -34,7 +34,7 @@ from reading, TV and conversation. It does two jobs:
 
 | File | Holds | Written by |
 |---|---|---|
-| `lexicon.db` | the dictionary: entries, translations, search keys | `harald build`; read-only otherwise |
+| `lexicon.db` | the dictionary: entries, translations, search keys | `harald-cli build`; read-only otherwise |
 | `learning.db` | cards, decks, review log (planned) | the study device only |
 
 A rebuild replaces `lexicon.db` and never touches `learning.db`. The lexicon is

@@ -2232,15 +2232,20 @@ whichever of issues 017 and 020 lands first creates it.
 
 ## 11. CLI (`harald/cli.py`, click)
 
+**Two entry points (revised 2026-10-25, a finding from reviewing 009).** `harald-cli`
+is the click CLI (`harald.cli:main`); `harald` is the TUI (`harald.tui.main:main`).
+A bare `harald-cli` prints usage. Everywhere else in this document, `harald <command>`
+for `lookup`, `phrase`, `build`, `info`, `check`, `backup` means `harald-cli <command>`.
+
 | Command | Purpose | Notes |
 |---|---|---|
-| `harald` | TUI | the default when there is no subcommand |
-| `harald lookup [--en] [--conj] WORD…` | one-shot lookup | words are joined with spaces (`ruft an`); exit 1 on no match |
-| `harald phrase TEXT…` | phrase search | required from the CLI by issue 018 |
-| `harald build [--fetch] [--force]` | desktop build | prints sources, coverage, the unmapped count, task timings and db size; exit 1 on any `BuildError` |
-| `harald check [--interactive]`; `harald check accept\|keep\|relink <card-id> …` | §8.4 | lists flagged cards (exit 1 if any); interactive line prompts; per-card scripted repairs; 40-column output |
-| `harald backup` | §10 | |
-| `harald info` | versions, paths, sources with date, licence and attribution, coverage | the spec's "Harald displays the sources…" |
+| `harald` | TUI | its own entry point, not a subcommand of `harald-cli` |
+| `harald-cli lookup [--en] [--conj] WORD…` | one-shot lookup | words are joined with spaces (`ruft an`); exit 1 on no match |
+| `harald-cli phrase TEXT…` | phrase search | required from the CLI by issue 018 |
+| `harald-cli build [--fetch] [--force]` | desktop build | prints sources, coverage, the unmapped count, task timings and db size; exit 1 on any `BuildError` |
+| `harald-cli check [--interactive]`; `harald check accept\|keep\|relink <card-id> …` | §8.4 | lists flagged cards (exit 1 if any); interactive line prompts; per-card scripted repairs; 40-column output |
+| `harald-cli backup` | §10 | |
+| `harald-cli info` | versions, paths, sources with date, licence and attribution, coverage | the spec's "Harald displays the sources…" |
 
 - Global options: `--config PATH`, or the `HARALD_CONFIG` environment
   variable (click's `envvar=`; an empty value counts as unset, as before).
@@ -2333,14 +2338,18 @@ revision chose argparse to keep click's import off the one-shot `lookup`
     build's `finally` blocks (§3.5).
   - `EOFError` becomes `Abort` too. The only v1 command that reads stdin is
     `check --interactive`, and it treats EOF as quit itself (issue 021).
-- **The TUI default (issue 009).** `harald` with no subcommand starts the
-  TUI.
-  - The group gets `invoke_without_command=True`.
-  - When `ctx.invoked_subcommand is None`, its callback loads the config,
-    opens both databases, prints any refusal, runs the app, and returns an
-    exit code.
-  - Until 009 lands, running `harald` with no subcommand is a usage error
-    (exit 2).
+- **The TUI entry point (issue 009, revised 2026-10-25).** `harald` is a
+  separate console script, `harald.tui.main:main`, with its own small click
+  command taking only `--config`/`HARALD_CONFIG`.
+  - It loads the config, checks the lexicon through `QueryLexiconInfo`,
+    prints any refusal (exit 2), and only then imports `harald.tui.app` and
+    runs `HaraldApp`. Textual is therefore never imported by `harald-cli`, or
+    by a refused start.
+  - The first cut of 009 made a bare `harald` start the TUI from inside the
+    click group (`invoke_without_command=True`, plus a `tui` subcommand). That
+    was reversed: one binary doing two jobs hid the CLI's usage text and tied
+    the CLI's import cost to Textual.
+  - `python -m harald` runs the CLI; `python -m harald.tui` runs the TUI.
 - **Output.** Plain lines go through `click.echo` (with `err=True` for
   stderr). Renderables go through a Rich `Console()` created in the
   command, as now, so Rich still sizes them from `COLUMNS` and the terminal.
@@ -2565,7 +2574,7 @@ expected, not a regression, and Syncthing has nothing to send.
 - **New, for the CLI** (in `tests/smoke/`):
   - `harald lookup --help` exits 0 with a config file that doesn't parse;
   - `HARALD_CONFIG` is honoured when `--config` is absent;
-  - no subcommand and an unknown subcommand both exit 2;
+  - an unknown subcommand exits 2, and a bare `harald-cli` prints usage rather than starting the TUI;
   - Ctrl-C exits 130. Test it in-process: monkeypatch `execute` on
     `harald.use_cases.build.BuildLexicon` to raise `KeyboardInterrupt`,
     then call `main(["--config", …, "build"])`. This guards the `Abort` →
@@ -4556,6 +4565,42 @@ edit them):
   portrait); 80 or more on desktop and SSH."
 - **Issue 001 line 11, issue 002 line 10, issue 009 line 9** say "80
   columns". Change them to "down to 40 columns", and in 009, "in portrait".
+
+---
+
+### 12.9 Deviations found while implementing 009 (2026-10-25)
+
+Where the code departs from the design above, and why. Reviewed by the user
+as one batch.
+
+- **Use cases take `Config`, not handles.** §11.2 has `cli` open `Lexicon`
+  first and pass it in. The existing use cases (`LookUpGerman(config)`) open
+  the lexicon inside `execute`, and the TUI follows them. The cost is one
+  lexicon open per search and per "Also" row. The preflight in §12's intro is
+  `QueryLexiconInfo(config)` rather than an opened handle.
+- **`load_headword` is new.** `lexicon.lookup.load_headword(lex, lemma, pos)
+  -> Option[Headword]`, with the use case `LoadHeadword(config)`; the
+  eager-load options are shared with `lookup_de` as `_FULL_LOAD`. It serves
+  the "Also" rows.
+- **No match column.** The §12.3 and §12.8 lookup wireframes show `~1` and
+  `3 entries` per result. `LookupResult` carries neither the fuzzy distance
+  nor the entry count, so rows read `lemma  pos  [form: X]`. Adding the marker
+  is a model change, deferred.
+- **Tab order.** `tab` is not rebound, so Textual's default focus order
+  applies; "tab or up from the first row returns to the Input" is not
+  implemented.
+- **Home** lists lookup (`l`), info (`i`) and quit (`q`) only. The due/new/
+  cards line and the other entries arrive with `learning.db`.
+- **Titles.** The app sets title `Lookup`, sub-title `Deutsch`, rather than
+  the wireframes' single `Lookup - Deutsch` string.
+- **Header** is hidden under the `-short` breakpoint (fewer than 16 rows);
+  the footer is always compact. Breakpoints: width 60 for `-narrow`/`-wide`,
+  height 16 for `-short`/`-normal`.
+- **`tests/unit/test_layering.py`** allows `harald.tui` as a front-end.
+- **Still unverified, by hand in Termux:** `$EDITOR` suspend and resume (no
+  screen calls an editor and `harald.editor` does not exist yet), startup
+  time, the row count with the keyboard up (§12.7 q4), and taps and swipes
+  as clicks and scroll. Results go in `dev/issues/009-…md`.
 
 ---
 

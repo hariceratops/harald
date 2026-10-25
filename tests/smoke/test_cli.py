@@ -42,14 +42,23 @@ def test_unknown_subcommand_exits_2(workspace: Workspace) -> None:
     assert _harald(workspace, "nonsense").returncode == 2
 
 
-@pytest.mark.parametrize("args", [(), ("tui",)])
-def test_tui_refuses_a_missing_lexicon_before_starting(
-    workspace: Workspace, args: tuple[str, ...]
-) -> None:
-    res = _harald(workspace, *args)
+def test_tui_refuses_a_missing_lexicon_before_starting(workspace: Workspace) -> None:
+    res = subprocess.run(
+        [sys.executable, "-m", "harald.tui", "--config", str(workspace.config_file)],
+        capture_output=True,
+        text=True,
+        env={"PATH": "", "HOME": str(workspace.root)},
+    )
 
     assert res.returncode == 2
-    assert "harald build" in res.stderr
+    assert "harald-cli build" in res.stderr
+
+
+def test_cli_without_a_command_shows_usage_and_not_the_tui(workspace: Workspace) -> None:
+    res = _harald(workspace)
+
+    assert "Usage:" in res.stdout + res.stderr
+    assert "harald-cli" in res.stdout + res.stderr
 
 
 def test_ctrl_c_exits_130(workspace: Workspace, monkeypatch: pytest.MonkeyPatch) -> None:

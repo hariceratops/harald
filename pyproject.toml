@@ -14,7 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-harald = "harald.cli:main"
+harald = "harald.tui.main:main"
+harald-cli = "harald.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.9.29,<0.10"]

@@ -1,15 +1,15 @@
 # Lookup
 
 ```sh
-harald lookup [--conj] WORD...
-harald lookup --en WORD...
+harald-cli lookup [--conj] WORD...
+harald-cli lookup --en WORD...
 ```
 
 Several words are joined into one query.
 
 ## German lookup
 
-`harald lookup WORD` matches in three ways:
+`harald-cli lookup WORD` matches in three ways:
 
 - **Exact and inflected forms.** "lief" finds *laufen*; the entry shows
   *läuft / lief / ist gelaufen*.
@@ -34,7 +34,7 @@ If nothing matches, the command prints `No match for '...'` and exits 1.
 
 ## English → German
 
-`harald lookup --en use` lists German words under each English sense:
+`harald-cli lookup --en use` lists German words under each English sense:
 
 ```text
 use (verb)

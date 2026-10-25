@@ -32,7 +32,7 @@ def test_lookup_without_a_build_refuses_with_exit_2(workspace: Workspace) -> Non
     res = _harald(workspace, "lookup", "Hund")
 
     assert res.returncode == 2
-    assert "harald build" in res.stderr
+    assert "harald-cli build" in res.stderr
 
 
 def test_lookup_no_match_exits_1(workspace: Workspace) -> None:

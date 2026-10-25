@@ -18,7 +18,7 @@ uv sync
 ## Build the lexicon
 
 ```sh
-uv run harald build --fetch
+uv run harald-cli build --fetch
 ```
 
 `--fetch` downloads the source files into the sources directory, then the
@@ -28,15 +28,15 @@ sources do nothing. See [Building the lexicon](build.md).
 ## Look something up
 
 ```sh
-uv run harald lookup lief          # inflected form → laufen
-uv run harald lookup --conj gehen  # every tense
-uv run harald lookup --en use      # English → German
+uv run harald-cli lookup lief          # inflected form → laufen
+uv run harald-cli lookup --conj gehen  # every tense
+uv run harald-cli lookup --en use      # English → German
 ```
 
 ## Browse in the TUI
 
 ```sh
-uv run harald        # same as: uv run harald tui
+uv run harald
 ```
 
 `l` opens lookup, `i` shows the sources, `q` quits. In a lookup, Enter
@@ -46,7 +46,7 @@ and `esc` goes back. The layout adapts down to 40 columns.
 ## See what you built from
 
 ```sh
-uv run harald info
+uv run harald-cli info
 ```
 
 Shows each source, its date, attribution and licence, and how complete the
@@ -59,5 +59,5 @@ translated example).
 |---|---|
 | 0 | success |
 | 1 | failed, or no match for the lookup |
-| 2 | refused: bad config, or `lexicon.db` missing or at a different schema version (run `harald build`) |
+| 2 | refused: bad config, or `lexicon.db` missing or at a different schema version (run `harald-cli build`) |
 | 130 | interrupted |

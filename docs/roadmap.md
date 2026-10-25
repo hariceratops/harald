@@ -28,7 +28,7 @@ Each item is a vertical slice; the numbers are the issue files in
 - [ ] 018 Tatoeba phrase search
 - [ ] 019 Save a phrase card
 - [ ] 020 Write your own phrase in `$EDITOR`
-- [ ] 021 `harald check` after a rebuild
+- [ ] 021 `harald-cli check` after a rebuild
 - [ ] 022 `learning.db` backup
 
 ## Later

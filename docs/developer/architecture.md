@@ -3,7 +3,7 @@
 ## Layers
 
 ```text
-cli.py, tui/                 front-ends
+cli.py, tui/                 front-ends (harald-cli, harald)
   └─ use_cases/              one class per action, with execute()
        └─ lexicon/, learning/, build/
             └─ infrastructure/, db/, core/
@@ -44,7 +44,7 @@ of Harald reads Harald's own schema.
 
 kaikki has no stable entry or sense ids, and (lemma, pos) is not unique (Bank,
 Band, See, Leiter). So a card will keep its own copy of what it teaches, and
-its link to the lexicon is re-resolved after a rebuild. `harald check`
+its link to the lexicon is re-resolved after a rebuild. `harald-cli check`
 (planned) will surface cards whose entry changed.
 
 ## Further reading

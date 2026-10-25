@@ -21,26 +21,26 @@ pushed one way to a phone (Termux) with Syncthing. Study happens on the phone.
 
 Working today:
 
-- `harald build` builds `lexicon.db` from locally kept sources: deterministic,
+- `harald-cli build` builds `lexicon.db` from locally kept sources: deterministic,
   atomic, parallel. `--fetch` downloads new sources.
-- `harald info` shows sources, dates, attribution and data coverage.
-- `harald lookup WORD` finds German words, including inflected forms
+- `harald-cli info` shows sources, dates, attribution and data coverage.
+- `harald-cli lookup WORD` finds German words, including inflected forms
   ("lief" finds *laufen*) and typos, with English glosses, German definitions,
   register labels, IPA and examples. `--conj` shows every tense.
-- `harald lookup --en WORD` lists German words under each English sense.
-- `harald` (or `harald tui`) opens a Textual TUI for German lookup and entry
+- `harald-cli lookup --en WORD` lists German words under each English sense.
+- `harald` opens a Textual TUI for German lookup and entry
   browsing, down to 40 columns. Not yet verified on the phone.
 
 Planned: TUI study screens, spaced-repetition cards (FSRS), Tatoeba phrase search,
-`harald check`, backups. See the [roadmap](#roadmap).
+`harald-cli check`, backups. See the [roadmap](#roadmap).
 
 ## Quick start
 
 ```sh
 uv sync
-uv run harald build --fetch   # downloads several GB of sources; first build takes a while
-uv run harald lookup lief
-uv run harald lookup --en use
+uv run harald-cli build --fetch   # downloads several GB of sources; first build takes a while
+uv run harald-cli lookup lief
+uv run harald-cli lookup --en use
 ```
 
 Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
@@ -90,7 +90,7 @@ Test layers, build internals and workflow are in the
 - [ ] Decks
 - [ ] Edit, suspend, delete cards
 - [ ] Tatoeba phrase search, saving phrases, writing your own in `$EDITOR`
-- [ ] `harald check` after a rebuild
+- [ ] `harald-cli check` after a rebuild
 - [ ] `learning.db` backup
 - [ ] Rust rewrite of hot paths (later)
 
