@@ -2,8 +2,8 @@ import json
 import sqlite3
 from dataclasses import dataclass, replace
 
+from harald.build import wiktextract_de, wiktextract_en
 from harald.build.records import EntryRecord
-from harald.build.wiktextract_en import parse_line
 from harald.lexicon.fuzzy import fuzzy_deletes
 from harald.text import fold
 
@@ -86,7 +86,7 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
         if not line:
             continue
         try:
-            record = parse_line(line)
+            record = wiktextract_en.parse_line(line)
         except json.JSONDecodeError:
             bad_lines += 1
             continue
@@ -129,6 +129,53 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
     )
     unmapped = tuple((*k, counts[k], *examples[k]) for k in counts)
     return ParseCounts(len(entry_rows), senses, bad_lines, unmapped, cov)
+
+
+@dataclass(frozen=True)
+class DeParseCounts:
+    entries: int
+    senses: int
+    examples: int
+    bad_lines: int
+
+
+def parse_de_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> DeParseCounts:
+    """Like parse_chunk, for the German edition; the offsets come from DeParseCounts."""
+    entry_rows: list[tuple[object, ...]] = []
+    sense_rows: list[tuple[object, ...]] = []
+    example_rows: list[tuple[object, ...]] = []
+    keys: dict[tuple[str, str, str], None] = {}
+    bad_lines = 0
+    for line in chunk.split(b"\n"):
+        if not line:
+            continue
+        try:
+            record = wiktextract_de.parse_line(line)
+        except json.JSONDecodeError:
+            bad_lines += 1
+            continue
+        if record is None:
+            continue
+        local = len(entry_rows) + 1
+        entry_rows.append((seq, local, record.lemma, record.pos, record.label))
+        for n, sense in enumerate(record.senses, 1):
+            sense_local = len(sense_rows) + 1
+            sense_rows.append(
+                (seq, sense_local, local, n, sense.sense_index, sense.gloss,
+                 json.dumps(sense.labels))
+            )  # fmt: skip
+            for k, ex in enumerate(sense.examples, 1):
+                example_rows.append((seq, len(example_rows) + 1, sense_local, k, ex.text, ex.ref))
+        keys[(fold(record.lemma), record.lemma, record.pos)] = None
+
+    shard.executemany("INSERT INTO de_entry_stage VALUES (?, ?, ?, ?, ?)", entry_rows)
+    shard.executemany("INSERT INTO de_sense_stage VALUES (?, ?, ?, ?, ?, ?, ?)", sense_rows)
+    shard.executemany("INSERT INTO de_example_stage VALUES (?, ?, ?, ?, ?, ?)", example_rows)
+    shard.executemany(
+        "INSERT INTO key_stage VALUES (?, ?, ?, ?, 0)",
+        [(seq, k, lemma, pos) for k, lemma, pos in keys],
+    )
+    return DeParseCounts(len(entry_rows), len(sense_rows), len(example_rows), bad_lines)
 
 
 def fuzzy_range(shard: sqlite3.Connection, keys: list[tuple[int, str]]) -> int:

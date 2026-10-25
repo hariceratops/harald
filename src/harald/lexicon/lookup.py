@@ -7,6 +7,8 @@ from harald.lexicon import model
 from harald.lexicon.db import Lexicon
 from harald.lexicon.fuzzy import fuzzy_deletes, max_distance, osa_within
 from harald.lexicon.models import (
+    DeEntry,
+    DeSense,
     Entry,
     FuzzyDelete,
     Headword,
@@ -73,6 +75,9 @@ def lookup_de(lex: Lexicon, query: str) -> model.LookupResult:
                     .selectinload(Entry.senses)
                     .selectinload(Sense.examples),
                     selectinload(Headword.entries).selectinload(Entry.verb_forms),
+                    selectinload(Headword.de_entries)
+                    .selectinload(DeEntry.senses)
+                    .selectinload(DeSense.examples),
                 )
             )
         }
@@ -88,6 +93,7 @@ def _to_model(hw: Headword, via_form: bool, typed: str) -> model.Headword:
         hw.lemma,
         hw.pos,
         tuple(_entry_model(e) for e in hw.entries),
+        tuple(_german_model(d) for d in hw.de_entries),
         via_form=typed if via_form else None,
     )
 
@@ -102,6 +108,21 @@ def _entry_model(e: Entry) -> model.Entry:
         e.separable_prefix,
         _principal_parts(slots) if slots else None,
         {s: f for s, f in slots.items() if not s.endswith(".sub")},
+    )
+
+
+def _german_model(d: DeEntry) -> model.GermanEntry:
+    return model.GermanEntry(
+        d.label,
+        tuple(
+            model.GermanSense(
+                s.sense_index,
+                s.gloss,
+                tuple(json.loads(s.labels)),
+                tuple(model.GermanExample(ex.text, ex.ref) for ex in s.examples),
+            )
+            for s in d.senses
+        ),
     )
 
 

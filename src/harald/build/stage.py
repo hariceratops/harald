@@ -16,6 +16,14 @@ CREATE TABLE example_stage (
 CREATE TABLE verb_form_stage (
     seq INTEGER, entry_local INTEGER, slot TEXT, ord INTEGER, form TEXT, variant TEXT
 );
+CREATE TABLE de_entry_stage (seq INTEGER, local_id INTEGER, lemma TEXT, pos TEXT, label TEXT);
+CREATE TABLE de_sense_stage (
+    seq INTEGER, local_id INTEGER, entry_local INTEGER, ord INTEGER, sense_index TEXT,
+    gloss TEXT, labels TEXT
+);
+CREATE TABLE de_example_stage (
+    seq INTEGER, local_id INTEGER, sense_local INTEGER, ord INTEGER, text TEXT, ref TEXT
+);
 CREATE TABLE key_stage (seq INTEGER, key TEXT, lemma TEXT, pos TEXT, kind INTEGER);
 CREATE TABLE fuzzy_stage (d TEXT, key_id INTEGER);
 """
@@ -23,8 +31,11 @@ CREATE TABLE fuzzy_stage (d TEXT, key_id INTEGER);
 # Staging-file-only tables, dropped by finalize so VACUUM INTO never sees them.
 WRITER_DDL = """
 CREATE TABLE offset_stage (seq INTEGER PRIMARY KEY, entry_off INTEGER, sense_off INTEGER);
+CREATE TABLE de_offset_stage (
+    seq INTEGER PRIMARY KEY, entry_off INTEGER, sense_off INTEGER, example_off INTEGER
+);
 CREATE TABLE hw_stage (lemma TEXT, pos TEXT);
 CREATE TABLE keyall_stage (key TEXT, headword_id INTEGER, kind INTEGER);
 """
 
-WRITER_TABLES = ("offset_stage", "hw_stage", "keyall_stage")
+WRITER_TABLES = ("offset_stage", "de_offset_stage", "hw_stage", "keyall_stage")

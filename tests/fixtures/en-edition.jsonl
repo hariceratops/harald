@@ -3,6 +3,7 @@
 {"word": "Hunde", "lang_code": "de", "pos": "noun", "senses": [{"glosses": ["inflection of Hund"], "tags": ["form-of"], "form_of": [{"word": "Hund"}]}]}
 {"word": "Band", "lang_code": "de", "pos": "noun", "senses": [{"glosses": ["ribbon, tape"]}], "forms": [{"form": "Bänder", "tags": ["plural"]}], "head_templates": [{"name": "de-noun", "expansion": "Band n (strong, genitive Bandes or Bands, plural Bänder)"}]}
 {"word": "Band", "lang_code": "de", "pos": "noun", "senses": [{"glosses": ["volume (book)"], "tags": ["masculine"]}], "forms": [{"form": "Bände", "tags": ["plural"]}]}
+{"word": "Band", "lang_code": "de", "pos": "noun", "senses": [{"glosses": ["modern music band"], "tags": ["feminine"]}], "forms": [{"form": "Bands", "tags": ["plural"]}]}
 {"word": "Berlin", "lang_code": "de", "pos": "name", "senses": [{"glosses": ["Berlin (the capital city of Germany)"], "tags": ["neuter"]}]}
 {"word": "Aufenthaltsgenehmigung", "lang_code": "de", "pos": "noun", "senses": [{"glosses": ["A very long gloss word-wrapping check: residence permit issued by the authorities"], "tags": ["feminine"]}], "forms": [{"form": "Aufenthaltsgenehmigungen", "tags": ["plural"]}]}
 {"word": "ä", "lang_code": "de", "pos": "character", "senses": [{"glosses": ["letter"]}]}

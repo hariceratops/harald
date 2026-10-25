@@ -1,10 +1,12 @@
-from rich.console import Console, ConsoleOptions, Group, RenderResult
+from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
 from rich.table import Table
 from rich.text import Text
 
 from harald.lexicon.model import (
     Entry,
     Example,
+    GermanEntry,
+    GermanExample,
     Headword,
     LexiconInfo,
     LookupResult,
@@ -67,6 +69,46 @@ def _sense_body(sense: Sense) -> Group:
     return Group(gloss, *(_example_line(ex) for ex in sense.examples))
 
 
+def _german_definitions(entries: tuple[GermanEntry, ...]) -> Group:
+    parts: list[RenderableType] = [Text("German definitions (de.wiktionary)", style="bold")]
+    for entry in entries:
+        parts.append(Text(entry.label, style="bold"))
+        grid = Table.grid(padding=(0, 1))
+        grid.add_column(justify="right", no_wrap=True)
+        grid.add_column(ratio=1, overflow="fold")
+        for sense in entry.senses:
+            gloss = Text()
+            if sense.labels:
+                gloss.append(f"[{', '.join(sense.labels)}] ", style="italic")
+            gloss.append(sense.gloss)
+            grid.add_row(f"[{sense.index}]" if sense.index else "", gloss)
+        parts.append(grid)
+    return Group(*parts)
+
+
+def _german_example_line(index: str | None, ex: GermanExample) -> tuple[str, Text]:
+    line = Text(ex.text)
+    if ex.ref:
+        line.append(f"  {ex.ref}", style="dim")
+    return (f"[{index}]" if index else ""), line
+
+
+def _german_examples(entries: tuple[GermanEntry, ...]) -> Group | None:
+    parts: list[RenderableType] = []
+    for entry in entries:
+        grid = Table.grid(padding=(0, 1))
+        grid.add_column(justify="right", no_wrap=True)
+        grid.add_column(ratio=1, overflow="fold")
+        for sense in entry.senses:
+            for ex in sense.examples:
+                grid.add_row(*_german_example_line(sense.index, ex))
+        if grid.row_count:
+            parts += [Text(entry.label, style="bold"), grid]
+    if not parts:
+        return None
+    return Group(Text("German examples (untranslated)", style="bold"), *parts)
+
+
 class RenderConjugation:
     def __init__(self, entry: Entry, full: bool) -> None:
         self.entry = entry
@@ -107,6 +149,8 @@ class RenderHeadword:
         label = _pos_label(self.hw.pos)
         if self.hw.via_form:
             yield Text(f"{self.hw.via_form} → {self.hw.lemma} ({label})", style="dim")
+        if not self.hw.entries:
+            yield Text.assemble((self.hw.lemma, "bold"), f"  {label}")
         for entry in self.hw.entries:
             title = Text(_title(self.hw, entry), style="bold")
             if narrow:
@@ -137,6 +181,12 @@ class RenderHeadword:
             if entry.conjugation:
                 yield RenderConjugation(entry, self.full_conjugation)
             yield Text("")
+        if self.hw.german:
+            yield _german_definitions(self.hw.german)
+            yield Text("")
+            if (examples := _german_examples(self.hw.german)) is not None:
+                yield examples
+                yield Text("")
 
 
 class RenderLookup:

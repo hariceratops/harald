@@ -15,7 +15,7 @@ from harald.build.errors import (
 )
 from harald.build.publish import build_lock
 from harald.build.run import build
-from harald.build.sources import EN_FILENAME
+from harald.build.sources import DE_FILENAME, EN_FILENAME
 from harald.config import Config
 from tests.conftest import Workspace
 
@@ -32,7 +32,7 @@ def test_build_writes_lexicon_from_local_source(workspace: Workspace) -> None:
     res = build(workspace.config)
 
     assert res.is_ok
-    assert res.unwrap().entries == 8
+    assert res.unwrap().entries == 9
     assert res.unwrap().bad_lines == 1
     assert workspace.config.lexicon.exists()
 
@@ -62,7 +62,7 @@ def test_gender_falls_back_to_head_template(built: Workspace) -> None:
         "WHERE h.lemma = 'Band' ORDER BY e.ord",
     )
 
-    assert rows == [("n", "Bänder"), ("m", "Bände")]
+    assert rows == [("n", "Bänder"), ("m", "Bände"), ("f", "Bands")]
 
 
 def test_form_of_character_and_non_german_entries_are_skipped(built: Workspace) -> None:
@@ -76,6 +76,7 @@ def test_form_of_character_and_non_german_entries_are_skipped(built: Workspace) 
         "laufen",
         "anrufen",
         "schnell",
+        "Fernweh",
     }
 
 
@@ -278,6 +279,7 @@ def test_build_reports_per_node_timings(workspace: Workspace) -> None:
 
     assert [t.node for t in report.timings] == [
         "en.read+parse",
+        "de.read+parse",
         "lexicon.merge",
         "keys.merge",
         "fuzzy",
@@ -300,11 +302,17 @@ def test_lexicon_records_sources_dates_and_attribution(built: Workspace) -> None
     assert sources[0][2] == "Tatoeba contributors (tatoeba.org)"
     assert files == [
         (
+            DE_FILENAME,
+            "wiktionary-de",
+            "unknown",
+            hashlib.sha256((built.config.sources_dir / DE_FILENAME).read_bytes()).hexdigest(),
+        ),
+        (
             EN_FILENAME,
             "wiktionary-en",
             "unknown",
             hashlib.sha256((built.config.sources_dir / EN_FILENAME).read_bytes()).hexdigest(),
-        )
+        ),
     ]
 
 
@@ -316,11 +324,12 @@ def test_build_records_coverage(built: Workspace) -> None:
         )
     )
 
-    # nouns: Hund, Band x2, Aufenthaltsgenehmigung; Berlin is a proper noun and left out
-    assert stats["coverage.noun_gender"] == (4, 4)
+    # nouns: Hund, Band x3, Aufenthaltsgenehmigung; Berlin is a proper noun and left out
+    assert stats["coverage.noun_gender"] == (5, 5)
     assert stats["coverage.stammformen"] == (2, 2)
     assert stats["coverage.translated_example"][0] == 1
     assert stats["bad_lines.wiktionary-en"] == (1, None)
+    assert stats["bad_lines.wiktionary-de"] == (1, None)
 
 
 def test_fetch_failure_aborts_the_build_and_keeps_the_lexicon(
@@ -338,3 +347,71 @@ def test_fetch_failure_aborts_the_build_and_keeps_the_lexicon(
     assert isinstance(res.unwrap_err(), FetchFailed)
     assert _stat_and_hash(built.config.lexicon) == before
     assert list(built.config.staging_dir.glob("*.db")) == []
+
+
+def test_german_edition_rows_are_related_by_word_and_pos(built: Workspace) -> None:
+    db = built.config.lexicon
+
+    entries = _rows(
+        db,
+        "SELECT d.label FROM de_entry d JOIN headword h ON h.id = d.headword_id "
+        "WHERE h.lemma = 'Band' AND h.pos = 'noun' ORDER BY d.ord",
+    )
+    senses = _rows(
+        db,
+        "SELECT s.sense_index, s.gloss, s.labels FROM de_sense s JOIN de_entry d "
+        "ON d.id = s.de_entry_id WHERE d.id = 1 ORDER BY s.ord",
+    )
+
+    assert [r[0] for r in entries] == ["das Band", "das Band", "der Band", "die Band"]
+    assert senses == [
+        ("1", "dasjenige, was verbindet oder verknüpft", "[]"),
+        (None, "Plural »Bänder«:", "[]"),
+        ("1a", "schmales Stück Stoff", '["colloquial"]'),
+    ]
+    assert _rows(db, "SELECT gloss FROM de_sense WHERE gloss LIKE 'Fessel%'") == [("Fessel Kette",)]
+
+
+def test_german_only_word_gets_a_headword_and_a_search_key(built: Workspace) -> None:
+    db = built.config.lexicon
+
+    assert _rows(
+        db,
+        "SELECT count(*) FROM entry e JOIN headword h ON h.id = e.headword_id "
+        "WHERE h.lemma = 'Fernweh'",
+    ) == [(0,)]
+    assert _rows(db, "SELECT count(*) FROM search_key WHERE key = 'fernweh'") == [(1,)]
+
+
+def test_form_of_german_entries_are_skipped(built: Workspace) -> None:
+    assert _rows(built.config.lexicon, "SELECT count(*) FROM de_entry") == [(5,)]
+
+
+def test_richness_counts_senses_of_both_editions_without_headings(built: Workspace) -> None:
+    # English: 1 + 1 + 1; German: 2 + 1 + 2 + 1 senses, one heading left out
+    assert _rows(built.config.lexicon, "SELECT richness FROM headword WHERE lemma = 'Band'") == [
+        (9,)
+    ]
+
+
+def test_german_example_ids_follow_source_order_whatever_the_chunking(
+    workspace: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("harald.build.run.CHUNK_BYTES", 1)
+    config = dataclasses.replace(workspace.config, build_workers=2)
+    assert build(config).is_ok
+
+    rows = _rows(config.lexicon, "SELECT id, text FROM de_example ORDER BY id")
+
+    assert [r[1] for r in rows][:2] == [
+        "Das Band der Freundschaft hielt jahrelang.",
+        "Sie trug ein Band im Haar.",
+    ]
+    assert [r[0] for r in rows] == list(range(1, len(rows) + 1))
+
+
+def test_build_without_the_german_edition_still_publishes(workspace: Workspace) -> None:
+    (workspace.config.sources_dir / DE_FILENAME).unlink()
+
+    assert build(workspace.config).is_ok
+    assert _rows(workspace.config.lexicon, "SELECT count(*) FROM de_entry") == [(0,)]

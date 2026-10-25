@@ -2,7 +2,7 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from harald.build.jobs import CoverageCounts, ParseCounts
+from harald.build.jobs import CoverageCounts, DeParseCounts, ParseCounts
 from harald.build.sources import SOURCES
 from harald.build.stage import WRITER_DDL, WRITER_TABLES
 from harald.db.connection import make_engine
@@ -42,7 +42,10 @@ def _merge_shards(
 
 
 def merge_lexicon(
-    con: sqlite3.Connection, shards: Sequence[str], parsed: dict[int, ParseCounts]
+    con: sqlite3.Connection,
+    shards: Sequence[str],
+    parsed: dict[int, ParseCounts],
+    de_parsed: dict[int, DeParseCounts],
 ) -> None:
     """Ids come from rules: chunk offsets in seq order, sorted (lemma, pos) for headwords."""
     entry_off = sense_off = 0
@@ -52,10 +55,19 @@ def merge_lexicon(
         entry_off += parsed[seq].entries
         sense_off += parsed[seq].senses
     con.executemany("INSERT INTO offset_stage VALUES (?, ?, ?)", offsets)
+    de_entry_off = de_sense_off = de_example_off = 0
+    de_offsets = []
+    for seq in sorted(de_parsed):
+        de_offsets.append((seq, de_entry_off, de_sense_off, de_example_off))
+        de_entry_off += de_parsed[seq].entries
+        de_sense_off += de_parsed[seq].senses
+        de_example_off += de_parsed[seq].examples
+    con.executemany("INSERT INTO de_offset_stage VALUES (?, ?, ?, ?)", de_offsets)
 
     def collect_headwords(aliases: list[str]) -> None:
         for a in aliases:
             con.execute(f"INSERT INTO hw_stage SELECT DISTINCT lemma, pos FROM {a}.entry_stage")
+            con.execute(f"INSERT INTO hw_stage SELECT DISTINCT lemma, pos FROM {a}.de_entry_stage")
 
     _merge_shards(con, shards, collect_headwords)
     con.execute("BEGIN")
@@ -94,6 +106,23 @@ def merge_lexicon(
                 "SELECT o.entry_off + v.entry_local, v.slot, v.ord, v.form, v.variant "
                 f"FROM {a}.verb_form_stage v JOIN offset_stage o ON o.seq = v.seq"
             )
+            con.execute(
+                "INSERT INTO de_entry (id, headword_id, ord, label) "
+                "SELECT o.entry_off + e.local_id, h.id, 0, e.label "
+                f"FROM {a}.de_entry_stage e JOIN de_offset_stage o ON o.seq = e.seq "
+                "JOIN headword h ON h.lemma = e.lemma AND h.pos = e.pos"
+            )
+            con.execute(
+                "INSERT INTO de_sense (id, de_entry_id, ord, sense_index, gloss, labels) "
+                "SELECT o.sense_off + s.local_id, o.entry_off + s.entry_local, s.ord, "
+                "s.sense_index, s.gloss, s.labels "
+                f"FROM {a}.de_sense_stage s JOIN de_offset_stage o ON o.seq = s.seq"
+            )
+            con.execute(
+                "INSERT INTO de_example (id, de_sense_id, ord, text, ref) "
+                "SELECT o.example_off + x.local_id, o.sense_off + x.sense_local, x.ord, x.text, "
+                f"x.ref FROM {a}.de_example_stage x JOIN de_offset_stage o ON o.seq = x.seq"
+            )
 
     _merge_shards(con, shards, merge)
     con.execute("BEGIN")
@@ -102,9 +131,16 @@ def merge_lexicon(
         "(PARTITION BY headword_id ORDER BY id) AS n FROM entry) r WHERE entry.id = r.id"
     )
     con.execute(
-        "UPDATE headword SET richness = r.n FROM (SELECT e.headword_id AS hw, count(*) AS n "
-        "FROM sense s JOIN entry e ON e.id = s.entry_id GROUP BY e.headword_id) r "
-        "WHERE headword.id = r.hw"
+        "UPDATE de_entry SET ord = r.n FROM (SELECT id, row_number() OVER "
+        "(PARTITION BY headword_id ORDER BY id) AS n FROM de_entry) r WHERE de_entry.id = r.id"
+    )
+    # senses across both editions; German headings are not senses
+    con.execute(
+        "UPDATE headword SET richness = "
+        "(SELECT count(*) FROM sense s JOIN entry e ON e.id = s.entry_id "
+        "WHERE e.headword_id = headword.id) + "
+        "(SELECT count(*) FROM de_sense s JOIN de_entry e ON e.id = s.de_entry_id "
+        "WHERE e.headword_id = headword.id AND s.sense_index IS NOT NULL)"
     )
     con.execute("COMMIT")
 
@@ -145,6 +181,7 @@ def merge_fuzzy(con: sqlite3.Connection, shards: Sequence[str]) -> None:
 def finalize(
     con: sqlite3.Connection,
     parsed: dict[int, ParseCounts],
+    de_parsed: dict[int, DeParseCounts] | None,
     source_files: Sequence[tuple[str, str, str, str]],
 ) -> None:
     """Writes the bookkeeping tables and drops the stage tables.
@@ -175,6 +212,11 @@ def finalize(
             ("coverage.translated_example", cov.senses_translated, cov.senses),
         ],
     )
+    if de_parsed is not None:
+        con.execute(
+            "INSERT INTO build_stat VALUES ('bad_lines.wiktionary-de', ?, NULL)",
+            (sum(p.bad_lines for p in de_parsed.values()),),
+        )
     con.executemany(
         "INSERT INTO unmapped_tagset VALUES (?, ?, ?, ?, ?)",
         [(*k, counts[k], *examples[k]) for k in sorted(counts)],

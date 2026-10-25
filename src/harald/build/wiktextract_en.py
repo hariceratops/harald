@@ -6,10 +6,10 @@ from harald.build.forms import parse_forms
 from harald.build.records import EntryRecord, ExampleRecord, FormOfRecord, SenseRecord
 
 SKIPPED_POS = {"character", "symbol", "punct"}
-_GENDER_TAGS = {"masculine": "m", "feminine": "f", "neuter": "n"}
+GENDER_TAGS = {"masculine": "m", "feminine": "f", "neuter": "n"}
 # the importer maps wiktextract tags to Harald's label vocabulary, so the runtime never sees
 # wiktextract's; a tag outside this set is not shown
-_LABELS = frozenset({
+LABELS = frozenset({
     "colloquial", "informal", "formal", "slang", "vulgar", "derogatory", "offensive",
     "humorous", "euphemistic", "archaic", "obsolete", "dated", "rare", "poetic", "literary",
     "figuratively", "idiomatic", "regional", "dialectal", "nonstandard", "childish",
@@ -54,7 +54,7 @@ def parse_line(line: bytes) -> EntryRecord | FormOfRecord | None:
 
 
 def _sense(sense: dict[str, Any]) -> SenseRecord:
-    labels = tuple(dict.fromkeys(t for t in sense.get("tags", ()) if t in _LABELS))
+    labels = tuple(dict.fromkeys(t for t in sense.get("tags", ()) if t in LABELS))
     examples = tuple(
         ExampleRecord(
             ex["text"],
@@ -98,7 +98,7 @@ def _is_form_of(sense: dict[str, Any]) -> bool:
 
 
 def _gender(rec: dict[str, Any], senses: list[dict[str, Any]]) -> str:
-    found = {_GENDER_TAGS[t] for s in senses for t in s.get("tags", ()) if t in _GENDER_TAGS}
+    found = {GENDER_TAGS[t] for s in senses for t in s.get("tags", ()) if t in GENDER_TAGS}
     if not found:
         templates = rec.get("head_templates") or []
         expansion: str = templates[0].get("expansion", "") if templates else ""

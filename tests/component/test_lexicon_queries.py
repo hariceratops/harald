@@ -18,12 +18,47 @@ def test_lookup_hund_returns_gender_plural_and_senses(built: Workspace) -> None:
     assert hw.entries[0].senses[0].gloss == "dog (Canis familiaris)"
 
 
-def test_band_groups_both_entries_under_one_headword(built: Workspace) -> None:
+def test_band_groups_all_entries_under_one_headword(built: Workspace) -> None:
     lex = open_lexicon(built.config.lexicon).unwrap()
 
     (hw,) = lookup_de(lex, "Band").shown
 
-    assert [e.gender for e in hw.entries] == ["n", "m"]
+    assert [e.gender for e in hw.entries] == ["n", "m", "f"]
+
+
+def test_band_has_one_german_block_with_its_own_numbering(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    (hw,) = lookup_de(lex, "Band").shown
+
+    assert [g.label for g in hw.german] == ["das Band", "das Band", "der Band", "die Band"]
+    first = hw.german[0].senses
+    assert [(s.index, s.gloss, s.labels) for s in first] == [
+        ("1", "dasjenige, was verbindet oder verknüpft", ()),
+        (None, "Plural »Bänder«:", ()),
+        ("1a", "schmales Stück Stoff", ("colloquial",)),
+    ]
+    assert [(e.text, e.ref) for e in first[0].examples] == [
+        ("Das Band der Freundschaft hielt jahrelang.", "Beispielquelle 1")
+    ]
+    assert [e.text for e in first[2].examples] == ["Sie trug ein Band im Haar.", "Das Band riss."]
+
+
+def test_german_only_headword_has_no_english_entries(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    (hw,) = lookup_de(lex, "Fernweh").shown
+
+    assert hw.entries == ()
+    assert [g.label for g in hw.german] == ["das Fernweh"]
+
+
+def test_headword_without_german_edition_data_has_no_german_block(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    (hw,) = lookup_de(lex, "Hund").shown
+
+    assert hw.german == ()
 
 
 def test_no_match_is_empty(built: Workspace) -> None:

@@ -17,7 +17,7 @@ from harald.build.errors import (
 )
 from harald.build.fetch import UNKNOWN_DATE, FetchOutcome, fetch_all, source_date
 from harald.build.graph import JobOutput, Jobs
-from harald.build.jobs import ParseCounts, fuzzy_range, parse_chunk
+from harald.build.jobs import DeParseCounts, ParseCounts, fuzzy_range, parse_chunk, parse_de_chunk
 from harald.build.publish import (
     build_lock,
     fingerprint,
@@ -26,7 +26,7 @@ from harald.build.publish import (
     record_build,
     sha256_file,
 )
-from harald.build.sources import EN_FILENAME, SOURCE_FILES
+from harald.build.sources import DE_FILENAME, EN_FILENAME, SOURCE_FILES
 from harald.build.stage import SHARD_DDL
 from harald.build.writer import (
     finalize,
@@ -164,10 +164,27 @@ def _run_graph(
         entries = sum(p.entries for p in parsed.values())
         if entries < config.build_min_entries:
             return Result.err(TooFewEntries(entries, config.build_min_entries))
-        parse_shards = sorted({o.shard for o in outputs.values()})
+        shards = {o.shard for o in outputs.values()}
+
+        # the German edition is optional: a lexicon built without it has no German blocks
+        de_source = config.sources_dir / DE_FILENAME
+        de_parsed: dict[int, DeParseCounts] | None = None
+        if de_source.exists():
+            t = time.monotonic()
+            with closing(reader.read_german_chunks(de_source, CHUNK_BYTES)) as chunks:
+                de_out = jobs.run(
+                    "de.parse", parse_de_chunk, ((seq, (seq, chunk)) for seq, chunk in chunks)
+                )
+            if de_out.is_err:
+                return Result.err(de_out.unwrap_err())
+            de_outputs = de_out.unwrap()
+            de_parsed = {seq: o.value for seq, o in de_outputs.items()}
+            timings.append(Timing("de.read+parse", time.monotonic() - t, _cpu(de_outputs.values())))
+            shards |= {o.shard for o in de_outputs.values()}
+        parse_shards = sorted(shards)
 
         t = time.monotonic()
-        merge_lexicon(con, parse_shards, parsed)
+        merge_lexicon(con, parse_shards, parsed, de_parsed or {})
         timings.append(Timing("lexicon.merge", time.monotonic() - t))
         t = time.monotonic()
         merge_keys(con, parse_shards)
@@ -185,7 +202,7 @@ def _run_graph(
         timings.append(Timing("fuzzy.merge", time.monotonic() - t))
 
         t = time.monotonic()
-        finalize(con, parsed, source_files)
+        finalize(con, parsed, de_parsed, source_files)
         con.close()
         _vacuum_into(staging, final)
         timings.append(Timing("finalize", time.monotonic() - t))

@@ -38,10 +38,32 @@ class Entry:
 
 
 @dataclass(frozen=True)
+class GermanExample:
+    text: str
+    ref: str | None
+
+
+@dataclass(frozen=True)
+class GermanSense:
+    # the German edition's own numbering ("1", "1a"); None for a heading line
+    index: str | None
+    gloss: str
+    labels: tuple[str, ...]
+    examples: tuple[GermanExample, ...]
+
+
+@dataclass(frozen=True)
+class GermanEntry:
+    label: str
+    senses: tuple[GermanSense, ...]
+
+
+@dataclass(frozen=True)
 class Headword:
     lemma: str
     pos: str
     entries: tuple[Entry, ...]
+    german: tuple[GermanEntry, ...] = ()
     via_form: str | None = None
 
 

@@ -51,3 +51,26 @@ class FormOfRecord:
     form: str
     lemma: str
     pos: str
+
+
+@dataclass(frozen=True)
+class DeExampleRecord:
+    text: str
+    ref: str | None
+
+
+@dataclass(frozen=True)
+class DeSenseRecord:
+    # None marks a heading line such as "Plural »Bänder«:"
+    sense_index: str | None
+    gloss: str
+    labels: tuple[str, ...]
+    examples: tuple[DeExampleRecord, ...]
+
+
+@dataclass(frozen=True)
+class DeEntryRecord:
+    lemma: str
+    pos: str
+    label: str
+    senses: tuple[DeSenseRecord, ...]
