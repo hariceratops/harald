@@ -68,3 +68,12 @@ def test_ctrl_c_exits_130(workspace: Workspace, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(BuildLexicon, "execute", interrupted)
 
     assert main(["--config", str(workspace.config_file), "build"]) == 130
+
+
+def test_build_without_sources_points_at_fetch(workspace: Workspace) -> None:
+    (workspace.config.sources_dir / "raw-wiktextract-data.jsonl.gz").unlink()
+
+    res = _harald(workspace, "build")
+
+    assert res.returncode == 1
+    assert "harald-cli build --fetch" in res.stderr
