@@ -3,11 +3,12 @@ from typing import Any
 
 from harald.build.records import DeEntryRecord, DeExampleRecord, DeSenseRecord
 from harald.build.wiktextract_en import GENDER_TAGS, LABELS, SKIPPED_POS
+from harald.core.option import Option
 
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
 
 
-def parse_line(line: bytes) -> DeEntryRecord | None:
+def parse_line(line: bytes) -> Option[DeEntryRecord]:
     """Raises json.JSONDecodeError on a bad line; the caller counts those.
 
     Only definitions and examples are read from the German edition; the one other field is
@@ -15,14 +16,14 @@ def parse_line(line: bytes) -> DeEntryRecord | None:
     """
     rec = json.loads(line)
     if rec.get("lang_code") != "de" or rec.get("pos") in SKIPPED_POS:
-        return None
+        return Option.none()
     raw_senses = rec.get("senses") or []
     if not raw_senses or all(_is_form_of(s) for s in raw_senses):
-        return None
+        return Option.none()
     senses = tuple(_sense(s) for s in raw_senses if s.get("glosses"))
     if not senses:
-        return None
-    return DeEntryRecord(rec["word"], rec["pos"], _label(rec), senses)
+        return Option.none()
+    return Option.some(DeEntryRecord(rec["word"], rec["pos"], _label(rec), senses))
 
 
 def _is_form_of(sense: dict[str, Any]) -> bool:

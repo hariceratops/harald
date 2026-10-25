@@ -3,6 +3,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from harald.core.option import Option
 from harald.lexicon import model
 from harald.lexicon.db import Lexicon
 from harald.lexicon.fuzzy import fuzzy_deletes, max_distance, osa_within
@@ -36,9 +37,9 @@ def lookup_de(lex: Lexicon, query: str) -> model.LookupResult:
             .distinct()
         ).all()
         distance = {
-            key_id: d
+            key_id: d.unwrap()
             for key_id, cand in candidates
-            if (d := osa_within(key, cand, limit)) is not None
+            if (d := osa_within(key, cand, limit)).is_some
         }
         if not distance:
             return model.LookupResult(query, (), ())
@@ -149,13 +150,13 @@ def _display_forms(rows: list[VerbForm]) -> dict[str, tuple[str, ...]]:
 
 
 def _principal_parts(slots: dict[str, tuple[str, ...]]) -> model.PrincipalParts:
-    def first(*names: str) -> str | None:
-        return next((slots[n][0] for n in names if n in slots), None)
+    def first(*names: str) -> Option[str]:
+        return Option.from_optional(next((slots[n][0] for n in names if n in slots), None))
 
     aux = slots.get("pp.aux") or slots.get("aux", ())
     return model.PrincipalParts(
-        first("pp.pres3sg", "ind.pres.3sg"),
-        first("pp.pret", "ind.pret.3sg"),
-        first("pp.part2", "part2"),
+        first("pp.pres3sg", "ind.pres.3sg").to_optional(),
+        first("pp.pret", "ind.pret.3sg").to_optional(),
+        first("pp.part2", "part2").to_optional(),
         aux,
     )

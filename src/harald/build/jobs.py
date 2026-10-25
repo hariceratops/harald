@@ -86,12 +86,13 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
         if not line:
             continue
         try:
-            record = wiktextract_en.parse_line(line)
+            parsed = wiktextract_en.parse_line(line)
         except json.JSONDecodeError:
             bad_lines += 1
             continue
-        if record is None:
+        if parsed.is_none:
             continue
+        record = parsed.unwrap()
         if not isinstance(record, EntryRecord):
             keys[(fold(record.form), record.lemma, record.pos, 1)] = None
             continue
@@ -150,12 +151,13 @@ def parse_de_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> DeParse
         if not line:
             continue
         try:
-            record = wiktextract_de.parse_line(line)
+            parsed = wiktextract_de.parse_line(line)
         except json.JSONDecodeError:
             bad_lines += 1
             continue
-        if record is None:
+        if parsed.is_none:
             continue
+        record = parsed.unwrap()
         local = len(entry_rows) + 1
         entry_rows.append((seq, local, record.lemma, record.pos, record.label))
         for n, sense in enumerate(record.senses, 1):

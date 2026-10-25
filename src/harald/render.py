@@ -2,6 +2,7 @@ from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderR
 from rich.table import Table
 from rich.text import Text
 
+from harald.core.option import Option
 from harald.lexicon.model import (
     Entry,
     Example,
@@ -93,7 +94,7 @@ def _german_example_line(index: str | None, ex: GermanExample) -> tuple[str, Tex
     return (f"[{index}]" if index else ""), line
 
 
-def _german_examples(entries: tuple[GermanEntry, ...]) -> Group | None:
+def _german_examples(entries: tuple[GermanEntry, ...]) -> Option[Group]:
     parts: list[RenderableType] = []
     for entry in entries:
         grid = Table.grid(padding=(0, 1))
@@ -105,8 +106,8 @@ def _german_examples(entries: tuple[GermanEntry, ...]) -> Group | None:
         if grid.row_count:
             parts += [Text(entry.label, style="bold"), grid]
     if not parts:
-        return None
-    return Group(Text("German examples (untranslated)", style="bold"), *parts)
+        return Option.none()
+    return Option.some(Group(Text("German examples (untranslated)", style="bold"), *parts))
 
 
 class RenderConjugation:
@@ -184,8 +185,8 @@ class RenderHeadword:
         if self.hw.german:
             yield _german_definitions(self.hw.german)
             yield Text("")
-            if (examples := _german_examples(self.hw.german)) is not None:
-                yield examples
+            if (examples := _german_examples(self.hw.german)).is_some:
+                yield examples.unwrap()
                 yield Text("")
 
 

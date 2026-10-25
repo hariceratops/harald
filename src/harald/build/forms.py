@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from harald.build.records import UnmappedRow, VerbFormRecord
+from harald.core.option import Option
 
 BOOKKEEPING = frozenset({"table-tags", "inflection-template", "class"})
 DERIVATIONAL = frozenset({"diminutive", "alternative", "abbreviation", "canonical"})
@@ -94,11 +95,11 @@ def parse_forms(word: str, pos: str, rows: Iterable[dict[str, Any]]) -> ParsedFo
         variant = ",".join(sorted(tags & VARIANT_MARKERS))
         core = tags - VARIANT_MARKERS
         errored = any(t.startswith("error-") for t in tags)
-        slot = None
+        slot: Option[str] = Option.none()
         if pos == "verb" and not errored and core <= KNOWN_TAGS:
             slot = _head_slot(core) if "source" not in row else _table_slot(core)
-        if slot is not None:
-            record = VerbFormRecord(slot, form, variant)
+        if slot.is_some:
+            record = VerbFormRecord(slot.unwrap(), form, variant)
             if record not in verb_forms:
                 verb_forms.append(record)
         elif errored or not tags <= KNOWN_TAGS or pos == "verb":
@@ -113,24 +114,24 @@ def _indexable(form: str, tags: frozenset[str]) -> bool:
     return "multiword-construction" not in tags and "infinitive-zu" not in tags
 
 
-def _head_slot(core: frozenset[str]) -> str | None:
-    return _HEAD_SLOTS.get(core)
+def _head_slot(core: frozenset[str]) -> Option[str]:
+    return Option.from_optional(_HEAD_SLOTS.get(core))
 
 
-def _table_slot(core: frozenset[str]) -> str | None:
+def _table_slot(core: frozenset[str]) -> Option[str]:
     sub = "subordinate-clause" in core
     rest = core - {"subordinate-clause", "multiword-construction", "future"}
     persons = rest & _PERSONS.keys()
     numbers = rest & _NUMBERS.keys()
     structure = frozenset(rest - _PERSONS.keys() - _NUMBERS.keys())
     if not persons and not numbers:
-        return _NONFINITE.get(structure)
+        return Option.from_optional(_NONFINITE.get(structure))
     if len(persons) != 1 or len(numbers) != 1:
-        return None
+        return Option.none()
     stem = _TENSE_STEMS.get(structure)
     if stem is None:
-        return None
+        return Option.none()
     person = _PERSONS[next(iter(persons))] + _NUMBERS[next(iter(numbers))]
     if stem == "imp":
-        return f"imp.{person}" if person in ("2sg", "2pl") else None
-    return f"{stem}.{person}" + (".sub" if sub else "")
+        return Option.some(f"imp.{person}") if person in ("2sg", "2pl") else Option.none()
+    return Option.some(f"{stem}.{person}" + (".sub" if sub else ""))
