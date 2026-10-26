@@ -1,0 +1,36 @@
+[project]
+name = "harald"
+version = "0.1.0"
+description = "Personal offline German vocabulary tool"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "rich>=14",
+    "SQLAlchemy>=2.1,<2.2",
+]
+
+[project.scripts]
+harald = "harald.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.9.29,<0.10"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["pytest", "ruff", "mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "BLE", "UP"]
+
+[tool.mypy]
+strict = true
+mypy_path = "src"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501"]
