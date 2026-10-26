@@ -51,7 +51,11 @@ are marked. `n` and `b` move between steps, `space` toggles a sense.
 
 Studying shows the next due card. `space` reveals the answer, then `1` Again,
 `2` Hard, `3` Good or `4` Easy grades it; each grade is saved at once. On
-a touch screen the same actions are buttons. A summary of cards reviewed and
+a touch screen the same actions are buttons. Adding a noun also adds an article
+card: press `1` der, `2` die or `3` das, read the result, then `enter` or
+`space` continues; a right answer counts as Good, a wrong one as Again. A noun
+with no gender in the data is refused an article card, and the confirm step
+says so. A summary of cards reviewed and
 answered correctly ends the session. Cards live in `learning.db`, created on
 first use; Harald refuses one written by a newer version.
 

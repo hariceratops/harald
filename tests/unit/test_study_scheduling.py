@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from fsrs import Scheduler
 
+from harald.learning.content import CardPlan
 from harald.learning.scheduling import CARD_SCOPE, scheduler_for
 from harald.lexicon.model import Headword
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
@@ -16,7 +17,8 @@ AGAIN, GOOD = 1, 3
 
 def _add(ws: Workspace, sense: int = 0) -> list[int]:
     hund: Headword = LoadHeadword(ws.config).execute("Hund", "noun").unwrap().unwrap()
-    plan = PlanWordCards(ws.config).execute(hund, 0, [sense], []).unwrap()
+    planned = PlanWordCards(ws.config).execute(hund, 0, [sense], []).unwrap()
+    plan = CardPlan(planned.word_hint, tuple(c for c in planned.cards if c.card_type != "article"))
     return CreateWordCards(ws.config).execute(plan, T0).unwrap()
 
 

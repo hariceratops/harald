@@ -23,9 +23,9 @@ def test_lookup_add_study_and_summarise(built: Workspace) -> None:
         grade.execute(c.id, 4, now, "s1").unwrap()
         now += timedelta(seconds=20)
 
-    assert sorted(seen) == ["meaning_de_en", "meaning_en_de"]
+    assert sorted(seen) == ["article", "meaning_de_en", "meaning_en_de"]
     summary = SessionSummary(built.config).execute("s1").unwrap()
-    assert (summary.reviewed, summary.correct) == (2, 2)
+    assert (summary.reviewed, summary.correct) == (3, 3)
 
 
 def test_each_grade_is_durable_before_the_next_card_is_asked_for(built: Workspace) -> None:

@@ -13,6 +13,7 @@ from harald.core.result import Result
 from harald.infrastructure.crud import crud_create, crud_update
 from harald.infrastructure.infra_errors import InfrastructureError
 from harald.infrastructure.transaction_context import DbTransactionContext
+from harald.learning.answers import ArticleCheck, check_article
 from harald.learning.errors import CardNotFound, LearningDbError, StorageError
 from harald.learning.models import Card, Review
 from harald.learning.scheduling import (
@@ -109,6 +110,31 @@ def grade_card(
     if updated.is_err:
         return Result.err(updated.unwrap_err())
     return Result.ok(None)
+
+
+def answer_article(
+    ctx: DbTransactionContext,
+    card_id: int,
+    chosen: str,
+    now: datetime,
+    session_id: str,
+    duration_ms: int | None,
+    scheduler_for: Callable[[str], Scheduler],
+) -> Result[ArticleCheck, LearningDbError]:
+    found = ctx.run(lambda s: s.get(Card, card_id)).map_err(_storage)
+    if found.is_err:
+        return Result.err(found.unwrap_err())
+    card = found.unwrap()
+    if card is None:
+        return Result.err(CardNotFound(card_id))
+    checked = check_article(card.content["gender"], chosen)
+    rating = Rating.Good if checked.correct else Rating.Again
+    graded = grade_card(
+        ctx, card_id, int(rating), now, session_id, duration_ms, chosen, scheduler_for
+    )
+    if graded.is_err:
+        return Result.err(graded.unwrap_err())
+    return Result.ok(checked)
 
 
 def session_summary(

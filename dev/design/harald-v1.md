@@ -2041,6 +2041,39 @@ one batch.
 
 ---
 
+### 7.10 Deviations found while implementing 011 (2026-10-26)
+
+- **Article cards are deduped by type alone.** The hint is the word's first
+  chosen gloss, which can differ between adds, so identity by content would
+  create a second article card when another sense is added later. §7.5 repair
+  (015+) should expect the hint to vary.
+- **Hint source.** The first chosen English gloss, or the first chosen German
+  definition when only German senses were picked.
+- **`check_article(gender, chosen)`** lives in `learning/answers.py` and
+  trusts the card's `gender` string; any gender listed for the word is
+  accepted (Band, See, Leiter). It returns `ArticleCheck(correct, accepted)`.
+- **Grading in one transaction.** `answer_article` checks and grades together
+  (Good if correct, Again if wrong) and stores the chosen article as the
+  review's `answer`; the `AnswerArticle` use case wraps it.
+- **Space key.** Textual stops at the first binding for a key even when its
+  `check_action` refuses, so the article feedback screen uses one `advance`
+  action for space: it reveals on a self-graded card and continues on
+  feedback. The footer still reads "space Show" during feedback, unlike the
+  §12.8 wireframe (`enter Next   esc End`); enter carries the right hint.
+- **A lapsed card returns at once.** A wrong answer is Again and falls inside
+  the 20-minute learn-ahead window, so the card comes straight back and the
+  session does not end after one wrong answer. This is the 010 behaviour.
+- **Refusals repeat.** "missing: gender" shows on every add of a word that
+  has none, even when other cards for it exist.
+- **Article and Next buttons** ignore taps for 300 ms after they appear
+  (§12.5). The tap-guard pilot tests monkeypatch `_TAP_GUARD_S` where timing
+  mattered; the 010 grade-button guard test uses the real 0.3 s and may flake
+  under load.
+- **Still unverified, by hand in Termux:** taps on der / die / das and Next,
+  the 300 ms guard, and the article feedback layout with the keyboard hidden.
+
+---
+
 ## 8. `harald check` (issue 021)
 
 Open question 4 is resolved:

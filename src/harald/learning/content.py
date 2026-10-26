@@ -92,4 +92,26 @@ def plan_word_cards(
                 },
             )
         )
-    return CardPlan(hint, tuple(cards))
+
+    refusals: list[Refusal] = []
+    if headword.pos == "noun" and (en_senses or de_senses):
+        if not gender:
+            refusals.append(Refusal("article", ("gender",)))
+        else:
+            first = (
+                entry.senses[en_senses[0]].gloss
+                if entry is not None and en_senses
+                else headword.german[de_senses[0][0]].senses[de_senses[0][1]].gloss
+            )
+            cards.append(
+                NewCard(
+                    "article",
+                    {
+                        "lemma": headword.lemma,
+                        "gender": gender,
+                        "plural": entry.plural if entry and entry.plural else "",
+                        "hint": first,
+                    },
+                )
+            )
+    return CardPlan(hint, tuple(cards), tuple(refusals))

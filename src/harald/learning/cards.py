@@ -22,6 +22,10 @@ def _canonical(content: object) -> str:
     return json.dumps(content, sort_keys=True, ensure_ascii=False)
 
 
+def _identity(card: NewCard) -> tuple[str, str]:
+    return (card.card_type, "" if card.card_type == "article" else _canonical(card.content))
+
+
 def drop_live_duplicates(
     ctx: DbTransactionContext, hint: WordHint, cards: tuple[NewCard, ...]
 ) -> Result[tuple[NewCard, ...], LearningDbError]:
@@ -35,15 +39,15 @@ def drop_live_duplicates(
                 Word.discriminator == hint.discriminator,
             )
         ).all()
-        return {(t, _canonical(c)) for t, c in rows}
+        # the hint follows whichever sense was picked first, so an article card is "the same"
+        # whatever its content: one per word
+        return {(t, "" if t == "article" else _canonical(c)) for t, c in rows}
 
     found = ctx.run(live).map_err(_storage)
     if found.is_err:
         return Result.err(found.unwrap_err())
     existing = found.unwrap()
-    return Result.ok(
-        tuple(c for c in cards if (c.card_type, _canonical(c.content)) not in existing)
-    )
+    return Result.ok(tuple(c for c in cards if _identity(c) not in existing))
 
 
 def _find_word(ctx: DbTransactionContext, hint: WordHint) -> Result[Word | None, LearningDbError]:
