@@ -97,6 +97,31 @@ def test_a_form_result_names_the_form_typed(built: Workspace) -> None:
     _drive(built, (40, 30), script)
 
 
+def test_escape_from_results_returns_to_the_query_for_another_search(
+    built: Workspace,
+) -> None:
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await _search(app, pilot, "Hund")
+        assert app.screen.query_one(OptionList).has_focus
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, LookupScreen)
+        query = app.screen.query_one("#query", Input)
+        assert query.has_focus
+        assert query.selected_text == "Hund"
+        await pilot.press(*"Hund", "enter")
+        await pilot.pause()
+        assert app.screen.query_one(OptionList).has_focus
+        await pilot.press("slash")
+        await pilot.pause()
+        assert query.has_focus
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, LookupScreen)
+
+    _drive(built, (40, 30), script)
+
+
 def test_no_match_stays_on_lookup(built: Workspace) -> None:
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await _search(app, pilot, "Zzzzzz")

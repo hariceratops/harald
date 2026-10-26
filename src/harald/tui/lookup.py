@@ -13,7 +13,10 @@ from harald.use_cases.lexicon import LoadHeadword, LookUpGerman
 class LookupScreen(Screen[None]):
     TITLE = "Lookup"
     SUB_TITLE = "Deutsch"
-    BINDINGS = [Binding("escape", "app.pop_screen", "Back")]
+    BINDINGS = [
+        Binding("escape", "back", "Back"),
+        Binding("slash", "edit_query", "Search", show=False),
+    ]
 
     def __init__(self, config: Config) -> None:
         super().__init__()
@@ -26,6 +29,19 @@ class LookupScreen(Screen[None]):
         yield Input(placeholder="DE > ", compact=True, id="query")
         yield OptionList(id="results")
         yield Footer(compact=True)
+
+    # From the results, esc returns to the query rather than leaving, so a
+    # typo is fixed while the word is still in mind.
+    def action_back(self) -> None:
+        if self.query_one("#results", OptionList).has_focus:
+            self.action_edit_query()
+        else:
+            self.app.pop_screen()
+
+    def action_edit_query(self) -> None:
+        query = self.query_one("#query", Input)
+        query.focus()
+        query.select_all()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         query = event.value.strip()

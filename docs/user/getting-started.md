@@ -40,9 +40,10 @@ uv run harald
 ```
 
 `l` opens lookup, `s` starts a study session, `i` shows the sources, `q`
-quits. In a lookup, Enter searches, then pick a result to open the entry; `c`
-toggles full conjugation, `a` adds the word as cards and `esc` goes back. The
-layout adapts down to 40 columns.
+quits. In a lookup, Enter searches, then pick a result to open the entry; `esc`
+or `/` on the results returns to the query to fix a typo or search again. In an
+entry, `c` toggles full conjugation, `a` adds the word as cards and `esc` goes
+back. The layout adapts down to 40 columns.
 
 Adding a word is a short wizard: pick English senses (each gives a German to
 English and an English to German card), pick German definitions (each gives a
