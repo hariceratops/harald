@@ -98,3 +98,21 @@ Screen.-short #buttons Button {
     height: 1;
     border: none;
 }
+
+#fields {
+    height: auto;
+    width: 100%;
+}
+
+.field {
+    height: 1;
+    width: 100%;
+}
+
+.field-label {
+    width: 12;
+}
+
+.field Input {
+    width: 1fr;
+}

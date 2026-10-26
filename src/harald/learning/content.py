@@ -94,15 +94,44 @@ def plan_word_cards(
         )
 
     refusals: list[Refusal] = []
-    if headword.pos == "noun" and (en_senses or de_senses):
-        if not gender:
+    if headword.pos in ("noun", "verb") and (en_senses or de_senses):
+        first = (
+            entry.senses[en_senses[0]].gloss
+            if entry is not None and en_senses
+            else headword.german[de_senses[0][0]].senses[de_senses[0][1]].gloss
+        )
+        if headword.pos == "verb":
+            parts = entry.principal_parts if entry else None
+            missing = tuple(
+                label
+                for label, form in (
+                    ("Präsens", parts and parts.pres3sg),
+                    ("Präteritum", parts and parts.pret),
+                    ("Partizip II", parts and parts.part2),
+                    ("auxiliary", parts and parts.auxiliaries),
+                )
+                if not form
+            )
+            if entry is None or parts is None or missing:
+                refusals.append(Refusal("stammformen", missing))
+            else:
+                cards.append(
+                    NewCard(
+                        "stammformen",
+                        {
+                            "infinitive": headword.lemma,
+                            "hint": first,
+                            "pres3sg": parts.pres3sg,
+                            "preterite": parts.pret,
+                            "participle": parts.part2,
+                            "auxiliaries": list(parts.auxiliaries),
+                            "separable_prefix": entry.separable_prefix or "",
+                        },
+                    )
+                )
+        elif not gender:
             refusals.append(Refusal("article", ("gender",)))
         else:
-            first = (
-                entry.senses[en_senses[0]].gloss
-                if entry is not None and en_senses
-                else headword.german[de_senses[0][0]].senses[de_senses[0][1]].gloss
-            )
             cards.append(
                 NewCard(
                     "article",

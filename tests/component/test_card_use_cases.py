@@ -1,8 +1,9 @@
 import sqlite3
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from harald.core.option import Option
-from harald.lexicon.model import Headword
+from harald.lexicon.model import Headword, PrincipalParts
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 from harald.use_cases.lexicon import LoadHeadword
 from harald.use_cases.study import NextCard
@@ -195,3 +196,69 @@ def test_a_noun_with_no_sense_picked_gets_no_article_card(built: Workspace) -> N
 
     assert plan.cards == ()
     assert plan.refusals == ()
+
+
+def test_a_verb_gets_one_stammformen_card_with_its_copied_content(built: Workspace) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+
+    plan = PlanWordCards(built.config).execute(anrufen, 0, [0], []).unwrap()
+
+    stamm = [c for c in plan.cards if c.card_type == "stammformen"]
+    assert [c.content for c in stamm] == [
+        {
+            "infinitive": "anrufen",
+            "hint": "to call; to phone",
+            "pres3sg": "ruft an",
+            "preterite": "rief an",
+            "participle": "angerufen",
+            "auxiliaries": ["haben"],
+            "separable_prefix": "an",
+        }
+    ]
+    assert plan.refusals == ()
+
+
+def test_a_second_sense_added_later_does_not_add_a_second_stammformen_card(
+    built: Workspace,
+) -> None:
+    laufen = _headword(built, "laufen", "verb")
+    entry = laufen.entries[0]
+    two = replace(
+        laufen,
+        entries=(
+            replace(entry, senses=(*entry.senses, replace(entry.senses[0], gloss="to race"))),
+        ),
+    )
+    for sense in (0, 1):
+        plan = PlanWordCards(built.config).execute(two, 0, [sense], []).unwrap()
+        CreateWordCards(built.config).execute(plan, NOW).unwrap()
+
+    assert _rows(built, "SELECT COUNT(*) FROM card WHERE card_type = 'stammformen'") == [(1,)]
+
+
+def test_a_verb_with_missing_forms_refuses_stammformen_and_names_them(
+    built: Workspace,
+) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+    entry = anrufen.entries[0]
+    gaps = replace(entry, principal_parts=PrincipalParts("ruft an", None, "angerufen", ()))
+    gappy = replace(anrufen, entries=(gaps,))
+
+    plan = PlanWordCards(built.config).execute(gappy, 0, [0], []).unwrap()
+
+    assert [c.card_type for c in plan.cards] == ["meaning_de_en", "meaning_en_de"]
+    assert [(r.card_type, r.missing) for r in plan.refusals] == [
+        ("stammformen", ("Präteritum", "auxiliary"))
+    ]
+    assert len(CreateWordCards(built.config).execute(plan, NOW).unwrap()) == 2
+
+
+def test_a_verb_with_no_principal_parts_names_every_form(built: Workspace) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+    bare = replace(anrufen, entries=(replace(anrufen.entries[0], principal_parts=None),))
+
+    plan = PlanWordCards(built.config).execute(bare, 0, [0], []).unwrap()
+
+    assert [r.missing for r in plan.refusals] == [
+        ("Präsens", "Präteritum", "Partizip II", "auxiliary")
+    ]

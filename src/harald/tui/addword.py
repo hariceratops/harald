@@ -20,6 +20,7 @@ _CARD_NAMES = {
     "meaning_en_de": "English -> German",
     "meaning_de_de": "German -> German",
     "article": "Article",
+    "stammformen": "Stammformen",
 }
 
 

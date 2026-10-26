@@ -1,24 +1,32 @@
 import time
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from rich.console import Group, RenderableType
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Static
+from textual.widgets import Button, Footer, Header, Input, Static
 
 from harald.config import Config
-from harald.use_cases.study import AnswerArticle, Grade, NextCard, SessionSummary
+from harald.use_cases.study import (
+    AnswerArticle,
+    AnswerStammformen,
+    Grade,
+    NextCard,
+    SessionSummary,
+    StammformenCheck,
+)
 
 # A double tap on "Show answer" must not land on a grade button that appears under the thumb.
 _TAP_GUARD_S = 0.3
 _GRADES = ((1, "Again"), (2, "Hard"), (3, "Good"), (4, "Easy"))
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
 _ARTICLE_BUTTONS = ((1, "der"), (2, "die"), (3, "das"))
+_STAMM_LABELS = ("er/sie/es", "Präteritum", "Perfekt")
 
 
 def _word(content: dict[str, Any]) -> str:
@@ -54,7 +62,29 @@ def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str]
         lemma = content["lemma"]
         plural = f"   (pl. {content['plural']})" if content.get("plural") else ""
         return "Article", [f"{lemma}{plural}", content["hint"]], []
+    if card_type == "stammformen":
+        front = [f"{content['infinitive']}  -  {content['hint']}"]
+        prefix = content["separable_prefix"]
+        if prefix:
+            stem = content["infinitive"].removeprefix(prefix)
+            front += [f"TRENNBAR  {prefix}|{stem}", "(answer with the split forms)"]
+        return "Stammformen", front, []
     return card_type, [_word(content)], []
+
+
+def _stammformen_feedback(check: StammformenCheck, content: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for f in check.fields:
+        given = f.given or "(empty)"
+        lines.append(f"{f.label:<11} {given}  {'ok' if f.correct else 'WRONG'}")
+        if not f.correct:
+            lines.append(f"{'':<11} -> {f.expected}")
+    lines.append("")
+    lines.append("RIGHT - graded Good" if check.correct else "WRONG - graded Again")
+    if content["separable_prefix"]:
+        lines.append(f"trennbar: the prefix {content['separable_prefix']} goes to the")
+        lines.append("end in main clauses")
+    return lines
 
 
 class StudyScreen(Screen[None]):
@@ -84,6 +114,11 @@ class StudyScreen(Screen[None]):
         yield Header(icon="")
         with VerticalScroll(id="body"):
             yield Static(id="card")
+            with Vertical(id="fields"):
+                for i, label in enumerate(_STAMM_LABELS):
+                    with Horizontal(classes="field"):
+                        yield Static(label, classes="field-label")
+                        yield Input(compact=True, id=f"sf{i}")
         with Horizontal(id="buttons"):
             yield self._button("Show answer", "reveal")
             for n, name in _GRADES:
@@ -106,17 +141,18 @@ class StudyScreen(Screen[None]):
         if self._card is None:
             return action in ("end",)
         article = self._card[1] == "article"
+        checked = article or self._card[1] == "stammformen"
         if action == "advance":
-            return self._feedback is not None or (not article and not self._revealed)
+            return self._feedback is not None or (not checked and not self._revealed)
         if action == "reveal":
-            return not article and not self._revealed
+            return not checked and not self._revealed
         if action == "continue":
             return self._feedback is not None
         if action == "grade":
             number = parameters[0]
             if article:
                 return self._feedback is None and number in (1, 2, 3)
-            return self._revealed
+            return self._revealed and self._card[1] != "stammformen"
         return True
 
     def _next(self) -> None:
@@ -136,11 +172,16 @@ class StudyScreen(Screen[None]):
         self._grades_at = time.monotonic()
         self._front_at = time.monotonic()
         self._show()
+        if card.card_type == "stammformen":
+            self._focus_fields()
+        else:
+            self.set_focus(None)
 
     def _show(self) -> None:
         if self._card is None:
             return
         _, card_type, content = self._card
+        typed = card_type == "stammformen"
         heading, front, back = _card_faces(card_type, content)
         parts: list[RenderableType] = [
             Text(heading, style="dim", justify="center"),
@@ -148,7 +189,10 @@ class StudyScreen(Screen[None]):
             Text("\n".join(front), justify="center"),
         ]
         if self._feedback is not None:
-            parts += [Text(""), Text("\n".join(self._feedback), justify="center")]
+            parts += [
+                Text(""),
+                Text("\n".join(self._feedback), justify="left" if typed else "center"),
+            ]
         if self._revealed:
             parts += [
                 Text("-" * 20, style="dim", justify="center"),
@@ -157,8 +201,10 @@ class StudyScreen(Screen[None]):
         self.query_one("#card", Static).update(Group(*parts))
         self.sub_title = f"{self._graded} done"
         article = card_type == "article"
+        checked = article or typed
         asking = article and self._feedback is None
-        self.query_one("#reveal").display = not article and not self._revealed
+        self.query_one("#fields").display = typed and self._feedback is None
+        self.query_one("#reveal").display = not checked and not self._revealed
         self.query_one("#buttons").set_class(self._revealed, "-grading")
         for n, _ in _GRADES:
             self.query_one(f"#grade{n}").display = self._revealed
@@ -166,6 +212,11 @@ class StudyScreen(Screen[None]):
             self.query_one(f"#art{n}").display = asking
         self.query_one("#cont").display = self._feedback is not None
         self.refresh_bindings()
+
+    def _focus_fields(self) -> None:
+        for i in range(len(_STAMM_LABELS)):
+            self.query_one(f"#sf{i}", Input).value = ""
+        self.query_one("#sf0", Input).focus()
 
     def action_reveal(self) -> None:
         self._revealed = True
@@ -203,6 +254,32 @@ class StudyScreen(Screen[None]):
         self._graded += 1
         self._grades_at = time.monotonic()
         self._show()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        number = int(cast(str, event.input.id).removeprefix("sf"))
+        if number < len(_STAMM_LABELS) - 1:
+            self.query_one(f"#sf{number + 1}", Input).focus()
+        else:
+            self._answer_stammformen()
+
+    def _answer_stammformen(self) -> None:
+        if self._card is None or self._feedback is not None:
+            return
+        card_id, _, content = self._card
+        a, b, c = (self.query_one(f"#sf{i}", Input).value for i in range(len(_STAMM_LABELS)))
+        duration_ms = int((time.monotonic() - self._front_at) * 1000)
+        answered = AnswerStammformen(self._config).execute(
+            card_id, (a, b, c), datetime.now(UTC), self._session_id, duration_ms
+        )
+        if answered.is_err:
+            self.notify(str(answered.unwrap_err()), severity="error")
+            return
+        self._feedback = _stammformen_feedback(answered.unwrap(), content)
+        self._graded += 1
+        self._grades_at = time.monotonic()
+        self._show()
+        self.set_focus(None)
 
     def action_grade(self, rating: int) -> None:
         if self._card is None:
