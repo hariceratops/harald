@@ -1,0 +1,58 @@
+# Kept beside the pages it builds rather than at the repo root, so everything
+# needed to render the guide lives in one directory. Invoke with
+#   mkdocs serve -f docs/mkdocs.yml
+site_name: Harald
+site_description: A personal, offline German vocabulary tool.
+
+# The pages sit next to this file, so the config and its requirements would
+# otherwise be copied into the built site as if they were content.
+docs_dir: .
+site_dir: ../site
+exclude_docs: |
+  mkdocs.yml
+  requirements.txt
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Overview: index.md
+  - User guide:
+      - Getting started: user/getting-started.md
+      - Lookup: user/lookup.md
+      - Building the lexicon: user/build.md
+      - Configuration: user/configuration.md
+      - Data and licences: user/data.md
+  - Developer guide:
+      - Architecture: developer/architecture.md
+      - Testing: developer/testing.md
+      - Build internals: developer/build-internals.md
+      - Workflow: developer/workflow.md
+  - Roadmap: roadmap.md
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - tables
+
+# A broken link or a moved page is cheap to miss by eye.
+strict: true
