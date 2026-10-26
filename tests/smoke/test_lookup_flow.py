@@ -60,3 +60,20 @@ def test_lookup_typo_returns_schnell(workspace: Workspace) -> None:
 
     assert res.returncode == 0, res.stderr
     assert "schnell" in res.stdout
+
+
+def test_schema_mismatch_refuses_with_exit_2_naming_both_versions(workspace: Workspace) -> None:
+    import sqlite3
+
+    assert _harald(workspace, "build").returncode == 0
+    con = sqlite3.connect(workspace.config.lexicon)
+    con.execute("UPDATE meta SET value = '99' WHERE key = 'schema_version'")
+    con.commit()
+    con.close()
+
+    res = _harald(workspace, "lookup", "Hund")
+
+    assert res.returncode == 2
+    assert "schema 99" in res.stderr
+    assert "needs schema 3" in res.stderr
+    assert "Harald" in res.stderr
