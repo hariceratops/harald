@@ -6,6 +6,7 @@ pass `--config PATH` / set `HARALD_CONFIG`.
 
 ```toml
 lexicon = "~/.local/share/harald/lexicon.db"
+learning_db = "~/.local/share/harald/learning.db"
 sources_dir = "~/.local/share/harald/sources"
 staging_dir = "~/.cache/harald/staging"
 build_min_entries = 50000
@@ -15,6 +16,7 @@ build_workers = 3
 | Key | Default | Meaning |
 |---|---|---|
 | `lexicon` | `$XDG_DATA_HOME/harald/lexicon.db` | the built dictionary |
+| `learning_db` | `$XDG_DATA_HOME/harald/learning.db` | your cards and review log; a rebuild never touches it |
 | `sources_dir` | `$XDG_DATA_HOME/harald/sources` | downloaded source files |
 | `staging_dir` | `$XDG_CACHE_HOME/harald/staging` | build scratch space |
 | `build_min_entries` | `50000` | a build with fewer entries is rejected |

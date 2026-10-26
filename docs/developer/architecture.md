@@ -19,9 +19,11 @@ session, a connection or a file.
 | `harald.cli` | click commands; exit codes |
 | `harald.tui` | Textual app: home, lookup, entry and info screens |
 | `harald.render` | width-adaptive rendering with rich |
-| `harald.use_cases` | `BuildLexicon`, `QueryLexiconInfo`, `LookUpGerman`, `LookUpEnglish` |
+| `harald.use_cases` | `BuildLexicon`, `QueryLexiconInfo`, `LookUpGerman`, `LookUpEnglish`, `LoadHeadword`, `PlanWordCards`, `CreateWordCards`, `NextCard`, `Grade`, `SessionSummary` |
 | `harald.lexicon` | schema, models, lookup, fuzzy matching over `lexicon.db` |
 | `harald.build` | the importer: sources, fetch, parsers, task graph, writer, publish |
+| `harald.learning` | `learning.db`: models, Alembic migrations with a backup before upgrade, card planning, FSRS scheduling, study |
+| `harald.infrastructure` | `DbTransaction` and the audit-trail decorators, derived from kohle |
 | `harald.core` | `Result` and `Option` |
 | `harald.db` | connections |
 

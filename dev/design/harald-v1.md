@@ -1989,6 +1989,58 @@ stays as confirmed.
 
 ---
 
+### 7.9 Deviations found while implementing 010 (2026-10-25)
+
+Where the code departs from §7 and §12, and why. Reviewed by the user as
+one batch.
+
+- **Use cases take `Config`, not a session.** §7.7 and §11.2 make learning
+  use cases `UnitOfWork(session)` subclasses opened by `cli`. The existing
+  use cases take `Config` and open their database inside `execute`, and the
+  new ones follow them: each call opens `learning.db` through
+  `learning.db.transact` and disposes the engine afterwards (one engine per
+  grade). `UnitOfWork` and `crud_delete` were not carried over, since
+  nothing uses them yet.
+- **Sense picking uses positions.** `PlanWordCards(config).execute(headword,
+  entry_index, en_senses, de_senses)`: `entry_index` into
+  `headword.entries` (`None` for a German-only word), `en_senses` as indexes
+  into that entry's senses, `de_senses` as `(german_entry, sense)` pairs.
+  The model dataclasses carry no sense ids, so §7.3's `en_sense_ids` and
+  `de_sense_ids` cannot be used as written.
+- **`PlanWordCards` returns `Result[CardPlan, LearningDbError]`**, because
+  the dedupe reads `learning.db`. `Refusal` and `CardPlan.refusals` exist
+  and stay empty until issues 011 and 012.
+- **Scope trims.** `NextCard.execute(now)` has no `deck_id` or `session_id`
+  (016, 015); there is no daily new-card cap; `CreateWordCards.execute(plan,
+  now)` takes no `deck_ids`. `now` must be timezone-aware and is stored as
+  naive UTC.
+- **Schema additions.** `OperationGroup.created_at` has a
+  `CURRENT_TIMESTAMP` server default so `learning/` never calls
+  `datetime.now()`. `DeckMember` has a mapper-only composite primary key.
+  `fsrs_params` is never read yet; every scope runs on defaults.
+- **Migration backup.** `learning.db.pre-<HEAD>.bak` via `VACUUM INTO`,
+  which refuses to overwrite, so a stale backup from a failed attempt is
+  deleted first.
+- **No startup check of `learning.db` in the TUI.** One would create or
+  upgrade it for someone who only looks words up. Study and Add word call
+  the use cases, which open and migrate it, and show a toast when it is too
+  new; lookup keeps working. §12's "cli opens it first" is not followed.
+- **Plan not stored by the TUI.** The layering test does not allow
+  `harald.learning` in `tui/`, so `AddWordScreen` re-runs `PlanWordCards` at
+  confirm and again at create, which also gives a fresh dedupe. "Has cards"
+  marks cost one `PlanWordCards` call per sense when the screen opens; a use
+  case returning the marks in one transaction would be cleaner.
+- **Screens.** No deck step, no study-start scope screen, no due/new counts
+  in the study header or on Home (the sub-title reads "N done"), no "Backup
+  written" line on the summary. Only the three meaning card types have
+  faces. Grade keys `1`-`4` are hidden from the footer because four more
+  hints overflow 40 columns; the buttons carry the key labels.
+- **Still unverified, by hand in Termux:** whether 9-column grade buttons
+  are comfortable for a thumb, the 300 ms guard on a real double tap, and
+  the same tap and row-count checks as 009.
+
+---
+
 ## 8. `harald check` (issue 021)
 
 Open question 4 is resolved:

@@ -7,12 +7,14 @@ from textual.widgets.option_list import Option
 from harald.config import Config
 from harald.tui.info import InfoScreen
 from harald.tui.lookup import LookupScreen
+from harald.tui.study import StudyScreen
 
 
 class HomeScreen(Screen[None]):
     TITLE = "Harald"
     BINDINGS = [
         Binding("l", "lookup", "Lookup", show=False),
+        Binding("s", "study", "Study", show=False),
         Binding("i", "info", "Info", show=False),
         Binding("q", "app.quit", "Quit"),
     ]
@@ -25,6 +27,7 @@ class HomeScreen(Screen[None]):
         yield Header(icon="")
         yield OptionList(
             Option("l  Look up German", id="lookup"),
+            Option("s  Study", id="study"),
             Option("i  Info", id="info"),
             id="menu",
         )
@@ -33,11 +36,16 @@ class HomeScreen(Screen[None]):
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option.id == "lookup":
             self.action_lookup()
+        elif event.option.id == "study":
+            self.action_study()
         else:
             self.action_info()
 
     def action_lookup(self) -> None:
         self.app.push_screen(LookupScreen(self._config))
+
+    def action_study(self) -> None:
+        self.app.push_screen(StudyScreen(self._config))
 
     def action_info(self) -> None:
         self.app.push_screen(InfoScreen(self._config))
