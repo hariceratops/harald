@@ -39,6 +39,7 @@ def workspace(tmp_path: Path) -> Workspace:
         sources_dir=sources,
         staging_dir=tmp_path / "staging",
         build_min_entries=0,
+        learning_db=tmp_path / "learning.db",
     )
     return Workspace(tmp_path, config, config_file)
 

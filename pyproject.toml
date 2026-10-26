@@ -7,7 +7,9 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.18",
     "click>=8.3,<9",
+    "fsrs>=6.3,<7",
     "rich>=14",
     "SQLAlchemy>=2.1,<2.2",
     "textual>=8.2,<9",

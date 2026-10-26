@@ -39,9 +39,21 @@ uv run harald-cli lookup --en use      # English → German
 uv run harald
 ```
 
-`l` opens lookup, `i` shows the sources, `q` quits. In a lookup, Enter
-searches, then pick a result to open the entry; `c` toggles full conjugation
-and `esc` goes back. The layout adapts down to 40 columns.
+`l` opens lookup, `s` starts a study session, `i` shows the sources, `q`
+quits. In a lookup, Enter searches, then pick a result to open the entry; `c`
+toggles full conjugation, `a` adds the word as cards and `esc` goes back. The
+layout adapts down to 40 columns.
+
+Adding a word is a short wizard: pick English senses (each gives a German to
+English and an English to German card), pick German definitions (each gives a
+German to German card), then confirm with `c`. Senses that already have cards
+are marked. `n` and `b` move between steps, `space` toggles a sense.
+
+Studying shows the next due card. `space` reveals the answer, then `1` Again,
+`2` Hard, `3` Good or `4` Easy grades it; each grade is saved at once. On
+a touch screen the same actions are buttons. A summary of cards reviewed and
+answered correctly ends the session. Cards live in `learning.db`, created on
+first use; Harald refuses one written by a newer version.
 
 ## See what you built from
 

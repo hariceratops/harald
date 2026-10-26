@@ -12,3 +12,11 @@ Spec: `dev/specs/harald-v1.md`
 - Every review is appended to the review log. Each grade is stored immediately: killing the process mid-session loses at most the card on screen.
 - The session ends with a summary of cards reviewed and answered correctly.
 - `learning.db` is created and upgraded through Alembic, with a backup written before any upgrade.
+
+## Status
+
+Built in two stages. All criteria are met except hands-on use: the 9-column
+grade buttons, the 300 ms tap guard and taps-as-clicks still need a run in
+Termux. Departures from the design are in design §7.9. Open for later
+slices: a use case returning the "has cards" marks in one call, due/new
+counts for the study header and Home, and a preflight for `learning.db`.

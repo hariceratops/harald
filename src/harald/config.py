@@ -20,6 +20,7 @@ class Config:
     staging_dir: Path
     build_min_entries: int
     build_workers: int = max(1, (os.cpu_count() or 2) - 1)
+    learning_db: Path = Path("learning.db")
 
 
 def _xdg(var: str, fallback: str) -> Path:
@@ -43,6 +44,7 @@ def load_config(path: Path | None = None) -> Result[Config, ConfigError]:
 
     paths = {
         "lexicon": data_dir / "lexicon.db",
+        "learning_db": data_dir / "learning.db",
         "sources_dir": data_dir / "sources",
         "staging_dir": _xdg("XDG_CACHE_HOME", ".cache") / "harald" / "staging",
     }
@@ -58,5 +60,12 @@ def load_config(path: Path | None = None) -> Result[Config, ConfigError]:
         else:
             return Result.err(ConfigError(path, f"unknown or invalid key {key!r}"))
     return Result.ok(
-        Config(paths["lexicon"], paths["sources_dir"], paths["staging_dir"], min_entries, workers)
+        Config(
+            paths["lexicon"],
+            paths["sources_dir"],
+            paths["staging_dir"],
+            min_entries,
+            workers,
+            paths["learning_db"],
+        )
     )

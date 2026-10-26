@@ -27,3 +27,70 @@ Input {
 #status {
     padding: 1 1 0 1;
 }
+
+#pick-entry {
+    height: auto;
+    max-height: 100%;
+    border: solid $primary;
+}
+
+PickEntryScreen {
+    align: center middle;
+}
+
+#step {
+    padding: 0 1;
+    height: auto;
+}
+
+#picker {
+    height: 1fr;
+    border: none;
+    border-top: solid $primary;
+}
+
+#confirm {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#card {
+    width: 100%;
+}
+
+StudyScreen #body {
+    align: center middle;
+}
+
+StudyScreen.-short #body {
+    align: center top;
+}
+
+#buttons {
+    height: auto;
+    dock: bottom;
+    margin-bottom: 1;
+}
+
+#buttons Button {
+    width: 1fr;
+    min-width: 9;
+    padding: 0;
+    margin: 0 1 0 0;
+}
+
+Screen.-narrow #buttons Button {
+    width: 9;
+}
+
+Screen.-narrow #buttons #reveal,
+Screen.-narrow #buttons #home,
+Screen.-narrow #buttons #back,
+Screen.-narrow #buttons #next {
+    width: 1fr;
+}
+
+Screen.-short #buttons Button {
+    height: 1;
+    border: none;
+}

@@ -30,8 +30,10 @@ Working today:
 - `harald-cli lookup --en WORD` lists German words under each English sense.
 - `harald` opens a Textual TUI for German lookup and entry
   browsing, down to 40 columns. Not yet verified on the phone.
+- In the TUI, `a` on an entry adds meaning cards for chosen senses, and `s` on
+  Home studies due cards with a 1-4 self-grade (FSRS) and a session summary.
 
-Planned: TUI study screens, spaced-repetition cards (FSRS), Tatoeba phrase search,
+Planned: Tatoeba phrase search,
 `harald-cli check`, backups. See the [roadmap](#roadmap).
 
 ## Quick start
@@ -83,7 +85,7 @@ Test layers, build internals and workflow are in the
 - [x] German-edition definitions and examples
 - [x] English → German lookup
 - [ ] TUI browsing, verified in Termux (built; Termux checks outstanding)
-- [ ] Add a word; meaning cards and study
+- [ ] Add a word; meaning cards and study (built; awaiting confirmation)
 - [ ] Article, Stammformen and per-tense conjugation cards
 - [ ] German → German cards
 - [ ] New-card cap and sibling burying

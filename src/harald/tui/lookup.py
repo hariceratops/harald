@@ -55,7 +55,7 @@ class LookupScreen(Screen[None]):
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         index = event.option_index
         if index < len(self._shown):
-            self.app.push_screen(EntryScreen(self._shown[index]))
+            self.app.push_screen(EntryScreen(self._config, self._shown[index]))
             return
         lemma, pos = self._also[index - len(self._shown)]
         loaded = LoadHeadword(self._config).execute(lemma, pos)
@@ -66,7 +66,7 @@ class LookupScreen(Screen[None]):
         if found.is_none:
             self.notify(f"{lemma} is no longer in the lexicon", severity="error")
             return
-        self.app.push_screen(EntryScreen(found.unwrap()))
+        self.app.push_screen(EntryScreen(self._config, found.unwrap()))
 
 
 def _pos_label(pos: str) -> str:
