@@ -16,3 +16,9 @@ Built. All three criteria are met in unit, component and pilot tests at
 40x30, 40x12 and 100x30. Open by hand in Termux: typing in the three Inputs
 with the soft keyboard, and the feedback layout at 40x12. Departures and
 discoveries are in design §7.11.
+
+## Review 2026-10-26
+- `tui/study.py`: the `else 0` fallback when reading the field number from an
+  Input id could never run, and would have hidden a wiring bug.
+- `tui/study.py`: `content.get("separable_prefix")` where the planner always
+  writes the key; indexing is enough.

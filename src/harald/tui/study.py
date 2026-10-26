@@ -1,7 +1,7 @@
 import time
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from rich.console import Group, RenderableType
 from rich.text import Text
@@ -64,7 +64,7 @@ def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str]
         return "Article", [f"{lemma}{plural}", content["hint"]], []
     if card_type == "stammformen":
         front = [f"{content['infinitive']}  -  {content['hint']}"]
-        prefix = content.get("separable_prefix")
+        prefix = content["separable_prefix"]
         if prefix:
             stem = content["infinitive"].removeprefix(prefix)
             front += [f"TRENNBAR  {prefix}|{stem}", "(answer with the split forms)"]
@@ -81,7 +81,7 @@ def _stammformen_feedback(check: StammformenCheck, content: dict[str, Any]) -> l
             lines.append(f"{'':<11} -> {f.expected}")
     lines.append("")
     lines.append("RIGHT - graded Good" if check.correct else "WRONG - graded Again")
-    if content.get("separable_prefix"):
+    if content["separable_prefix"]:
         lines.append(f"trennbar: the prefix {content['separable_prefix']} goes to the")
         lines.append("end in main clauses")
     return lines
@@ -257,7 +257,7 @@ class StudyScreen(Screen[None]):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
-        number = int(event.input.id.removeprefix("sf")) if event.input.id else 0
+        number = int(cast(str, event.input.id).removeprefix("sf"))
         if number < len(_STAMM_LABELS) - 1:
             self.query_one(f"#sf{number + 1}", Input).focus()
         else:
