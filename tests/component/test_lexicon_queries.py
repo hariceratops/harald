@@ -1,8 +1,9 @@
 import pytest
+from sqlalchemy import text
 
 from harald.lexicon.db import open_lexicon
 from harald.lexicon.errors import LexiconMissing, NotALexicon, SchemaMismatch
-from harald.lexicon.lookup import lookup_de, lookup_en
+from harald.lexicon.lookup import _candidate_keys, lookup_de, lookup_en
 from harald.lexicon.schema import SCHEMA_VERSION
 from tests.conftest import Workspace
 
@@ -186,3 +187,14 @@ def test_german_lookup_ignores_english_keys(built: Workspace) -> None:
     lex = open_lexicon(built.config.lexicon).unwrap()
 
     assert lookup_de(lex, "use").shown == ()
+
+
+def test_fuzzy_candidates_are_driven_from_fuzzy_delete(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+    sql = str(_candidate_keys("de", "hund").compile(compile_kwargs={"literal_binds": True}))
+
+    with lex.sessions() as session:
+        plan = [row[3] for row in session.execute(text("EXPLAIN QUERY PLAN " + sql))]
+
+    # scanning search_key by language first took ~4 s on the real 1.2M-key lexicon
+    assert plan[0].startswith("SEARCH fuzzy_delete"), plan

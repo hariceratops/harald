@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
 
 from harald.core.option import Option
@@ -27,14 +27,21 @@ _ALSO_LIMIT = 8
 _RESULT_CAP = 20
 
 
-def _key_distances(session: Session, lang: str, key: str) -> dict[int, int]:
-    limit = max_distance(key)
-    candidates = session.execute(
+def _candidate_keys(lang: str, key: str) -> Select[int, str]:
+    # Without sqlite_stat1 the planner picks the (lang, key) index and probes fuzzy_delete for
+    # every search_key of the language (1.2M rows, ~4 s). Concatenating '' makes the lang
+    # filter unusable as an index key, so the few fuzzy_delete rows drive the join instead.
+    return (
         select(SearchKey.id, SearchKey.key)
         .join(FuzzyDelete, FuzzyDelete.key_id == SearchKey.id)
-        .where(SearchKey.lang == lang, FuzzyDelete.d.in_(fuzzy_deletes(key)))
+        .where(FuzzyDelete.d.in_(fuzzy_deletes(key)), SearchKey.lang.concat("") == lang)
         .distinct()
-    ).all()
+    )
+
+
+def _key_distances(session: Session, lang: str, key: str) -> dict[int, int]:
+    limit = max_distance(key)
+    candidates = session.execute(_candidate_keys(lang, key)).all()
     return {
         key_id: d.unwrap()
         for key_id, cand in candidates

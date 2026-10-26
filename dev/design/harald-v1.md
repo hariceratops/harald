@@ -5374,6 +5374,35 @@ reason in the commit message.
   module. The harness discards its first cold run, so it measures warm
   bytecode.
 
+**First measurements on the real lexicon (2026-10-25, desktop, WSL2).** The
+benchmark harness (`dev/bench/`) does not exist yet; these are single
+`time` runs, not medians.
+- *Build* (`harald-cli build --fetch`, downloads included): **7 m 14 s**
+  wall. `lexicon.db` is **468.2 MB**, schema 7, 102,897 entries, 0 bad lines.
+  Stages: `en.read+parse` 128 s, `de.read+parse` 40 s, `lexicon.merge` 17 s,
+  `keys.merge` 19 s, `fuzzy` 21 s, `fuzzy.merge` 20 s, `finalize` 7 s.
+  The English-translation load added by 008 is within the 468 MB.
+- *Coverage*: verbs with complete Stammformen 96.8 % (10631/10981); nouns
+  with a gender 98.9 % (58964/59610); senses with a translated example
+  13.2 % (15461/117302).
+- *Cold CLI*: `lookup Hund` took **5.4 s** (`verschlimbessern` 9.3 s) on the
+  real lexicon, against 0.19 s for `--help`-class commands. Cause: the
+  fuzzy candidate query joined `search_key` to `fuzzy_delete`, and with no
+  `sqlite_stat1` SQLite chose the `(lang, key)` index, scanning all 1.19M
+  German keys and probing `fuzzy_delete` (9.3M rows) for each. Fixed in
+  `lookup._candidate_keys` by making the `lang` filter unusable as an index
+  key (`lang || '' = ?`), so the five or so `fuzzy_delete` rows drive the
+  join: the same 21 rows in under a millisecond, and a cold `lookup` of
+  about 1.1 s. A component test asserts the plan starts with a
+  `fuzzy_delete` search. The plan depends on the planner's statistics, so a
+  future `ANALYZE` in the build would make the workaround unnecessary.
+- *What remains of the 1.1 s* is process start: about 0.7 s of it is
+  importing SQLAlchemy, the cost §4.4 accepted. The lookup itself takes
+  0.13 s in-process.
+- *Ranking*: `lookup schnel` shows *Schnee* first and *schnell* only under
+  "Also". Both are one edit away, so the tie is decided by richness. Whether
+  that is wanted is open.
+
 ### 14.10 `Option[T]`, and where `T | None` stays (confirmed by the user 2026-10-24)
 
 The user added kohle's `Option` to the refactor slice (§11.3). The reasons:

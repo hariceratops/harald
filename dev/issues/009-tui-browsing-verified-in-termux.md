@@ -31,3 +31,12 @@ a by-hand run in Termux; record the results here:
 - Use cases take `Config` and open the lexicon per call (design §11.2 says
   handles); one open per search and per "Also" row.
 - `tests/unit/test_layering.py` now allows `harald.tui` as a front-end.
+
+## Desktop observations on the real lexicon (2026-10-25)
+
+Built with `harald-cli build --fetch`: 7 m 14 s, 468.2 MB, 102,897 entries.
+`harald-cli lookup Hund` took 5.4 s (single core) because of a bad query plan
+in the fuzzy candidate query, now fixed (about 1.1 s cold); the TUI's German
+lookup runs the same query. Output wraps
+correctly at 40 and 80 columns. Details in design §14.9.
+- Search runs on Enter only, not as you type. Accepted by the user for now (2026-10-25).

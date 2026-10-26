@@ -7,7 +7,10 @@ class BuildError(Exception):
 
 class SourceMissing(BuildError):
     def __init__(self, file: Path) -> None:
-        super().__init__(f"source file {file} is missing. Place the English dump there.")
+        super().__init__(
+            f"source file {file} is missing. Run 'harald-cli build --fetch' to download it,"
+            " or place the English dump there."
+        )
         self.file = file
 
 
