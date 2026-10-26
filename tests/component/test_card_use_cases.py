@@ -30,6 +30,7 @@ def test_each_english_sense_gives_a_de_en_and_an_en_de_card(built: Workspace) ->
         "meaning_en_de",
         "meaning_de_en",
         "meaning_en_de",
+        "article",
     ]
     assert plan.word_hint.lemma == "Hund"
     assert plan.word_hint.discriminator == "m|Hunde"
@@ -67,8 +68,8 @@ def test_cards_store_their_own_copy_and_no_lexicon_ids(built: Workspace) -> None
     assert card.content["gender"] == "m"
     assert card.content["example"]["translation"] == "The dog barks."
     stored = _rows(built, "SELECT card_type, content FROM card ORDER BY id")
-    assert [t for t, _ in stored] == ["meaning_de_en", "meaning_en_de"]
-    assert all('"gloss": "dog (Canis familiaris)"' in str(c) for _, c in stored)
+    assert [t for t, _ in stored] == ["meaning_de_en", "meaning_en_de", "article"]
+    assert all('"gloss": "dog (Canis familiaris)"' in str(c) for t, c in stored if t != "article")
     columns = [r[1] for r in _rows(built, "PRAGMA table_info(card)")]
     assert not any("lexicon" in c or "sense" in c for c in columns)
 
@@ -79,14 +80,15 @@ def test_creating_cards_is_one_audited_transaction(built: Workspace) -> None:
 
     ids = CreateWordCards(built.config).execute(plan, NOW).unwrap()
 
-    assert len(ids) == 2
+    assert len(ids) == 3
     assert _rows(built, "SELECT COUNT(*) FROM operation_groups") == [(1,)]
     assert _rows(built, "SELECT entity_type, action FROM operations ORDER BY id") == [
         ("word", "create"),
         ("card", "create"),
         ("card", "create"),
+        ("card", "create"),
     ]
-    assert _rows(built, "SELECT COUNT(*) FROM card WHERE last_review IS NULL") == [(2,)]
+    assert _rows(built, "SELECT COUNT(*) FROM card WHERE last_review IS NULL") == [(3,)]
 
 
 def test_already_live_cards_are_dropped_from_a_new_plan(built: Workspace) -> None:
@@ -96,7 +98,7 @@ def test_already_live_cards_are_dropped_from_a_new_plan(built: Workspace) -> Non
 
     again = PlanWordCards(built.config).execute(hund, 0, [0, 1], []).unwrap()
 
-    assert len(again.cards) == 2
+    assert [c.card_type for c in again.cards] == ["meaning_de_en", "meaning_en_de"]
     assert {c.content["gloss"] for c in again.cards} == {"hound (any dog used for hunting)"}
 
 
@@ -107,7 +109,7 @@ def test_second_add_reuses_the_word_row(built: Workspace) -> None:
         CreateWordCards(built.config).execute(plan, NOW).unwrap()
 
     assert _rows(built, "SELECT COUNT(*) FROM word") == [(1,)]
-    assert _rows(built, "SELECT COUNT(*) FROM card") == [(4,)]
+    assert _rows(built, "SELECT COUNT(*) FROM card") == [(5,)]
 
 
 def test_homographs_get_separate_word_rows(built: Workspace) -> None:
@@ -132,5 +134,64 @@ def test_deleted_cards_are_not_dedupe_targets_nor_studied(built: Workspace) -> N
     again = PlanWordCards(built.config).execute(hund, 0, [0], []).unwrap()
     nxt = NextCard(built.config).execute(NOW)
 
-    assert len(again.cards) == 2
+    assert len(again.cards) == 3
     assert nxt.unwrap() == Option.none()
+
+
+def test_a_noun_gets_one_article_card_with_its_copied_content(built: Workspace) -> None:
+    band = _headword(built, "Band")
+
+    plan = PlanWordCards(built.config).execute(band, 0, [0], []).unwrap()
+
+    article = [c for c in plan.cards if c.card_type == "article"]
+    assert [c.content for c in article] == [
+        {"lemma": "Band", "gender": "n", "plural": "Bänder", "hint": "ribbon, tape"}
+    ]
+    assert plan.refusals == ()
+
+
+def test_the_article_card_is_planned_once_per_word_however_many_senses(
+    built: Workspace,
+) -> None:
+    hund = _headword(built, "Hund")
+
+    both = PlanWordCards(built.config).execute(hund, 0, [0, 1], []).unwrap()
+    assert [c.card_type for c in both.cards].count("article") == 1
+    assert both.cards[-1].content["hint"] == "dog (Canis familiaris)"
+
+    CreateWordCards(built.config).execute(both, NOW).unwrap()
+    later = PlanWordCards(built.config).execute(hund, 0, [1], []).unwrap()
+
+    assert later.cards == ()
+
+
+def test_a_second_sense_added_later_does_not_add_a_second_article_card(
+    built: Workspace,
+) -> None:
+    hund = _headword(built, "Hund")
+    for sense in (0, 1):
+        plan = PlanWordCards(built.config).execute(hund, 0, [sense], []).unwrap()
+        CreateWordCards(built.config).execute(plan, NOW).unwrap()
+
+    assert _rows(built, "SELECT COUNT(*) FROM card WHERE card_type = 'article'") == [(1,)]
+
+
+def test_a_noun_without_a_gender_refuses_the_article_card_and_names_it(
+    built: Workspace,
+) -> None:
+    fernweh = _headword(built, "Fernweh")
+
+    plan = PlanWordCards(built.config).execute(fernweh, None, [], [(0, 0)]).unwrap()
+
+    assert [c.card_type for c in plan.cards] == ["meaning_de_de"]
+    assert [(r.card_type, r.missing) for r in plan.refusals] == [("article", ("gender",))]
+    assert len(CreateWordCards(built.config).execute(plan, NOW).unwrap()) == 1
+
+
+def test_a_noun_with_no_sense_picked_gets_no_article_card(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+
+    plan = PlanWordCards(built.config).execute(hund, 0, [], []).unwrap()
+
+    assert plan.cards == ()
+    assert plan.refusals == ()

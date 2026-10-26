@@ -86,7 +86,11 @@ Screen.-narrow #buttons Button {
 Screen.-narrow #buttons #reveal,
 Screen.-narrow #buttons #home,
 Screen.-narrow #buttons #back,
-Screen.-narrow #buttons #next {
+Screen.-narrow #buttons #next,
+Screen.-narrow #buttons #cont,
+Screen.-narrow #buttons #art1,
+Screen.-narrow #buttons #art2,
+Screen.-narrow #buttons #art3 {
     width: 1fr;
 }
 

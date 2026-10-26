@@ -12,12 +12,13 @@ from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Static
 
 from harald.config import Config
-from harald.use_cases.study import Grade, NextCard, SessionSummary
+from harald.use_cases.study import AnswerArticle, Grade, NextCard, SessionSummary
 
 # A double tap on "Show answer" must not land on a grade button that appears under the thumb.
 _TAP_GUARD_S = 0.3
 _GRADES = ((1, "Again"), (2, "Hard"), (3, "Good"), (4, "Easy"))
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
+_ARTICLE_BUTTONS = ((1, "der"), (2, "die"), (3, "das"))
 
 
 def _word(content: dict[str, Any]) -> str:
@@ -49,13 +50,20 @@ def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str]
         )
     if card_type == "meaning_de_de":
         return "German -> German", [_word(content), content["pos"]], [content["definition"]]
+    if card_type == "article":
+        lemma = content["lemma"]
+        plural = f"   (pl. {content['plural']})" if content.get("plural") else ""
+        return "Article", [f"{lemma}{plural}", content["hint"]], []
     return card_type, [_word(content)], []
 
 
 class StudyScreen(Screen[None]):
     TITLE = "Study"
     BINDINGS = [
-        Binding("space", "reveal", "Show"),
+        # one binding for space: Textual stops at the first binding for a key even when its
+        # check_action refuses, so a second "continue" binding on space is never reached
+        Binding("space", "advance", "Show"),
+        Binding("enter", "continue", "Next"),
         # the grade buttons already name their keys, and four more hints overflow 40 columns
         *(Binding(str(n), f"grade({n})", f"{n} {name}", show=False) for n, name in _GRADES),
         Binding("escape", "end", "End"),
@@ -67,6 +75,7 @@ class StudyScreen(Screen[None]):
         self._session_id = uuid.uuid4().hex
         self._card: tuple[int, str, dict[str, Any]] | None = None
         self._revealed = False
+        self._feedback: list[str] | None = None
         self._graded = 0
         self._front_at = 0.0
         self._grades_at = 0.0
@@ -79,6 +88,9 @@ class StudyScreen(Screen[None]):
             yield self._button("Show answer", "reveal")
             for n, name in _GRADES:
                 yield self._button(f"{n} {name}", f"grade{n}")
+            for n, name in _ARTICLE_BUTTONS:
+                yield self._button(f"{n} {name}", f"art{n}")
+            yield self._button("Next  (enter)", "cont")
         yield Footer(compact=True)
 
     @staticmethod
@@ -91,10 +103,20 @@ class StudyScreen(Screen[None]):
         self._next()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if self._card is None:
+            return action in ("end",)
+        article = self._card[1] == "article"
+        if action == "advance":
+            return self._feedback is not None or (not article and not self._revealed)
         if action == "reveal":
-            return self._card is not None and not self._revealed
+            return not article and not self._revealed
+        if action == "continue":
+            return self._feedback is not None
         if action == "grade":
-            return self._card is not None and self._revealed
+            number = parameters[0]
+            if article:
+                return self._feedback is None and number in (1, 2, 3)
+            return self._revealed
         return True
 
     def _next(self) -> None:
@@ -110,6 +132,8 @@ class StudyScreen(Screen[None]):
         card = found.unwrap()
         self._card = (card.id, card.card_type, card.content)
         self._revealed = False
+        self._feedback = None
+        self._grades_at = time.monotonic()
         self._front_at = time.monotonic()
         self._show()
 
@@ -123,6 +147,8 @@ class StudyScreen(Screen[None]):
             Text(""),
             Text("\n".join(front), justify="center"),
         ]
+        if self._feedback is not None:
+            parts += [Text(""), Text("\n".join(self._feedback), justify="center")]
         if self._revealed:
             parts += [
                 Text("-" * 20, style="dim", justify="center"),
@@ -130,10 +156,15 @@ class StudyScreen(Screen[None]):
             ]
         self.query_one("#card", Static).update(Group(*parts))
         self.sub_title = f"{self._graded} done"
-        self.query_one("#reveal").display = not self._revealed
+        article = card_type == "article"
+        asking = article and self._feedback is None
+        self.query_one("#reveal").display = not article and not self._revealed
         self.query_one("#buttons").set_class(self._revealed, "-grading")
         for n, _ in _GRADES:
             self.query_one(f"#grade{n}").display = self._revealed
+        for n, _ in _ARTICLE_BUTTONS:
+            self.query_one(f"#art{n}").display = asking
+        self.query_one("#cont").display = self._feedback is not None
         self.refresh_bindings()
 
     def action_reveal(self) -> None:
@@ -141,8 +172,43 @@ class StudyScreen(Screen[None]):
         self._grades_at = time.monotonic()
         self._show()
 
+    def action_continue(self) -> None:
+        self._next()
+
+    def action_advance(self) -> None:
+        if self._feedback is not None:
+            self._next()
+        else:
+            self.action_reveal()
+
+    def action_answer_article(self, number: int) -> None:
+        if self._card is None:
+            return
+        card_id, _, content = self._card
+        chosen = _ARTICLE_BUTTONS[number - 1][1]
+        duration_ms = int((time.monotonic() - self._front_at) * 1000)
+        answered = AnswerArticle(self._config).execute(
+            card_id, chosen, datetime.now(UTC), self._session_id, duration_ms
+        )
+        if answered.is_err:
+            self.notify(str(answered.unwrap_err()), severity="error")
+            return
+        check = answered.unwrap()
+        shown = f"{'/'.join(check.accepted)} {content['lemma']}"
+        self._feedback = (
+            [f"RIGHT   {shown}"]
+            if check.correct
+            else [f"WRONG   {shown}", f"(you chose: {chosen})"]
+        )
+        self._graded += 1
+        self._grades_at = time.monotonic()
+        self._show()
+
     def action_grade(self, rating: int) -> None:
         if self._card is None:
+            return
+        if self._card[1] == "article":
+            self.action_answer_article(rating)
             return
         card_id = self._card[0]
         duration_ms = int((time.monotonic() - self._front_at) * 1000)
@@ -166,7 +232,13 @@ class StudyScreen(Screen[None]):
         button_id = event.button.id or ""
         if button_id == "reveal":
             self.action_reveal()
-        elif time.monotonic() - self._grades_at >= _TAP_GUARD_S:
+        elif time.monotonic() - self._grades_at < _TAP_GUARD_S:
+            return
+        elif button_id == "cont":
+            self.action_continue()
+        elif button_id.startswith("art"):
+            self.action_answer_article(int(button_id.removeprefix("art")))
+        else:
             self.action_grade(int(button_id.removeprefix("grade")))
 
 
