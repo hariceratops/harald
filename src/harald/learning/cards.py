@@ -22,8 +22,11 @@ def _canonical(content: object) -> str:
     return json.dumps(content, sort_keys=True, ensure_ascii=False)
 
 
+_ONCE_PER_WORD = ("article", "stammformen")
+
+
 def _identity(card: NewCard) -> tuple[str, str]:
-    return (card.card_type, "" if card.card_type == "article" else _canonical(card.content))
+    return (card.card_type, "" if card.card_type in _ONCE_PER_WORD else _canonical(card.content))
 
 
 def drop_live_duplicates(
@@ -39,9 +42,9 @@ def drop_live_duplicates(
                 Word.discriminator == hint.discriminator,
             )
         ).all()
-        # the hint follows whichever sense was picked first, so an article card is "the same"
-        # whatever its content: one per word
-        return {(t, "" if t == "article" else _canonical(c)) for t, c in rows}
+        # the hint follows whichever sense was picked first, so these cards are "the same"
+        # whatever their content: one per word
+        return {(t, "" if t in _ONCE_PER_WORD else _canonical(c)) for t, c in rows}
 
     found = ctx.run(live).map_err(_storage)
     if found.is_err:

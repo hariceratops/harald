@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 from textual.pilot import Pilot
-from textual.widgets import Button
+from textual.widgets import Button, Input
 
 from harald.learning.content import CardPlan
 from harald.tui.app import HaraldApp
@@ -236,5 +236,98 @@ def test_article_buttons_answer_and_ignore_a_tap_right_after_they_appear(
         await pilot.click("#cont")
         await pilot.pause()
         assert not app.screen.query_one("#cont", Button).display
+
+    _drive(built, (40, 30), script)
+
+
+def _seed_verb(ws: Workspace, lemma: str = "anrufen") -> None:
+    verb = LoadHeadword(ws.config).execute(lemma, "verb").unwrap().unwrap()
+    plan = PlanWordCards(ws.config).execute(verb, 0, [0], []).unwrap()
+    plan = CardPlan(
+        plan.word_hint, tuple(c for c in plan.cards if c.card_type == "stammformen"), ()
+    )
+    CreateWordCards(ws.config).execute(plan, datetime(2026, 1, 1, tzinfo=UTC)).unwrap()
+
+
+async def _type_fields(app: HaraldApp, pilot: Pilot[None], *forms: str) -> None:
+    for form in forms:
+        for ch in form:
+            await pilot.press("space" if ch == " " else ch)
+        await pilot.press("enter")
+    await pilot.pause()
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_stammformen_card_is_typed_and_graded_good_when_right(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_verb(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        assert any("Stammformen" in line for line in lines)
+        assert any("anrufen  -  to call; to phone" in line for line in lines)
+        assert any("TRENNBAR  an|rufen" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert not app.screen.query_one("#reveal", Button).display
+        assert app.screen.query_one("#fields").display
+        assert_inside(app.screen, size)
+
+        await pilot.press("space", "3")
+        await pilot.pause()
+        assert app.screen.query_one("#sf0", Input).value == " 3"
+        app.screen.query_one("#sf0", Input).value = ""
+
+        await _type_fields(app, pilot, "ruft an", "rief an", "hat angerufen")
+        assert _answers(built) == [(3, "ruft an | rief an | hat angerufen")]
+        lines = static_lines(app.screen, "#card")
+        assert any(line.startswith("er/sie/es") and line.rstrip().endswith("ok") for line in lines)
+        assert any("RIGHT - graded Good" in line for line in lines)
+        assert any("trennbar: the prefix an" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert not app.screen.query_one("#fields").display
+        assert app.screen.query_one("#cont", Button).display
+        assert_inside(app.screen, size)
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen.query_one("#fields").display or isinstance(app.screen, SummaryScreen)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_a_wrong_stammformen_field_is_shown_in_place_and_graded_again(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_verb(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _type_fields(app, pilot, "ruft an", "rief", "")
+        assert [r for r, _ in _answers(built)] == [1]
+        lines = static_lines(app.screen, "#card")
+        assert any(line.rstrip().endswith("WRONG") and "rief" in line for line in lines)
+        assert any("-> rief an" in line for line in lines)
+        assert any("(empty)" in line for line in lines)
+        assert any("-> hat angerufen" in line for line in lines)
+        assert any("WRONG - graded Again" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+def test_umlaut_digraphs_are_accepted_for_a_typed_form(built: Workspace) -> None:
+    _seed_verb(built, "laufen")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _type_fields(app, pilot, "laeuft", "lief", "ist gelaufen")
+        assert [r for r, _ in _answers(built)] == [3]
 
     _drive(built, (40, 30), script)
