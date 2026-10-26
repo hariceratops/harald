@@ -3,7 +3,14 @@ import re
 from typing import Any
 
 from harald.build.forms import parse_forms
-from harald.build.records import EntryRecord, ExampleRecord, FormOfRecord, SenseRecord
+from harald.build.records import (
+    EntryRecord,
+    EnWordRecord,
+    ExampleRecord,
+    FormOfRecord,
+    SenseRecord,
+    TranslationRecord,
+)
 from harald.core.option import Option
 
 SKIPPED_POS = {"character", "symbol", "punct"}
@@ -23,9 +30,11 @@ _VARIANT_TAGS = {
 }  # fmt: skip
 
 
-def parse_line(line: bytes) -> Option[EntryRecord | FormOfRecord]:
+def parse_line(line: bytes) -> Option[EntryRecord | FormOfRecord | EnWordRecord]:
     """Raises json.JSONDecodeError on a bad line; the caller counts those."""
     rec = json.loads(line)
+    if rec.get("lang_code") == "en":
+        return _en_word(rec)
     if rec.get("lang_code") != "de" or rec.get("pos") in SKIPPED_POS:
         return Option.none()
     senses = rec.get("senses") or []
@@ -56,6 +65,26 @@ def parse_line(line: bytes) -> Option[EntryRecord | FormOfRecord]:
     )
 
 
+def _en_word(rec: dict[str, Any]) -> Option[EntryRecord | FormOfRecord | EnWordRecord]:
+    # wiktextract keeps translations on the entry; per-sense ones are accepted in case it moves them
+    found = [*(rec.get("translations") or ())]
+    for sense in rec.get("senses") or ():
+        found.extend(sense.get("translations") or ())
+    translations = tuple(
+        TranslationRecord(
+            t.get("sense") or "",
+            t["word"],
+            "".join(g for g in "mfn" if any(GENDER_TAGS.get(x) == g for x in t.get("tags", ()))),
+            t.get("english") or None,
+        )
+        for t in found
+        if t.get("lang_code") == "de" and t.get("word")
+    )
+    if not translations:
+        return Option.none()
+    return Option.some(EnWordRecord(rec["word"], rec["pos"], translations))
+
+
 def _sense(sense: dict[str, Any]) -> SenseRecord:
     labels = tuple(dict.fromkeys(t for t in sense.get("tags", ()) if t in LABELS))
     examples = tuple(
@@ -83,7 +112,7 @@ def _has_translated_example(sense: dict[str, Any]) -> bool:
 
 def _form_of(
     rec: dict[str, Any], senses: list[dict[str, Any]]
-) -> Option[EntryRecord | FormOfRecord]:
+) -> Option[EntryRecord | FormOfRecord | EnWordRecord]:
     for sense in senses:
         for target in sense.get("form_of") or ():
             return Option.some(FormOfRecord(rec["word"], target["word"], rec["pos"]))

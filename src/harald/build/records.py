@@ -54,6 +54,21 @@ class FormOfRecord:
 
 
 @dataclass(frozen=True)
+class TranslationRecord:
+    sense: str
+    german: str
+    gender: str
+    note: str | None
+
+
+@dataclass(frozen=True)
+class EnWordRecord:
+    word: str
+    pos: str
+    translations: tuple[TranslationRecord, ...]
+
+
+@dataclass(frozen=True)
 class DeExampleRecord:
     text: str
     ref: str | None
