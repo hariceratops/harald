@@ -284,3 +284,57 @@ def test_build_reports_per_node_timings(workspace: Workspace) -> None:
         "fuzzy.merge",
         "finalize",
     ]
+
+
+def test_lexicon_records_sources_dates_and_attribution(built: Workspace) -> None:
+    db = built.config.lexicon
+
+    sources = _rows(db, "SELECT name, licence, attribution FROM source ORDER BY name")
+    files = _rows(db, "SELECT filename, source, source_date, sha256 FROM source_file")
+
+    assert [s[:2] for s in sources] == [
+        ("tatoeba", "CC BY 2.0 FR"),
+        ("wiktionary-de", "CC BY-SA 4.0"),
+        ("wiktionary-en", "CC BY-SA 4.0"),
+    ]
+    assert sources[0][2] == "Tatoeba contributors (tatoeba.org)"
+    assert files == [
+        (
+            EN_FILENAME,
+            "wiktionary-en",
+            "unknown",
+            hashlib.sha256((built.config.sources_dir / EN_FILENAME).read_bytes()).hexdigest(),
+        )
+    ]
+
+
+def test_build_records_coverage(built: Workspace) -> None:
+    stats = dict(
+        (r[0], r[1:])
+        for r in _rows(
+            built.config.lexicon, "SELECT metric, numerator, denominator FROM build_stat"
+        )
+    )
+
+    # nouns: Hund, Band x2, Aufenthaltsgenehmigung; Berlin is a proper noun and left out
+    assert stats["coverage.noun_gender"] == (4, 4)
+    assert stats["coverage.stammformen"] == (2, 2)
+    assert stats["coverage.translated_example"][0] == 1
+    assert stats["bad_lines.wiktionary-en"] == (1, None)
+
+
+def test_fetch_failure_aborts_the_build_and_keeps_the_lexicon(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from harald.build import run
+    from harald.build.errors import FetchFailed
+    from harald.core.result import Result
+
+    before = _stat_and_hash(built.config.lexicon)
+    monkeypatch.setattr(run, "fetch_all", lambda _: Result.err(FetchFailed("x", "offline")))
+
+    res = build(built.config, fetch=True)
+
+    assert isinstance(res.unwrap_err(), FetchFailed)
+    assert _stat_and_hash(built.config.lexicon) == before
+    assert list(built.config.staging_dir.glob("*.db")) == []

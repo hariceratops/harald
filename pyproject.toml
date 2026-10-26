@@ -30,6 +30,7 @@ select = ["E", "F", "I", "B", "BLE", "UP"]
 
 [tool.mypy]
 strict = true
+enable_error_code = ["truthy-bool"]
 mypy_path = "src"
 
 [tool.ruff.lint.per-file-ignores]

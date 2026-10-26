@@ -18,6 +18,13 @@ class SourceUnreadable(BuildError):
         self.detail = detail
 
 
+class FetchFailed(BuildError):
+    def __init__(self, file: str, detail: str) -> None:
+        super().__init__(f"fetching {file} failed: {detail}. The previous copy was kept.")
+        self.file = file
+        self.detail = detail
+
+
 class TooFewEntries(BuildError):
     def __init__(self, found: int, minimum: int) -> None:
         super().__init__(
