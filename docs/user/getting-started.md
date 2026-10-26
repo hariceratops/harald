@@ -55,7 +55,11 @@ a touch screen the same actions are buttons. Adding a noun also adds an article
 card: press `1` der, `2` die or `3` das, read the result, then `enter` or
 `space` continues; a right answer counts as Good, a wrong one as Again. A noun
 with no gender in the data is refused an article card, and the confirm step
-says so. A summary of cards reviewed and
+says so. Adding a verb also adds a Stammformen card: type the 3rd person
+singular present, the Präteritum and the Perfekt (`hat` or `ist` plus the
+Partizip II), moving between the three fields with `enter`; `ae`, `oe`, `ue`
+and `ss` are accepted for `ä`, `ö`, `ü` and `ß`. A verb whose data lacks a form
+is refused the card and the confirm step names the missing forms. A summary of cards reviewed and
 answered correctly ends the session. Cards live in `learning.db`, created on
 first use; Harald refuses one written by a newer version.
 

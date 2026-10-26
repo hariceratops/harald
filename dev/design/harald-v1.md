@@ -2072,6 +2072,36 @@ one batch.
 - **Still unverified, by hand in Termux:** taps on der / die / das and Next,
   the 300 ms guard, and the article feedback layout with the keyboard hidden.
 
+### 7.11 Deviations found while implementing 012 (2026-10-26)
+
+- **Form labels in a refusal.** `Präsens`, `Präteritum`, `Partizip II` and
+  `auxiliary`, so §7.3's "German labels" holds except for the auxiliary,
+  which matches the §7.3 example (`missing: Präteritum, auxiliary`).
+- **A German-edition-only verb is refused.** It has no English-edition entry,
+  so no principal parts; the refusal names all four forms.
+- **Perfekt is `<hat|ist> <participle>`.** A verb with two auxiliaries
+  accepts either. `answer_matches` (`text.py`) is NFC, strip, collapse
+  whitespace, digraph-fold both sides, then compare case-sensitively.
+- **Grading in one transaction**, as for articles: Good if all three fields
+  match, Again otherwise; the review's `answer` is stored as `a | b | c`.
+  `answer_article` and `answer_stammformen` share `_answer_checked`.
+- **Feedback layout.** Left-aligned text in the card Static, not per-Input
+  cells as in the wireframe. A wrong field shows `WRONG` on its row with
+  `-> expected` on the line below, at every width.
+- **Footer hint.** Only the Enter hint shows during input; space and digits
+  type into the focused Input. The "ae/oe/ue/ss accepted" hint is omitted to
+  save rows at 40x12.
+- **Holding Enter can skip the feedback.** The last field's Enter submits and
+  the next Enter continues; the tap guard covers buttons only, and keys are
+  not debounced.
+- **Layering.** The TUI may not import `learning.answers`, so
+  `use_cases/study.py` re-exports `StammformenCheck`.
+- **Test gaps.** The "second sense later" dedupe test synthesises a second
+  sense and the missing-forms tests build gappy entries with
+  `dataclasses.replace`, because no fixture verb has either.
+- **Still unverified, by hand in Termux:** typing in the three Inputs with the
+  soft keyboard, and the feedback layout at 40x12.
+
 ---
 
 ## 8. `harald check` (issue 021)
