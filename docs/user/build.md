@@ -1,10 +1,10 @@
 # Building the lexicon
 
 ```sh
-harald build [--fetch] [--force]
+harald-cli build [--fetch] [--force]
 ```
 
-`harald build` reads the locally kept source files and writes `lexicon.db`.
+`harald-cli build` reads the locally kept source files and writes `lexicon.db`.
 
 ## Sources
 
@@ -33,7 +33,7 @@ recorded in the lexicon.
   never reaches the phone.
 - **Versioned.** If the lexicon's schema version differs from the one Harald
   expects, Harald refuses to start and names both versions. The fix is
-  `harald build`.
+  `harald-cli build`.
 - **Sanity check.** A build with fewer than `build_min_entries` entries is
   rejected rather than published.
 
@@ -44,4 +44,4 @@ recorded in the lexicon.
 
 The build runs as a parallel task graph; `build_workers` sets the number of
 worker processes. It prints per-stage timings, the entry and bad-line counts,
-and the same report as `harald info`.
+and the same report as `harald-cli info`.

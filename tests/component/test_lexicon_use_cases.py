@@ -39,3 +39,13 @@ def test_look_up_english_finds_use(built: Workspace) -> None:
     result = LookUpEnglish(built.config).execute("use").unwrap()
 
     assert result.shown
+
+
+def test_load_headword_finds_a_lemma_and_misses_a_stranger(built: Workspace) -> None:
+    from harald.use_cases.lexicon import LoadHeadword
+
+    found = LoadHeadword(built.config).execute("Hund", "noun").unwrap()
+    missing = LoadHeadword(built.config).execute("Zzzzzz", "noun").unwrap()
+
+    assert found.unwrap().lemma == "Hund"
+    assert missing.is_none

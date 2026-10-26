@@ -35,7 +35,7 @@ byte-identical and Syncthing resends the file.
 
 `lexicon/schema.py` holds `SCHEMA_VERSION`. Bump it whenever the lexicon
 schema changes. An existing `lexicon.db` at another version is refused until
-`harald build` is rerun, so a bump is user-visible; say so in the commit.
+`harald-cli build` is rerun, so a bump is user-visible; say so in the commit.
 
 ## Adding a parsed field
 

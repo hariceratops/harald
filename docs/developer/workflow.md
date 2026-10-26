@@ -25,7 +25,7 @@ the code disagree on a name, `AGENTS.md` wins (`lexicon.db`, `learning.db`).
 
 1. Write a use case class in `use_cases/` with an `execute()` returning a
    `Result`.
-2. Add a click command in `cli.py` that loads the config, calls the use case
+2. Add a click command in `cli.py` (the `harald-cli` entry point; the TUI is the separate `harald` entry point in `tui/main.py`) that loads the config, calls the use case
    and maps errors to exit codes (1 failed, 2 refused).
 3. Render with `render.py`, which must fit 40 columns.
 4. Add a smoke test and update the [user docs](../user/getting-started.md)

@@ -42,6 +42,25 @@ def _key_distances(session: Session, lang: str, key: str) -> dict[int, int]:
     }
 
 
+_FULL_LOAD = (
+    selectinload(Headword.entries).selectinload(Entry.senses).selectinload(Sense.examples),
+    selectinload(Headword.entries).selectinload(Entry.verb_forms),
+    selectinload(Headword.de_entries).selectinload(DeEntry.senses).selectinload(DeSense.examples),
+)
+
+
+def load_headword(lex: Lexicon, lemma: str, pos: str) -> Option[model.Headword]:
+    with lex.sessions() as session:
+        hw = session.scalar(
+            select(Headword)
+            .where(Headword.lemma == lemma, Headword.pos == pos)
+            .options(*_FULL_LOAD)
+        )
+        if hw is None:
+            return Option.none()
+        return Option.some(_to_model(hw, False, lemma))
+
+
 def lookup_en(lex: Lexicon, query: str) -> model.EnLookupResult:
     typed = " ".join(query.split())
     with lex.sessions() as session:
@@ -107,17 +126,7 @@ def lookup_de(lex: Lexicon, query: str) -> model.LookupResult:
         loaded = {
             hw.id: hw
             for hw in session.scalars(
-                select(Headword)
-                .where(Headword.id.in_(shown_ids))
-                .options(
-                    selectinload(Headword.entries)
-                    .selectinload(Entry.senses)
-                    .selectinload(Sense.examples),
-                    selectinload(Headword.entries).selectinload(Entry.verb_forms),
-                    selectinload(Headword.de_entries)
-                    .selectinload(DeEntry.senses)
-                    .selectinload(DeSense.examples),
-                )
+                select(Headword).where(Headword.id.in_(shown_ids)).options(*_FULL_LOAD)
             )
         }
         shown = tuple(_to_model(loaded[m[2].id], m[0] == 0 and m[1] == 1, typed) for m in tier)

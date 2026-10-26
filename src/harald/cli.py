@@ -136,7 +136,7 @@ def lookup(config_path: Path | None, conj: bool, english: bool, words: tuple[str
 
 def main(argv: Sequence[str] | None = None) -> int:
     try:
-        code: int = cli.main(args=argv, prog_name="harald", standalone_mode=False)
+        code: int = cli.main(args=argv, prog_name="harald-cli", standalone_mode=False)
         return code
     except click.ClickException as e:
         e.show()

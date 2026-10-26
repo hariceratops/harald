@@ -7,6 +7,7 @@ SRC = Path(harald.__file__).parent
 ALLOWED = (
     "harald.use_cases",
     "harald.render",
+    "harald.tui",
     "harald.config",
     "harald.core.result",
     "harald.lexicon.errors",

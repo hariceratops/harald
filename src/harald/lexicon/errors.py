@@ -7,7 +7,7 @@ class LexiconError(Exception):
 
 class LexiconMissing(LexiconError):
     def __init__(self, path: Path) -> None:
-        super().__init__(f"{path} does not exist. Run 'harald build' on the desktop first.")
+        super().__init__(f"{path} does not exist. Run 'harald-cli build' on the desktop first.")
         self.path = path
 
 
