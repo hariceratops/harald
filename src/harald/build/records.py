@@ -17,12 +17,28 @@ class UnmappedRow:
 
 
 @dataclass(frozen=True)
+class ExampleRecord:
+    text: str
+    translation: str | None
+    kind: str
+    ref: str | None
+
+
+@dataclass(frozen=True)
+class SenseRecord:
+    gloss: str
+    labels: tuple[str, ...]
+    examples: tuple[ExampleRecord, ...]
+
+
+@dataclass(frozen=True)
 class EntryRecord:
     lemma: str
     pos: str
     gender: str
     plural: str | None
-    glosses: tuple[str, ...]
+    ipa: str | None
+    senses: tuple[SenseRecord, ...]
     translated_senses: int
     separable_prefix: str | None
     verb_forms: tuple[VerbFormRecord, ...]
@@ -35,3 +51,26 @@ class FormOfRecord:
     form: str
     lemma: str
     pos: str
+
+
+@dataclass(frozen=True)
+class DeExampleRecord:
+    text: str
+    ref: str | None
+
+
+@dataclass(frozen=True)
+class DeSenseRecord:
+    # None marks a heading line such as "Plural »Bänder«:"
+    sense_index: str | None
+    gloss: str
+    labels: tuple[str, ...]
+    examples: tuple[DeExampleRecord, ...]
+
+
+@dataclass(frozen=True)
+class DeEntryRecord:
+    lemma: str
+    pos: str
+    label: str
+    senses: tuple[DeSenseRecord, ...]

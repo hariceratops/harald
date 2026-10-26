@@ -75,3 +75,8 @@ def test_none_survives_pickling() -> None:
 def test_none_is_a_single_instance() -> None:
     assert Option.none() is Option.none()
     assert Option.from_optional(None) is Option.none()
+
+
+def test_to_optional_is_the_inverse_of_from_optional() -> None:
+    assert Option.some(3).to_optional() == 3
+    assert Option.none().to_optional() is None

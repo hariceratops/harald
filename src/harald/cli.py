@@ -1,10 +1,10 @@
-import argparse
-import os
-import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
-from harald.config import Config, ConfigError, load_config
+import click
+
+from harald.config import ConfigError, load_config
 from harald.lexicon.errors import LexiconError
 
 _EXIT_FAILED = 1
@@ -21,94 +21,114 @@ def _exit_code(err: Exception) -> int:
 
 
 def _fail(err: Exception) -> int:
-    print(err, file=sys.stderr)
+    click.echo(err, err=True)
     return _exit_code(err)
 
 
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="harald")
-    parser.add_argument("--config", type=Path, default=None)
-    sub = parser.add_subparsers(dest="command", required=True)
-    build = sub.add_parser("build", help="build lexicon.db from the locally kept sources")
-    build.add_argument("--fetch", action="store_true", help="download the sources first")
-    build.add_argument("--force", action="store_true", help="rebuild even if nothing changed")
-    sub.add_parser("info", help="show sources, dates, attribution and coverage")
-    lookup = sub.add_parser("lookup", help="look up a German word")
-    lookup.add_argument("--conj", action="store_true", help="show every tense")
-    lookup.add_argument("words", nargs="+", metavar="WORD")
-    return parser
-
-
-def _build(config: Config, fetch: bool, force: bool) -> int:
-    from harald.build.run import build
-
-    res = build(config, fetch, force)
-    if res.is_err:
-        return _fail(res.unwrap_err())
-    report = res.unwrap()
-    for outcome in report.fetched:
-        print(f"{outcome.filename}: {'downloaded' if outcome.downloaded else 'already current'}")
-    for filename in report.unknown_dates:
-        print(f"warning: no trusted date for {filename}; recorded as unknown", file=sys.stderr)
-    if report.unchanged:
-        print(f"unchanged: {config.lexicon} left untouched")
-        return _info(config)
-    if not report.published:
-        print("rebuilt identical bytes: published file left untouched")
-    for t in report.timings:
-        jobs = f" (jobs {t.job_seconds:.1f} s)" if t.job_seconds is not None else ""
-        print(f"  {t.node:<14}{t.seconds:7.1f} s{jobs}")
-    print(f"{report.entries} entries, {report.bad_lines} bad lines")
-    print(f"{config.lexicon} ({report.size_bytes / 1_000_000:.1f} MB) in {report.seconds:.1f} s")
-    return _info(config)
-
-
-def _info(config: Config) -> int:
+def _print(renderable: Any) -> None:
     from rich.console import Console
 
-    from harald.lexicon.db import open_lexicon
-    from harald.lexicon.info import load_info
-    from harald.lexicon.schema import SCHEMA_VERSION
-    from harald.render import render_info
+    Console().print(renderable)
 
-    opened = open_lexicon(config.lexicon)
-    if opened.is_err:
-        return _fail(opened.unwrap_err())
-    Console().print(render_info(load_info(opened.unwrap(), SCHEMA_VERSION)))
+
+@click.group()
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    envvar="HARALD_CONFIG",
+    help="path to config.toml",
+)
+@click.pass_context
+def cli(ctx: click.Context, config_path: Path | None) -> None:
+    # the config is loaded by each command, so a broken one cannot break `--help`
+    ctx.obj = config_path
+
+
+@cli.command(help="build lexicon.db from the locally kept sources")
+@click.option("--fetch", is_flag=True, help="download the sources first")
+@click.option("--force", is_flag=True, help="rebuild even if nothing changed")
+@click.pass_obj
+def build(config_path: Path | None, fetch: bool, force: bool) -> int:
+    from harald.render import render_info
+    from harald.use_cases.build import BuildLexicon
+
+    loaded = load_config(config_path)
+    if loaded.is_err:
+        return _fail(loaded.unwrap_err())
+    config = loaded.unwrap()
+    res = BuildLexicon(config).execute(fetch, force)
+    if res.is_err:
+        return _fail(res.unwrap_err())
+    done = res.unwrap()
+    report = done.report
+    for outcome in report.fetched:
+        click.echo(
+            f"{outcome.filename}: {'downloaded' if outcome.downloaded else 'already current'}"
+        )
+    for filename in report.unknown_dates:
+        click.echo(f"warning: no trusted date for {filename}; recorded as unknown", err=True)
+    if report.unchanged:
+        click.echo(f"unchanged: {config.lexicon} left untouched")
+    else:
+        if not report.published:
+            click.echo("rebuilt identical bytes: published file left untouched")
+        for t in report.timings:
+            jobs = f" (jobs {t.job_seconds:.1f} s)" if t.job_seconds is not None else ""
+            click.echo(f"  {t.node:<14}{t.seconds:7.1f} s{jobs}")
+        click.echo(f"{report.entries} entries, {report.bad_lines} bad lines")
+        click.echo(
+            f"{config.lexicon} ({report.size_bytes / 1_000_000:.1f} MB) in {report.seconds:.1f} s"
+        )
+    _print(render_info(done.info))
     return 0
 
 
-def _lookup(config: Config, words: list[str], full_conjugation: bool) -> int:
-    from rich.console import Console
+@cli.command(help="show sources, dates, attribution and coverage")
+@click.pass_obj
+def info(config_path: Path | None) -> int:
+    from harald.render import render_info
+    from harald.use_cases.lexicon import QueryLexiconInfo
 
-    from harald.lexicon.db import open_lexicon
-    from harald.lexicon.lookup import lookup_de
+    loaded = load_config(config_path)
+    if loaded.is_err:
+        return _fail(loaded.unwrap_err())
+    queried = QueryLexiconInfo(loaded.unwrap()).execute()
+    if queried.is_err:
+        return _fail(queried.unwrap_err())
+    _print(render_info(queried.unwrap()))
+    return 0
+
+
+@cli.command(help="look up a German word")
+@click.option("--conj", is_flag=True, help="show every tense")
+@click.argument("words", nargs=-1, required=True, metavar="WORD...")
+@click.pass_obj
+def lookup(config_path: Path | None, conj: bool, words: tuple[str, ...]) -> int:
     from harald.render import render_lookup
+    from harald.use_cases.lexicon import LookUpGerman
 
-    opened = open_lexicon(config.lexicon)
-    if opened.is_err:
-        return _fail(opened.unwrap_err())
+    loaded = load_config(config_path)
+    if loaded.is_err:
+        return _fail(loaded.unwrap_err())
     query = " ".join(words)
-    result = lookup_de(opened.unwrap(), query)
+    looked_up = LookUpGerman(loaded.unwrap()).execute(query)
+    if looked_up.is_err:
+        return _fail(looked_up.unwrap_err())
+    result = looked_up.unwrap()
     if not result.shown:
-        print(f"No match for {query!r}", file=sys.stderr)
+        click.echo(f"No match for {query!r}", err=True)
         return _EXIT_FAILED
-    Console().print(render_lookup(result, full_conjugation))
+    _print(render_lookup(result, conj))
     return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
-    config_path = args.config or (Path(p) if (p := os.environ.get("HARALD_CONFIG")) else None)
     try:
-        loaded = load_config(config_path)
-        if loaded.is_err:
-            return _fail(loaded.unwrap_err())
-        config = loaded.unwrap()
-        if args.command == "build":
-            return _build(config, args.fetch, args.force)
-        if args.command == "info":
-            return _info(config)
-        return _lookup(config, args.words, args.conj)
-    except KeyboardInterrupt:
+        code: int = cli.main(args=argv, prog_name="harald", standalone_mode=False)
+        return code
+    except click.ClickException as e:
+        e.show()
+        return e.exit_code
+    except click.Abort:  # click's form of KeyboardInterrupt
         return _EXIT_INTERRUPTED

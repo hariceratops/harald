@@ -90,3 +90,46 @@ def test_info_shows_sources_dates_attribution_and_coverage(workspace: Workspace)
     assert "Tatoeba contributors" in res.stdout
     assert "verbs with complete Stammformen" in res.stdout
     assert "2026" not in res.stdout and "unknown" in res.stdout
+
+
+def test_lookup_shows_ipa_labels_and_examples(workspace: Workspace) -> None:
+    _harald(workspace, "build")
+
+    res = _harald(workspace, "lookup", "Hund", columns=80)
+
+    assert res.returncode == 0, res.stderr
+    assert "/hʊnt/" in res.stdout
+    assert "[derogatory] person who is despicable" in res.stdout
+    assert "Der Hund bellt. — The dog barks." in res.stdout
+    assert "Der  Hundt lief  daron." in res.stdout
+    assert "Anon., 1850" in res.stdout
+
+
+def test_lookup_band_shows_german_definitions_and_untranslated_examples(
+    workspace: Workspace,
+) -> None:
+    _harald(workspace, "build")
+
+    res = _harald(workspace, "lookup", "Band", columns=40)
+
+    assert res.returncode == 0, res.stderr
+    out = res.stdout
+    assert max(len(line) for line in out.splitlines()) <= 40
+    assert out.count("German definitions (de.wiktionary)") == 1
+    assert out.count("German examples (untranslated)") == 1
+    definitions, examples = out.split("German examples (untranslated)")
+    assert "[1a]" in definitions and "[colloquial] schmales Stück" in definitions
+    assert "Plural »Bänder«:" in definitions
+    assert "Sie trug ein Band im Haar." in examples
+    assert "Gruppe von Musikern" not in examples
+
+
+def test_lookup_german_only_word_shows_the_german_block(workspace: Workspace) -> None:
+    _harald(workspace, "build")
+
+    res = _harald(workspace, "lookup", "Fernweh", columns=80)
+
+    assert res.returncode == 0, res.stderr
+    assert "Fernweh" in res.stdout
+    assert "[1] Sehnsucht nach der Ferne" in res.stdout
+    assert "German examples" not in res.stdout

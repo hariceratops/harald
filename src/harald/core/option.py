@@ -32,6 +32,9 @@ class Option[T]:
     def is_none(self) -> bool:
         return not self._is_some
 
+    def to_optional(self) -> T | None:
+        return self._value
+
     def unwrap(self) -> T:
         if not self._is_some:
             raise RuntimeError("called unwrap on None")

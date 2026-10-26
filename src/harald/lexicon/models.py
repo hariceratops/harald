@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Index
+from sqlalchemy import CheckConstraint, ForeignKey, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -24,6 +24,7 @@ class Headword(Base):
     richness: Mapped[int]
 
     entries: Mapped[list["Entry"]] = relationship(lazy="raise", order_by="Entry.ord")
+    de_entries: Mapped[list["DeEntry"]] = relationship(lazy="raise", order_by="DeEntry.ord")
 
 
 class Entry(Base):
@@ -35,6 +36,7 @@ class Entry(Base):
     ord: Mapped[int]
     gender: Mapped[str]
     plural: Mapped[str | None]
+    ipa: Mapped[str | None]
     separable_prefix: Mapped[str | None]
 
     senses: Mapped[list["Sense"]] = relationship(lazy="raise", order_by="Sense.ord")
@@ -49,6 +51,62 @@ class Sense(Base):
     entry_id: Mapped[int] = mapped_column(ForeignKey("entry.id"))
     ord: Mapped[int]
     gloss: Mapped[str]
+    labels: Mapped[str]  # JSON array of register and valency labels
+
+    examples: Mapped[list["Example"]] = relationship(lazy="raise", order_by="Example.ord")
+
+
+class Example(Base):
+    __tablename__ = "example"
+    __table_args__ = (
+        Index("example_sense_ord", "sense_id", "ord"),
+        CheckConstraint("kind IN ('example','quotation')"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sense_id: Mapped[int] = mapped_column(ForeignKey("sense.id"))
+    ord: Mapped[int]
+    text: Mapped[str]
+    translation: Mapped[str | None]
+    kind: Mapped[str]
+    ref: Mapped[str | None]
+
+
+class DeEntry(Base):
+    __tablename__ = "de_entry"
+    __table_args__ = (Index("de_entry_headword_ord", "headword_id", "ord"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    headword_id: Mapped[int] = mapped_column(ForeignKey("headword.id"))
+    ord: Mapped[int]
+    label: Mapped[str]  # display label, e.g. "das Band"
+
+    senses: Mapped[list["DeSense"]] = relationship(lazy="raise", order_by="DeSense.ord")
+
+
+class DeSense(Base):
+    __tablename__ = "de_sense"
+    __table_args__ = (Index("de_sense_entry_ord", "de_entry_id", "ord"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    de_entry_id: Mapped[int] = mapped_column(ForeignKey("de_entry.id"))
+    ord: Mapped[int]
+    sense_index: Mapped[str | None]  # NULL marks a heading line
+    gloss: Mapped[str]
+    labels: Mapped[str]  # JSON array
+
+    examples: Mapped[list["DeExample"]] = relationship(lazy="raise", order_by="DeExample.ord")
+
+
+class DeExample(Base):
+    __tablename__ = "de_example"
+    __table_args__ = (Index("de_example_sense_ord", "de_sense_id", "ord"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    de_sense_id: Mapped[int] = mapped_column(ForeignKey("de_sense.id"))
+    ord: Mapped[int]
+    text: Mapped[str]
+    ref: Mapped[str | None]
 
 
 class SearchKey(Base):

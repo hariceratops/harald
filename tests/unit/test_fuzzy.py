@@ -22,7 +22,7 @@ def test_fuzzy_deletes_use_first_seven_characters() -> None:
     ],
 )
 def test_osa_within(a: str, b: str, k: int, expected: int | None) -> None:
-    assert osa_within(a, b, k) == expected
+    assert osa_within(a, b, k).to_optional() == expected
 
 
 def test_max_distance_is_one_for_short_keys() -> None:

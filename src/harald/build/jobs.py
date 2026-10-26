@@ -2,8 +2,8 @@ import json
 import sqlite3
 from dataclasses import dataclass, replace
 
+from harald.build import wiktextract_de, wiktextract_en
 from harald.build.records import EntryRecord
-from harald.build.wiktextract_en import parse_line
 from harald.lexicon.fuzzy import fuzzy_deletes
 from harald.text import fold
 
@@ -32,7 +32,7 @@ class CoverageCounts:
             return self
         counts = replace(
             self,
-            senses=self.senses + len(record.glosses),
+            senses=self.senses + len(record.senses),
             senses_translated=self.senses_translated + record.translated_senses,
         )
         if record.pos == "verb":
@@ -75,6 +75,7 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
     entry_rows: list[tuple[object, ...]] = []
     sense_rows: list[tuple[object, ...]] = []
     form_rows: list[tuple[object, ...]] = []
+    example_rows: list[tuple[object, ...]] = []
     keys: dict[tuple[str, str, str, int], None] = {}
     counts: dict[tuple[str, str], int] = {}
     examples: dict[tuple[str, str], tuple[str, str]] = {}
@@ -85,24 +86,29 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
         if not line:
             continue
         try:
-            record = parse_line(line)
+            parsed = wiktextract_en.parse_line(line)
         except json.JSONDecodeError:
             bad_lines += 1
             continue
-        if record is None:
+        if parsed.is_none:
             continue
+        record = parsed.unwrap()
         if not isinstance(record, EntryRecord):
             keys[(fold(record.form), record.lemma, record.pos, 1)] = None
             continue
         cov = cov.add(record)
         local = len(entry_rows) + 1
         entry_rows.append(
-            (seq, local, record.lemma, record.pos, record.gender, record.plural,
+            (seq, local, record.lemma, record.pos, record.gender, record.plural, record.ipa,
              record.separable_prefix)
         )  # fmt: skip
-        for n, gloss in enumerate(record.glosses, 1):
+        for n, sense in enumerate(record.senses, 1):
             senses += 1
-            sense_rows.append((seq, senses, local, n, gloss))
+            sense_rows.append((seq, senses, local, n, sense.gloss, json.dumps(sense.labels)))
+            example_rows.extend(
+                (seq, senses, k, ex.text, ex.translation, ex.kind, ex.ref)
+                for k, ex in enumerate(sense.examples, 1)
+            )
         per_slot: dict[str, int] = {}
         for vf in record.verb_forms:
             per_slot[vf.slot] = per_slot.get(vf.slot, 0) + 1
@@ -114,8 +120,9 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
             counts[(u.pos, u.tagset)] = counts.get((u.pos, u.tagset), 0) + 1
             examples.setdefault((u.pos, u.tagset), (u.word, u.form))
 
-    shard.executemany("INSERT INTO entry_stage VALUES (?, ?, ?, ?, ?, ?, ?)", entry_rows)
-    shard.executemany("INSERT INTO sense_stage VALUES (?, ?, ?, ?, ?)", sense_rows)
+    shard.executemany("INSERT INTO entry_stage VALUES (?, ?, ?, ?, ?, ?, ?, ?)", entry_rows)
+    shard.executemany("INSERT INTO sense_stage VALUES (?, ?, ?, ?, ?, ?)", sense_rows)
+    shard.executemany("INSERT INTO example_stage VALUES (?, ?, ?, ?, ?, ?, ?)", example_rows)
     shard.executemany("INSERT INTO verb_form_stage VALUES (?, ?, ?, ?, ?, ?)", form_rows)
     shard.executemany(
         "INSERT INTO key_stage VALUES (?, ?, ?, ?, ?)",
@@ -123,6 +130,54 @@ def parse_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> ParseCount
     )
     unmapped = tuple((*k, counts[k], *examples[k]) for k in counts)
     return ParseCounts(len(entry_rows), senses, bad_lines, unmapped, cov)
+
+
+@dataclass(frozen=True)
+class DeParseCounts:
+    entries: int
+    senses: int
+    examples: int
+    bad_lines: int
+
+
+def parse_de_chunk(shard: sqlite3.Connection, seq: int, chunk: bytes) -> DeParseCounts:
+    """Like parse_chunk, for the German edition; the offsets come from DeParseCounts."""
+    entry_rows: list[tuple[object, ...]] = []
+    sense_rows: list[tuple[object, ...]] = []
+    example_rows: list[tuple[object, ...]] = []
+    keys: dict[tuple[str, str, str], None] = {}
+    bad_lines = 0
+    for line in chunk.split(b"\n"):
+        if not line:
+            continue
+        try:
+            parsed = wiktextract_de.parse_line(line)
+        except json.JSONDecodeError:
+            bad_lines += 1
+            continue
+        if parsed.is_none:
+            continue
+        record = parsed.unwrap()
+        local = len(entry_rows) + 1
+        entry_rows.append((seq, local, record.lemma, record.pos, record.label))
+        for n, sense in enumerate(record.senses, 1):
+            sense_local = len(sense_rows) + 1
+            sense_rows.append(
+                (seq, sense_local, local, n, sense.sense_index, sense.gloss,
+                 json.dumps(sense.labels))
+            )  # fmt: skip
+            for k, ex in enumerate(sense.examples, 1):
+                example_rows.append((seq, len(example_rows) + 1, sense_local, k, ex.text, ex.ref))
+        keys[(fold(record.lemma), record.lemma, record.pos)] = None
+
+    shard.executemany("INSERT INTO de_entry_stage VALUES (?, ?, ?, ?, ?)", entry_rows)
+    shard.executemany("INSERT INTO de_sense_stage VALUES (?, ?, ?, ?, ?, ?, ?)", sense_rows)
+    shard.executemany("INSERT INTO de_example_stage VALUES (?, ?, ?, ?, ?, ?)", example_rows)
+    shard.executemany(
+        "INSERT INTO key_stage VALUES (?, ?, ?, ?, 0)",
+        [(seq, k, lemma, pos) for k, lemma, pos in keys],
+    )
+    return DeParseCounts(len(entry_rows), len(sense_rows), len(example_rows), bad_lines)
 
 
 def fuzzy_range(shard: sqlite3.Connection, keys: list[tuple[int, str]]) -> int:

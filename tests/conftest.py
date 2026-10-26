@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from harald.build.sources import EN_FILENAME
+from harald.build.sources import DE_FILENAME, EN_FILENAME
 from harald.config import Config
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -25,6 +25,8 @@ def workspace(tmp_path: Path) -> Workspace:
     sources.mkdir()
     with gzip.open(sources / EN_FILENAME, "wb") as f:
         f.write((FIXTURES / "en-edition.jsonl").read_bytes())
+    with gzip.open(sources / DE_FILENAME, "wb") as f:
+        f.write((FIXTURES / "de-edition.jsonl").read_bytes())
     config_file = tmp_path / "config.toml"
     config_file.write_text(
         f'lexicon = "{tmp_path / "out" / "lexicon.db"}"\n'

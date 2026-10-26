@@ -1,3 +1,5 @@
+from harald.core.option import Option
+
 _PREFIX = 7
 
 
@@ -11,10 +13,10 @@ def max_distance(key: str) -> int:
     return 1 if len(key) <= 4 else 2
 
 
-def osa_within(a: str, b: str, k: int) -> int | None:
-    """Restricted Damerau (OSA) distance, or None when it exceeds k."""
+def osa_within(a: str, b: str, k: int) -> Option[int]:
+    """Restricted Damerau (OSA) distance, or none when it exceeds k."""
     if abs(len(a) - len(b)) > k:
-        return None
+        return Option.none()
     prev2: list[int] = []
     prev = list(range(len(b) + 1))
     for i, ca in enumerate(a, 1):
@@ -26,6 +28,6 @@ def osa_within(a: str, b: str, k: int) -> int | None:
                 best = min(best, prev2[j - 2] + 1)
             cur[j] = best
         if min(cur) > k:
-            return None
+            return Option.none()
         prev2, prev = prev, cur
-    return prev[-1] if prev[-1] <= k else None
+    return Option.some(prev[-1]) if prev[-1] <= k else Option.none()

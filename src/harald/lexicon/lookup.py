@@ -1,10 +1,23 @@
+import json
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from harald.core.option import Option
 from harald.lexicon import model
 from harald.lexicon.db import Lexicon
 from harald.lexicon.fuzzy import fuzzy_deletes, max_distance, osa_within
-from harald.lexicon.models import Entry, FuzzyDelete, Headword, KeyHeadword, SearchKey, VerbForm
+from harald.lexicon.models import (
+    DeEntry,
+    DeSense,
+    Entry,
+    FuzzyDelete,
+    Headword,
+    KeyHeadword,
+    SearchKey,
+    Sense,
+    VerbForm,
+)
 from harald.text import fold
 
 _FULL_LIMIT = 3
@@ -24,9 +37,9 @@ def lookup_de(lex: Lexicon, query: str) -> model.LookupResult:
             .distinct()
         ).all()
         distance = {
-            key_id: d
+            key_id: d.unwrap()
             for key_id, cand in candidates
-            if (d := osa_within(key, cand, limit)) is not None
+            if (d := osa_within(key, cand, limit)).is_some
         }
         if not distance:
             return model.LookupResult(query, (), ())
@@ -59,8 +72,13 @@ def lookup_de(lex: Lexicon, query: str) -> model.LookupResult:
                 select(Headword)
                 .where(Headword.id.in_(shown_ids))
                 .options(
-                    selectinload(Headword.entries).selectinload(Entry.senses),
+                    selectinload(Headword.entries)
+                    .selectinload(Entry.senses)
+                    .selectinload(Sense.examples),
                     selectinload(Headword.entries).selectinload(Entry.verb_forms),
+                    selectinload(Headword.de_entries)
+                    .selectinload(DeEntry.senses)
+                    .selectinload(DeSense.examples),
                 )
             )
         }
@@ -76,6 +94,7 @@ def _to_model(hw: Headword, via_form: bool, typed: str) -> model.Headword:
         hw.lemma,
         hw.pos,
         tuple(_entry_model(e) for e in hw.entries),
+        tuple(_german_model(d) for d in hw.de_entries),
         via_form=typed if via_form else None,
     )
 
@@ -85,10 +104,37 @@ def _entry_model(e: Entry) -> model.Entry:
     return model.Entry(
         e.gender,
         e.plural,
-        tuple(s.gloss for s in e.senses),
+        tuple(_sense_model(s) for s in e.senses),
+        e.ipa,
         e.separable_prefix,
         _principal_parts(slots) if slots else None,
         {s: f for s, f in slots.items() if not s.endswith(".sub")},
+    )
+
+
+def _german_model(d: DeEntry) -> model.GermanEntry:
+    return model.GermanEntry(
+        d.label,
+        tuple(
+            model.GermanSense(
+                s.sense_index,
+                s.gloss,
+                tuple(json.loads(s.labels)),
+                tuple(model.GermanExample(ex.text, ex.ref) for ex in s.examples),
+            )
+            for s in d.senses
+        ),
+    )
+
+
+def _sense_model(s: Sense) -> model.Sense:
+    return model.Sense(
+        s.gloss,
+        tuple(json.loads(s.labels)),
+        tuple(
+            model.Example(ex.text, ex.translation, ex.kind == "quotation", ex.ref)
+            for ex in s.examples
+        ),
     )
 
 
@@ -104,13 +150,13 @@ def _display_forms(rows: list[VerbForm]) -> dict[str, tuple[str, ...]]:
 
 
 def _principal_parts(slots: dict[str, tuple[str, ...]]) -> model.PrincipalParts:
-    def first(*names: str) -> str | None:
-        return next((slots[n][0] for n in names if n in slots), None)
+    def first(*names: str) -> Option[str]:
+        return Option.from_optional(next((slots[n][0] for n in names if n in slots), None))
 
     aux = slots.get("pp.aux") or slots.get("aux", ())
     return model.PrincipalParts(
-        first("pp.pres3sg", "ind.pres.3sg"),
-        first("pp.pret", "ind.pret.3sg"),
-        first("pp.part2", "part2"),
+        first("pp.pres3sg", "ind.pres.3sg").to_optional(),
+        first("pp.pret", "ind.pret.3sg").to_optional(),
+        first("pp.part2", "part2").to_optional(),
         aux,
     )
