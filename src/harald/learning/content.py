@@ -52,7 +52,7 @@ def _conjugation_cards(
     en_senses: Sequence[int],
     de_senses: Sequence[tuple[int, int]],
     tenses: Sequence[str],
-) -> tuple[list[NewCard], Refusal | None]:
+) -> tuple[list[NewCard], list[Refusal]]:
     forms = entry.conjugation if entry else {}
     if entry is not None and en_senses:
         hint = entry.senses[en_senses[0]].gloss
@@ -85,7 +85,7 @@ def _conjugation_cards(
         if gaps:
             what = "all persons" if len(gaps) == len(PERSONS) else ", ".join(gaps)
             missing.append(f"{names[stem]} ({what})")
-    return cards, Refusal("conjugation", tuple(missing)) if missing else None
+    return cards, [Refusal("conjugation", tuple(missing))] if missing else []
 
 
 def plan_word_cards(
@@ -188,8 +188,7 @@ def plan_word_cards(
                 )
             )
     if headword.pos == "verb" and tenses:
-        conjugation, refusal = _conjugation_cards(headword, entry, en_senses, de_senses, tenses)
-        cards.extend(conjugation)
-        if refusal:
-            refusals.append(refusal)
+        extra, extra_refusals = _conjugation_cards(headword, entry, en_senses, de_senses, tenses)
+        cards.extend(extra)
+        refusals.extend(extra_refusals)
     return CardPlan(hint, tuple(cards), tuple(refusals))
