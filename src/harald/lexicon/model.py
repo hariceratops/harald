@@ -1,6 +1,20 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+# A conjugation slot is f"{stem}.{suffix}", e.g. "ind.pres.3sg".
+PERSONS = (
+    ("1sg", "ich"), ("2sg", "du"), ("3sg", "er/sie/es"),
+    ("1pl", "wir"), ("2pl", "ihr"), ("3pl", "sie/Sie"),
+)  # fmt: skip
+TENSES = (
+    ("ind.pres", "Präsens"), ("ind.pret", "Präteritum"), ("ind.perf", "Perfekt"),
+    ("ind.plup", "Plusquamperfekt"), ("ind.fut1", "Futur I"), ("ind.fut2", "Futur II"),
+    ("subj1.pres", "Konjunktiv I"), ("subj1.perf", "Konj. I Perfekt"),
+    ("subj1.fut1", "Konj. I Futur I"), ("subj1.fut2", "Konj. I Futur II"),
+    ("subj2.pret", "Konjunktiv II"), ("subj2.plup", "Konj. II Plusq."),
+    ("subj2.fut1", "Konj. II Futur I"), ("subj2.fut2", "Konj. II Futur II"),
+)  # fmt: skip
+
 
 @dataclass(frozen=True)
 class PrincipalParts:
