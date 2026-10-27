@@ -269,7 +269,7 @@ def test_stammformen_card_is_typed_and_graded_good_when_right(
         lines = static_lines(app.screen, "#card")
         assert any("Stammformen" in line for line in lines)
         assert any("anrufen  -  to call; to phone" in line for line in lines)
-        assert any("TRENNBAR  an|rufen" in line for line in lines)
+        assert not any("TRENNBAR" in line or "split forms" in line for line in lines)
         assert all(len(line) <= size[0] for line in lines)
         assert not app.screen.query_one("#reveal", Button).display
         assert app.screen.query_one("#fields").display

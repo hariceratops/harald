@@ -64,10 +64,6 @@ def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str]
         return "Article", [f"{lemma}{plural}", content["hint"]], []
     if card_type == "stammformen":
         front = [f"{content['infinitive']}  -  {content['hint']}"]
-        prefix = content["separable_prefix"]
-        if prefix:
-            stem = content["infinitive"].removeprefix(prefix)
-            front += [f"TRENNBAR  {prefix}|{stem}", "(answer with the split forms)"]
         return "Stammformen", front, []
     return card_type, [_word(content)], []
 
