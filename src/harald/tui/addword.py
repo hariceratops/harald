@@ -11,7 +11,7 @@ from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
 from harald.config import Config
-from harald.lexicon.model import Headword
+from harald.lexicon.model import PERSONS, TENSES, Headword
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
@@ -21,6 +21,7 @@ _CARD_NAMES = {
     "meaning_de_de": "German -> German",
     "article": "Article",
     "stammformen": "Stammformen",
+    "conjugation": "Conjugation",
 }
 
 
@@ -78,6 +79,7 @@ class AddWordScreen(Screen[None]):
         self._steps = [
             *(["en"] if entry_index is not None and headword.entries[entry_index].senses else []),
             *(["de"] if headword.german else []),
+            *(["tense"] if headword.pos == "verb" else []),
             "confirm",
         ]
         self._at = 0
@@ -85,6 +87,8 @@ class AddWordScreen(Screen[None]):
         self._de_picked: list[tuple[int, int]] = []
         self._en_have: set[int] = set()
         self._de_have: set[tuple[int, int]] = set()
+        self._tense_picked: list[str] = []
+        self._tense_have: set[str] = set()
         self._new_count = 0
 
     def compose(self) -> ComposeResult:
@@ -139,6 +143,19 @@ class AddWordScreen(Screen[None]):
                     return False
                 if not planned.unwrap().cards:
                     self._de_have.add((e, i))
+        if "tense" in self._steps and entry is not None:
+            planned = PlanWordCards(self._config).execute(
+                self._headword, self._entry_index, [], [], [stem for stem, _ in TENSES]
+            )
+            if planned.is_err:
+                self.notify(str(planned.unwrap_err()), severity="error")
+                return False
+            fresh = {c.content["slot"].rsplit(".", 1)[0] for c in planned.unwrap().cards}
+            self._tense_have = {
+                stem
+                for stem, _ in TENSES
+                if stem not in fresh and any(s.startswith(f"{stem}.") for s in entry.conjugation)
+            }
         return True
 
     @property
@@ -154,6 +171,10 @@ class AddWordScreen(Screen[None]):
             self._de_picked = [
                 v for v in self.query_one(SelectionList).selected if isinstance(v, tuple)
             ]
+        elif self._step == "tense":
+            self._tense_picked = [
+                v for v in self.query_one(SelectionList).selected if isinstance(v, str)
+            ]
 
     def _show(self) -> None:
         picker = self.query_one("#picker", SelectionList)
@@ -165,6 +186,7 @@ class AddWordScreen(Screen[None]):
         titles = {
             "en": "English senses (each gives a de->en and an en->de card)",
             "de": "German definitions (each gives a de->de card)",
+            "tense": "Conjugation tenses (6 cards each)",
             "confirm": "Confirm",
         }
         self.query_one("#step", Static).update(
@@ -197,6 +219,12 @@ class AddWordScreen(Screen[None]):
                 i for i in range(picker.option_count) if not picker.get_option_at_index(i).disabled
             )
             picker.focus()
+        elif step == "tense":
+            for stem, name in TENSES:
+                label = f"{name}  (has cards)" if stem in self._tense_have else name
+                picker.add_option(Selection(Content(label), stem, stem in self._tense_picked))
+            picker.highlighted = 0
+            picker.focus()
         else:
             self._show_confirm()
         self.query_one("#back", Button).label = "Cancel" if self._at == 0 else "< Back"
@@ -207,7 +235,7 @@ class AddWordScreen(Screen[None]):
 
     def _show_confirm(self) -> None:
         planned = PlanWordCards(self._config).execute(
-            self._headword, self._entry_index, self._en_picked, self._de_picked
+            self._headword, self._entry_index, self._en_picked, self._de_picked, self._tense_picked
         )
         summary = self.query_one("#summary", Static)
         if planned.is_err:
@@ -216,7 +244,14 @@ class AddWordScreen(Screen[None]):
             return
         plan = planned.unwrap()
         by_type = Counter(c.card_type for c in plan.cards)
-        picked = 2 * len(self._en_picked) + len(self._de_picked)
+        entry = self._headword.entries[self._entry_index] if self._entry_index is not None else None
+        requested_forms = sum(
+            1
+            for stem in self._tense_picked
+            for suffix, _ in PERSONS
+            if entry and entry.conjugation.get(f"{stem}.{suffix}")
+        )
+        picked = 2 * len(self._en_picked) + len(self._de_picked) + requested_forms
         lines = ["Cards to create"]
         lines += [f"  {n} x {_CARD_NAMES[t]}" for t, n in by_type.items()]
         if not plan.cards:
@@ -257,7 +292,7 @@ class AddWordScreen(Screen[None]):
 
     def action_create(self) -> None:
         planned = PlanWordCards(self._config).execute(
-            self._headword, self._entry_index, self._en_picked, self._de_picked
+            self._headword, self._entry_index, self._en_picked, self._de_picked, self._tense_picked
         )
         if planned.is_err:
             self.notify(str(planned.unwrap_err()), severity="error")
