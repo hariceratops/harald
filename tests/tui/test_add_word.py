@@ -1,4 +1,5 @@
 import sqlite3
+from dataclasses import replace
 
 import pytest
 from textual.pilot import Pilot
@@ -7,6 +8,7 @@ from textual.widgets import Input, SelectionList
 from harald.tui.addword import AddWordScreen, PickEntryScreen
 from harald.tui.app import HaraldApp
 from harald.tui.entry import EntryScreen
+from harald.use_cases.lexicon import LoadHeadword
 from tests.conftest import Workspace
 from tests.tui.helpers import assert_inside, static_lines
 from tests.tui.test_navigation import SIZES, _drive
@@ -127,6 +129,21 @@ def test_picker_steps_hint_at_space_and_an_empty_confirm_says_why(
         assert _cards(built) == []
 
     _drive(built, size, script)
+
+
+def test_a_tense_with_no_forms_is_refused_and_not_reported_as_unticked(built: Workspace) -> None:
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        loaded = LoadHeadword(built.config).execute("anrufen", "verb").unwrap().unwrap()
+        bare = replace(loaded, entries=(replace(loaded.entries[0], conjugation={}),))
+        await app.push_screen(AddWordScreen(built.config, bare, 0))
+        await pilot.pause()
+        await pilot.press("n", "space", "n")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#summary")
+        assert any("Präsens (all persons)" in line for line in lines)
+        assert not any("Nothing was ticked" in line for line in lines)
+
+    _drive(built, (100, 30), script)
 
 
 def test_a_german_only_headword_goes_straight_to_the_german_step(built: Workspace) -> None:

@@ -257,7 +257,7 @@ class AddWordScreen(Screen[None]):
         lines += [f"  {n} x {_CARD_NAMES[t]}" for t, n in by_type.items()]
         if not plan.cards:
             lines.append("  nothing new")
-        if picked == 0:
+        if not (self._en_picked or self._de_picked or self._tense_picked):
             lines.append("Nothing was ticked: b goes back, space ticks a row")
         if picked > len(plan.cards):
             lines.append(f"Already have: {picked - len(plan.cards)}")

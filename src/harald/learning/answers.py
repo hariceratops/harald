@@ -57,7 +57,6 @@ def check_stammformen(content: dict[str, Any], given: tuple[str, str, str]) -> S
 
 
 def check_conjugation(content: dict[str, Any], given: str) -> FieldCheck:
-    """Any form listed for the slot is accepted."""
     label = dict(PERSONS)[content["slot"].rsplit(".", 1)[1]]
     forms = content["forms"]
     return FieldCheck(label, given, any(answer_matches(given, f) for f in forms), "/".join(forms))

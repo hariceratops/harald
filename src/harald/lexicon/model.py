@@ -1,7 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-# A conjugation slot is f"{stem}.{suffix}", e.g. "ind.pres.3sg".
 PERSONS = (
     ("1sg", "ich"), ("2sg", "du"), ("3sg", "er/sie/es"),
     ("1pl", "wir"), ("2pl", "ihr"), ("3pl", "sie/Sie"),

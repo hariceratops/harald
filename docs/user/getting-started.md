@@ -48,7 +48,8 @@ back. The layout adapts down to 40 columns.
 Adding a word is a short wizard: pick English senses (each gives a German to
 English and an English to German card), pick German definitions (each gives a
 German to German card), then confirm with `c`. Senses that already have cards
-are marked. `n` and `b` move between steps, `space` toggles a sense.
+are marked. `n` and `b` move between steps, `space` toggles a sense; each step says so
+under its title. Confirming with nothing ticked says that nothing was ticked.
 
 Studying shows the next due card. `space` reveals the answer, then `1` Again,
 `2` Hard, `3` Good or `4` Easy grades it; each grade is saved at once. On

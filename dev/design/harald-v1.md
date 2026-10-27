@@ -2353,6 +2353,7 @@ built from the 2026-10-03 dump and queried read-only on 2026-10-27.
 =============== Add word ===============
 Step 3 of 4: Conjugation tenses (6 cards
 each)
+space ticks a row, n goes on
  [ ] Präsens
  [ ] Präteritum
  [ ] Perfekt  (has cards)
@@ -3424,12 +3425,19 @@ German-edition-only headwords go straight to wizard step 2.
   and Cancel are therefore free.
 - A step with nothing to pick is skipped.
 - The buttons docked at the bottom of the body mirror the keys.
+- Every picker step carries a second header line, `space ticks a row, n goes
+  on`, because nothing else in the body says a row must be ticked. When
+  Confirm is reached with no sense and no tense picked, it adds `Nothing was
+  ticked: b goes back, space ticks a row` under "nothing new". The test is
+  on the picks, not the forms found, so a ticked tense whose forms are all
+  missing shows the refusal and not this line.
 
 Step 1, English senses:
 
 ```
 ======================= Add word - das Band (pl. Bänder) =======================
  Step 1 of 3: English senses (each gives a de->en and an en->de card)
+ space ticks a row, n goes on
  ------------------------------------------------------------------------------
  [X] 1. tape, ribbon
  [ ] 2. A ligament
@@ -3460,6 +3468,7 @@ Step 2, German definitions, grouped by German-edition entry. Headings
 ```
 ======================= Add word - das Band (pl. Bänder) =======================
  Step 2 of 3: German definitions (each gives a de->de card)
+ space ticks a row, n goes on
  ------------------------------------------------------------------------------
      das Band
  [ ] [1] dasjenige, was verbindet oder verknüpft
