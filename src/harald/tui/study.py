@@ -12,9 +12,12 @@ from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Static
 
 from harald.config import Config
+from harald.lexicon.model import PERSONS, TENSES
 from harald.use_cases.study import (
     AnswerArticle,
+    AnswerConjugation,
     AnswerStammformen,
+    FieldCheck,
     Grade,
     NextCard,
     SessionSummary,
@@ -26,6 +29,7 @@ _TAP_GUARD_S = 0.3
 _GRADES = ((1, "Again"), (2, "Hard"), (3, "Good"), (4, "Easy"))
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
 _ARTICLE_BUTTONS = ((1, "der"), (2, "die"), (3, "das"))
+_TYPED = ("stammformen", "conjugation")
 _STAMM_LABELS = ("er/sie/es", "Präteritum", "Perfekt")
 
 
@@ -65,16 +69,39 @@ def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str]
     if card_type == "stammformen":
         front = [f"{content['infinitive']}  -  {content['hint']}"]
         return "Stammformen", front, []
+    if card_type == "conjugation":
+        tense = _slot_labels(content["slot"])[0]
+        return "Conjugation", [f"{content['infinitive']}  -  {content['hint']}", "", tense], []
     return card_type, [_word(content)], []
 
 
-def _stammformen_feedback(check: StammformenCheck, content: dict[str, Any]) -> list[str]:
+def _slot_labels(slot: str) -> tuple[str, str]:
+    stem, suffix = slot.rsplit(".", 1)
+    return dict(TENSES)[stem], dict(PERSONS)[suffix]
+
+
+def _field_lines(fields: tuple[FieldCheck, ...]) -> list[str]:
     lines: list[str] = []
-    for f in check.fields:
+    for f in fields:
         given = f.given or "(empty)"
         lines.append(f"{f.label:<11} {given}  {'ok' if f.correct else 'WRONG'}")
         if not f.correct:
             lines.append(f"{'':<11} -> {f.expected}")
+    return lines
+
+
+def _conjugation_feedback(check: FieldCheck, content: dict[str, Any]) -> list[str]:
+    lines = [*_field_lines((check,)), ""]
+    lines.append("RIGHT - graded Good" if check.correct else "WRONG - graded Again")
+    prefix = content["separable_prefix"]
+    if not check.correct and prefix and any(f.endswith(f" {prefix}") for f in content["forms"]):
+        lines.append(f"trennbar: the prefix {prefix} goes to the")
+        lines.append("end in main clauses")
+    return lines
+
+
+def _stammformen_feedback(check: StammformenCheck, content: dict[str, Any]) -> list[str]:
+    lines = _field_lines(check.fields)
     lines.append("")
     lines.append("RIGHT - graded Good" if check.correct else "WRONG - graded Again")
     if content["separable_prefix"]:
@@ -112,8 +139,8 @@ class StudyScreen(Screen[None]):
             yield Static(id="card")
             with Vertical(id="fields"):
                 for i, label in enumerate(_STAMM_LABELS):
-                    with Horizontal(classes="field"):
-                        yield Static(label, classes="field-label")
+                    with Horizontal(classes="field", id=f"row{i}"):
+                        yield Static(label, classes="field-label", id=f"lbl{i}")
                         yield Input(compact=True, id=f"sf{i}")
         with Horizontal(id="buttons"):
             yield self._button("Show answer", "reveal")
@@ -137,7 +164,7 @@ class StudyScreen(Screen[None]):
         if self._card is None:
             return action in ("end",)
         article = self._card[1] == "article"
-        checked = article or self._card[1] == "stammformen"
+        checked = article or self._card[1] in _TYPED
         if action == "advance":
             return self._feedback is not None or (not checked and not self._revealed)
         if action == "reveal":
@@ -148,7 +175,7 @@ class StudyScreen(Screen[None]):
             number = parameters[0]
             if article:
                 return self._feedback is None and number in (1, 2, 3)
-            return self._revealed and self._card[1] != "stammformen"
+            return self._revealed and self._card[1] not in _TYPED
         return True
 
     def _next(self) -> None:
@@ -168,8 +195,8 @@ class StudyScreen(Screen[None]):
         self._grades_at = time.monotonic()
         self._front_at = time.monotonic()
         self._show()
-        if card.card_type == "stammformen":
-            self._focus_fields()
+        if card.card_type in _TYPED:
+            self._focus_fields(card.card_type, card.content)
         else:
             self.set_focus(None)
 
@@ -177,7 +204,7 @@ class StudyScreen(Screen[None]):
         if self._card is None:
             return
         _, card_type, content = self._card
-        typed = card_type == "stammformen"
+        typed = card_type in _TYPED
         heading, front, back = _card_faces(card_type, content)
         parts: list[RenderableType] = [
             Text(heading, style="dim", justify="center"),
@@ -209,9 +236,13 @@ class StudyScreen(Screen[None]):
         self.query_one("#cont").display = self._feedback is not None
         self.refresh_bindings()
 
-    def _focus_fields(self) -> None:
+    def _focus_fields(self, card_type: str, content: dict[str, Any]) -> None:
+        conjugation = card_type == "conjugation"
         for i in range(len(_STAMM_LABELS)):
             self.query_one(f"#sf{i}", Input).value = ""
+            self.query_one(f"#row{i}").display = not (conjugation and i > 0)
+        label = _slot_labels(content["slot"])[1] if conjugation else _STAMM_LABELS[0]
+        self.query_one("#lbl0", Static).update(label)
         self.query_one("#sf0", Input).focus()
 
     def action_reveal(self) -> None:
@@ -254,10 +285,30 @@ class StudyScreen(Screen[None]):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
         number = int(cast(str, event.input.id).removeprefix("sf"))
-        if number < len(_STAMM_LABELS) - 1:
+        if self._card is not None and self._card[1] == "conjugation":
+            self._answer_conjugation()
+        elif number < len(_STAMM_LABELS) - 1:
             self.query_one(f"#sf{number + 1}", Input).focus()
         else:
             self._answer_stammformen()
+
+    def _answer_conjugation(self) -> None:
+        if self._card is None or self._feedback is not None:
+            return
+        card_id, _, content = self._card
+        given = self.query_one("#sf0", Input).value
+        duration_ms = int((time.monotonic() - self._front_at) * 1000)
+        answered = AnswerConjugation(self._config).execute(
+            card_id, given, datetime.now(UTC), self._session_id, duration_ms
+        )
+        if answered.is_err:
+            self.notify(str(answered.unwrap_err()), severity="error")
+            return
+        self._feedback = _conjugation_feedback(answered.unwrap(), content)
+        self._graded += 1
+        self._grades_at = time.monotonic()
+        self._show()
+        self.set_focus(None)
 
     def _answer_stammformen(self) -> None:
         if self._card is None or self._feedback is not None:
