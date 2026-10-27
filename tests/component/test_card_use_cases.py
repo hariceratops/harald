@@ -3,10 +3,11 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from harald.core.option import Option
+from harald.learning.content import CardPlan
 from harald.lexicon.model import Headword, PrincipalParts
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 from harald.use_cases.lexicon import LoadHeadword
-from harald.use_cases.study import NextCard
+from harald.use_cases.study import AnswerConjugation, NextCard
 from tests.conftest import Workspace
 
 NOW = datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
@@ -261,4 +262,127 @@ def test_a_verb_with_no_principal_parts_names_every_form(built: Workspace) -> No
 
     assert [r.missing for r in plan.refusals] == [
         ("Präsens", "Präteritum", "Partizip II", "auxiliary")
+    ]
+
+
+def _conjugation(plan: CardPlan) -> dict[str, dict[str, object]]:
+    return {c.content["slot"]: c.content for c in plan.cards if c.card_type == "conjugation"}
+
+
+def test_each_chosen_tense_gives_a_card_per_person(built: Workspace) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+
+    plan = PlanWordCards(built.config).execute(anrufen, 0, [0], [], ["ind.pres"]).unwrap()
+
+    cards = _conjugation(plan)
+    assert list(cards) == [f"ind.pres.{p}" for p in ("1sg", "2sg", "3sg", "1pl", "2pl", "3pl")]
+    assert cards["ind.pres.1sg"] == {
+        "infinitive": "anrufen",
+        "hint": "to call; to phone",
+        "separable_prefix": "an",
+        "slot": "ind.pres.1sg",
+        "forms": ["rufe an"],
+    }
+    assert plan.refusals == ()
+
+
+def test_conjugation_cards_do_not_need_a_sense(built: Workspace) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+
+    plan = PlanWordCards(built.config).execute(anrufen, 0, [], [], ["ind.pret"]).unwrap()
+
+    assert [c.card_type for c in plan.cards] == ["conjugation"] * 6
+    assert plan.cards[0].content["hint"] == "to call; to phone"
+    assert plan.refusals == ()
+
+
+def test_a_third_person_only_verb_gets_those_cards_and_names_the_rest(
+    built: Workspace,
+) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+    forms = {s: f for s, f in anrufen.entries[0].conjugation.items() if s.endswith(".3sg")}
+    nieseln = replace(anrufen, entries=(replace(anrufen.entries[0], conjugation=forms),))
+
+    plan = PlanWordCards(built.config).execute(nieseln, 0, [0], [], ["ind.pres"]).unwrap()
+
+    assert list(_conjugation(plan)) == ["ind.pres.3sg"]
+    assert [(r.card_type, r.missing) for r in plan.refusals] == [
+        ("conjugation", ("Präsens (ich, du, wir, ihr, sie/Sie)",))
+    ]
+    assert len(CreateWordCards(built.config).execute(plan, NOW).unwrap()) == 4
+
+
+def test_a_verb_without_a_table_refuses_every_chosen_tense_as_all_persons(
+    built: Workspace,
+) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+    bare = replace(anrufen, entries=(replace(anrufen.entries[0], conjugation={}),))
+
+    plan = PlanWordCards(built.config).execute(bare, 0, [0], [], ["ind.pres", "ind.pret"]).unwrap()
+
+    assert _conjugation(plan) == {}
+    assert [r.missing for r in plan.refusals] == [
+        ("Präsens (all persons)", "Präteritum (all persons)")
+    ]
+
+
+def test_a_german_only_verb_refuses_its_tenses(built: Workspace) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+    german_only = replace(anrufen, entries=())
+
+    plan = PlanWordCards(built.config).execute(german_only, None, [], [], ["ind.perf"]).unwrap()
+
+    assert [r.missing for r in plan.refusals] == [("Perfekt (all persons)",)]
+
+
+def test_a_two_auxiliary_perfekt_slot_keeps_both_forms(built: Workspace) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+    forms = {**anrufen.entries[0].conjugation, "ind.perf.1sg": ("habe gefahren", "bin gefahren")}
+    fahren = replace(anrufen, entries=(replace(anrufen.entries[0], conjugation=forms),))
+
+    plan = PlanWordCards(built.config).execute(fahren, 0, [0], [], ["ind.perf"]).unwrap()
+
+    assert _conjugation(plan)["ind.perf.1sg"]["forms"] == ["habe gefahren", "bin gefahren"]
+
+
+def test_a_conjugation_card_is_not_added_twice_whatever_its_forms_or_hint(
+    built: Workspace,
+) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+    first = PlanWordCards(built.config).execute(anrufen, 0, [0], [], ["ind.pres"]).unwrap()
+    CreateWordCards(built.config).execute(first, NOW).unwrap()
+    entry = anrufen.entries[0]
+    changed = replace(
+        anrufen,
+        entries=(
+            replace(
+                entry,
+                senses=(replace(entry.senses[0], gloss="to ring"),),
+                conjugation={**entry.conjugation, "ind.pres.1sg": ("rufe telefonisch an",)},
+            ),
+        ),
+    )
+
+    again = PlanWordCards(built.config).execute(changed, 0, [0], [], ["ind.pres", "ind.pret"])
+
+    slots = list(_conjugation(again.unwrap()))
+    assert slots == [f"ind.pret.{p}" for p in ("1sg", "2sg", "3sg", "1pl", "2pl", "3pl")]
+
+
+def test_answering_a_conjugation_card_grades_it_by_the_check(built: Workspace) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+    plan = PlanWordCards(built.config).execute(anrufen, 0, [], [], ["ind.pres"]).unwrap()
+    CreateWordCards(built.config).execute(plan, NOW).unwrap()
+    rows = _rows(built, "SELECT json_extract(content, '$.slot'), id FROM card")
+    ids = {str(slot): int(str(i)) for slot, i in rows}
+    answer = AnswerConjugation(built.config, enable_fuzzing=False)
+
+    right = answer.execute(ids["ind.pres.1sg"], "rufe an", NOW, "s1").unwrap()
+    wrong = answer.execute(ids["ind.pres.2sg"], "rufst", NOW, "s1").unwrap()
+
+    assert (right.label, right.correct, right.expected) == ("ich", True, "rufe an")
+    assert (wrong.label, wrong.correct, wrong.expected) == ("du", False, "rufst an")
+    assert _rows(built, "SELECT rating, answer FROM review ORDER BY id") == [
+        (3, "rufe an"),
+        (1, "rufst"),
     ]

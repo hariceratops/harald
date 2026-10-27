@@ -20,8 +20,9 @@ class PlanWordCards:
         entry_index: int | None,
         en_senses: Sequence[int],
         de_senses: Sequence[tuple[int, int]],
+        tenses: Sequence[str] = (),
     ) -> Result[CardPlan, LearningDbError]:
-        plan = plan_word_cards(headword, entry_index, en_senses, de_senses)
+        plan = plan_word_cards(headword, entry_index, en_senses, de_senses, tenses)
 
         def dedupe(ctx):  # type: ignore[no-untyped-def]
             return drop_live_duplicates(ctx, plan.word_hint, plan.cards).map(

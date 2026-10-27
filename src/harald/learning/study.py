@@ -15,8 +15,10 @@ from harald.infrastructure.infra_errors import InfrastructureError
 from harald.infrastructure.transaction_context import DbTransactionContext
 from harald.learning.answers import (
     ArticleCheck,
+    FieldCheck,
     StammformenCheck,
     check_article,
+    check_conjugation,
     check_stammformen,
 )
 from harald.learning.errors import CardNotFound, LearningDbError, StorageError
@@ -171,6 +173,22 @@ def answer_stammformen(
     def check(card: Card) -> tuple[StammformenCheck, bool, str]:
         checked = check_stammformen(card.content, given)
         return checked, checked.correct, " | ".join(given)
+
+    return _answer_checked(ctx, card_id, now, session_id, duration_ms, scheduler_for, check)
+
+
+def answer_conjugation(
+    ctx: DbTransactionContext,
+    card_id: int,
+    given: str,
+    now: datetime,
+    session_id: str,
+    duration_ms: int | None,
+    scheduler_for: Callable[[str], Scheduler],
+) -> Result[FieldCheck, LearningDbError]:
+    def check(card: Card) -> tuple[FieldCheck, bool, str]:
+        checked = check_conjugation(card.content, given)
+        return checked, checked.correct, given
 
     return _answer_checked(ctx, card_id, now, session_id, duration_ms, scheduler_for, check)
 
