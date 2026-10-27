@@ -1385,7 +1385,8 @@ share it.
     set (`--conj`, `c`) are unchanged. In portrait they simply stack and
     scroll; no paging keys are needed.
   - Separable verbs show the data's split forms (`rufe an`), and the entry
-    header carries the **TRENNBAR an|rufen** badge (§7.2).
+    header carries the **TRENNBAR an|rufen** badge, from `separable_prefix`
+    (§3.3). Cards no longer show it (§7.12, decision 6).
   - Subordinate-clause forms are stored but not shown.
 - **Width-parametrised test hook**, replacing the 80-column hook.
   - Render each function into `Console(width=w, record=True,
@@ -1490,8 +1491,8 @@ CREATE TABLE operations (id INTEGER PRIMARY KEY AUTOINCREMENT,      -- kohle's c
 | `meaning_en_de` | same | meaning | self-graded; front: gloss, labels, pos; back: article + lemma (+ example) |
 | `meaning_de_de` | `lemma, pos, gender, definition` | meaning | self-graded; front: German definition; back: article + lemma |
 | `article` | `lemma, gender` (one or more of m/f/n), `plural`, `hint` | article | front: lemma, plural, hint; one keypress: `1` der, `2` die, `3` das; any listed gender is correct |
-| `stammformen` | `infinitive, hint, pres3sg, preterite, participle, auxiliaries, separable_prefix` | conjugation | front: infinitive, hint, and the **TRENNBAR** badge when `separable_prefix` is set; three typed fields: er/sie/es Präsens, Präteritum, Perfekt (`ruft an` / `rief an` / `hat angerufen`); all must match |
-| `conjugation` | persons still blocked (§16); carries `separable_prefix` like Stammformen | conjugation | typed |
+| `stammformen` | `infinitive, hint, pres3sg, preterite, participle, auxiliaries, separable_prefix` | conjugation | front: infinitive and hint; three typed fields: er/sie/es Präsens, Präteritum, Perfekt (`ruft an` / `rief an` / `hat angerufen`); all must match |
+| `conjugation` | `infinitive, hint, separable_prefix, slot, forms` (§7.12) | conjugation | front: infinitive, hint, tense; one typed field labelled with the person; any of `forms` matches |
 | `phrase_en_de` | `{}`: the `phrase` row is the copy | phrase | self-graded; front: English (+ note), back: German |
 
 - `CARD_SCOPE` is a single dict from card type to scope. Moving
@@ -1506,16 +1507,17 @@ CREATE TABLE operations (id INTEGER PRIMARY KEY AUTOINCREMENT,      -- kohle's c
   homographs show identical fronts while expecting different answers: Band
   n/m/f, See, Leiter for articles, and umfahren (`fährt um` vs `umfährt`) for
   Stammformen. Found while laying out the study screens (§12.6).
-- **Separable verbs** (open question 5 part 2, resolved by the user):
+- **Separable verbs** (open question 5 part 2; revised by the user on
+  2026-10-27, §7.12 decision 6):
   - the answers are the data's main-clause split forms (`ruft an`,
     `rief an`, `hat angerufen`);
-  - the card shows that the verb is separable, through `separable_prefix`
-    (`"an"`), copied at creation from the entry (§3.3), so the highlight is
-    data-driven;
-  - the front and the feedback render **TRENNBAR an|rufen**, a short label
-    that fits 40 columns (§12.8). The feedback adds that the prefix moves to
-    the end in main clauses;
-  - `check` compares `separable_prefix` like the forms (§8.1).
+  - the front gives no sign that the verb is separable. 012 shipped a
+    **TRENNBAR an|rufen** badge there; the user dropped it from Stammformen
+    and conjugation cards alike, and the 013 slice removes it;
+  - `separable_prefix` (`"an"`) is still copied at creation from the entry
+    (§3.3). It drives the feedback's note that the prefix moves to the end
+    in main clauses, and `check` compares it like the forms (§8.1);
+  - lookup keeps the badge in the entry header (§6).
 - The Perfekt field expects `<aux 3sg> <participle>`, using
   `{"haben": "hat", "sein": "ist"}`. That mapping is German grammar, not
   source knowledge. Verbs with two auxiliaries accept either.
@@ -1523,7 +1525,7 @@ CREATE TABLE operations (id INTEGER PRIMARY KEY AUTOINCREMENT,      -- kohle's c
 ### 7.3 Adding a word (issues 010–014)
 
 `PlanWordCards(dic).execute(headword, entry | None, en_sense_ids, de_sense_ids) -> CardPlan`
-(issue 013 adds a tenses argument once open question 5 is settled)
+(issue 013 adds a `tenses` argument, §7.12)
 returns `CardPlan(word_hint, cards: list[NewCard], refusals: list[Refusal(card_type, missing: list[str])])`.
 - `PlanWordCards` is a plain use-case class in `use_cases/cards.py`
   (§11.2), because as designed here it reads only the lexicon.
@@ -2101,6 +2103,428 @@ one batch.
   `dataclasses.replace`, because no fixture verb has either.
 - **Still unverified, by hand in Termux:** typing in the three Inputs with the
   soft keyboard, and the feedback layout at 40x12.
+
+### 7.12 Per-(tense, person) conjugation cards (issue 013; open question 5 resolved 2026-10-27)
+
+The user asked for open question 5 to be answered on recommended defaults,
+relayed by the main session on 2026-10-27:
+- six persons, with formal Sie folded into 3rd plural;
+- no imperative;
+- the tenses the data supplies;
+- split forms for separable verbs;
+- 012's refusal behaviour.
+
+This section checks those defaults against the data and settles them. Two
+places where the data forced a refinement are marked **Deviation**. Part 2
+(separable verbs on Stammformen) was resolved for 012 with a TRENNBAR badge
+(§7.2). The user has since dropped that badge from both card types and fixed
+the conjugation front (decision 6), which reverses the earlier resolution on
+that point. **Issue 013 is unblocked.** Decision 7 still awaits the user's
+confirmation (§16).
+
+**What the data supplies.** These figures come from `lexicon.db` schema 7,
+built from the 2026-10-03 dump and queried read-only on 2026-10-27.
+- **Coverage.** There are 10,981 verb entries.
+  - 10,420–10,454 of them have each of the 84 finite slots of §3.2 (14
+    tenses × 6 persons).
+  - 527 have no conjugation table, mostly idioms and misspelt headwords
+    (`abschiessend`). 187 of those still have principal parts.
+  - 29 have 3rd-person forms only. These are impersonal verbs, e.g.
+    `nieseln` → `nieselt` / `nieseln`.
+- **No Sie row anywhere** (§0). `formal` does occur, but as a register
+  marker: 83,773 rows tagged `formal,rare` are Konjunktiv II simple forms
+  (`riefe an`), spread over all persons.
+- **Imperative:** `imp.2sg` and `imp.2pl` only.
+- **Compound tenses come fully conjugated per person, auxiliary included:**
+  `ind.perf.1sg` is `bin gelaufen` or `habe angerufen`. A verb with two
+  auxiliaries has both forms in each slot (`habe gefahren`, `bin gefahren`;
+  615 entries).
+- **Several plain forms in one slot:** 3,822 entries have at least one
+  finite slot like this (`liefest` / `liefst`).
+- **Separable verbs** (3,748 entries):
+  - simple tenses are split, with the prefix last (`rufe an`, `riefst an`,
+    Konjunktiv I `rufest an`);
+  - compound tenses carry the prefix inside the participle or infinitive
+    (`habe angerufen`, `werde anrufen`, `hätte angerufen`).
+- **Konjunktiv II simple forms** are plain for only 1,031 of 10,421
+  entries. For the rest, every form is `formal,rare`. `Entry.conjugation`
+  then holds the first of them (`_display_forms`, §4.1), exactly as lookup
+  shows.
+- **Reflexives.** Reflexive idioms carry the pronoun per person (`mache mich
+  auf den Weg`). Plain reflexive verbs carry none (`freue`). Some idiom rows
+  are wrong upstream (`habe sich Mühe gegeben`).
+
+**Decisions**
+
+1. **Persons: six cards per tense**, in lookup's order and with lookup's
+   labels: `ich`, `du`, `er/sie/es`, `wir`, `ihr`, `sie/Sie` (slot suffixes
+   `1sg` … `3pl`).
+   - Formal Sie is not a person of its own. It takes the 3rd-plural form in
+     every tense, and the data has no Sie slot, so a separate card would ask
+     the same slot twice. `sie/Sie` is already the label in lookup's table.
+   - `wir` and `sie/Sie` always share a form. `ich` and `er/sie/es` share one
+     in Präteritum and in both Konjunktive. They still stay separate cards:
+     - they are different slots;
+     - the person → form mapping is what the card drills;
+     - FSRS makes an easy, learned card cheap.
+
+     Merging cards with identical answers would make each verb's card set
+     depend on its forms (modal verbs merge more in Präsens).
+2. **Imperative: not offered.**
+   - In the data it has du and ihr only, so it is not a tense with six
+     persons.
+   - A Sie imperative (`rufen Sie an`) would have to be built by rule
+     rather than copied from the data.
+   - The spec's cards are per (tense, person).
+
+   If the user wants it later, it is two cards (`imp.2sg`, `imp.2pl`) through
+   the same mechanism.
+3. **Tenses offered: all 14 finite tenses of lookup's full table**, in its
+   order: Präsens, Präteritum, Perfekt, Plusquamperfekt, Futur I, Futur II,
+   Konjunktiv I, Konj. I Perfekt, Konj. I Futur I, Konj. I Futur II,
+   Konjunktiv II, Konj. II Plusq., Konj. II Futur I, Konj. II Futur II.
+   - **None is pre-selected.** The spec makes these cards on request.
+   - **This is "the tenses the data supplies".** The data has all 14 for 95%
+     of verbs, so what can be drilled is exactly what `c All tenses` shows.
+   - **The list is fixed, not filtered per verb.** A tense the data lacks
+     can still be chosen; it is then refused with the gap named (decision 7),
+     just as Stammformen is attempted and then refused.
+   - **Not trimmed, though two facts are worth knowing.** The compound
+     tenses after Perfekt mostly drill the auxiliary (`hatte`, `werde`,
+     `würde`). Konjunktiv II simple forms are marked rare for 90% of verbs;
+     the everyday form is Konj. II Futur I (`würde anrufen`). Trimming would
+     mean judging which tenses matter, and the spec leaves that to the
+     learner.
+4. **Perfekt and the other compound tenses.** The answer is the data's whole
+   form, auxiliary included (`bin gelaufen`, `habe angerufen`).
+   - The front shows the tense name and the person but never the auxiliary.
+     Choosing haben or sein is part of the answer, as on the Stammformen
+     card.
+   - A verb with two auxiliaries accepts either, because both forms are in
+     the slot.
+   - Unlike 012, nothing is constructed and `AUXILIARY_3SG` is not used: the
+     table slots are already conjugated per person.
+5. **Answers.** There is one typed field, holding the verb form without the
+   pronoun.
+   - Any form that `Entry.conjugation` lists for the slot is accepted, using
+     `answer_matches` (§5). That covers two auxiliaries and alternative forms
+     (`liefest` / `liefst`). A card accepts what lookup shows.
+   - Forms are copied verbatim. Reflexive idioms therefore include their
+     pronoun, and an upstream error stays on the card until it is edited
+     (017) or flagged by `check` (021).
+6. **Separable verbs.** The answer is the data's main-clause form:
+   - split, with the prefix last, in the simple tenses (`rufe an`);
+   - joined in the compound tenses (`habe angerufen`, `werde anrufen`).
+
+   On the card (decided by the user on 2026-10-27):
+   - **The front gives no sign that the verb is separable.** It is
+     `infinitive - hint`, the tense name, and `ich [ ]`. There is no
+     TRENNBAR badge and no "(answer with the split form)" line. Whether the
+     verb splits is part of what the typed answer shows.
+   - **The main-clause note** ("trennbar: the prefix an goes to the end in
+     main clauses") appears only on a wrong answer, and only when one of the
+     card's forms ends in ` <prefix>`. A right answer needs no lesson, and
+     on up to 84 cards per verb the note would be noise. The compound
+     tenses never show it, because the data joins the prefix there.
+   - `separable_prefix` stays in the content. It drives that note and
+     `check` (§8.1).
+   - Subordinate-clause forms (`anrufe`) are not accepted. They are stored,
+     but they are not part of `Entry.conjugation`.
+
+   **Deviation** from the default as phrased ("prompt shows … `ich rufe …
+   an`"): the front shows `ich [ ]`, because `rufe` is the answer, and
+   prefix-last holds only in the simple tenses, because the data joins the
+   prefix in compound ones.
+
+   **Stammformen loses its badge in this slice too.** This reverses the
+   resolution of open question 5 part 2 recorded for 012 ("split forms plus
+   the TRENNBAR highlight", §7.2 and §16).
+   - The code change is small. The `stammformen` branch of `_card_faces` in
+     `tui/study.py` drops the badge line and the "(answer with the split
+     forms)" line that comes with it, since that line would announce the
+     split on its own. 012's pilot test then asserts that the badge is
+     absent. The wireframes in §12.3, §12.4 and §12.8 are updated.
+   - `separable_prefix` stays in Stammformen content. It still drives the
+     feedback note and `check`. The note stays as shipped, on every
+     Stammformen feedback of a separable verb: that card is asked once per
+     verb, so the note is not the repeated noise it would be on conjugation
+     cards.
+   - No stored data changes, so there is no migration and no content
+     rewrite.
+   - Lookup keeps its badge (§6). An entry is a reference view, not a
+     question.
+
+   **Stammformen's answers are unchanged**, and the code matches 012's
+   format, `ruft an / rief an / hat angerufen`:
+   - `plan_word_cards` copies `pres3sg` and `preterite` from the principal
+     parts. These are the head rows `ruft an` and `rief an`, falling back to
+     the split `ind.pres.3sg` / `ind.pret.3sg`.
+   - `check_stammformen` builds the Perfekt as `AUXILIARY_3SG[aux]` plus the
+     participle, which gives `hat angerufen`.
+7. **Missing forms are refused per (tense, person) card.** *Confirmed by the
+   user on 2026-10-27.* A refusal never blocks the other cards
+   (§7.3).
+   - A plan has one `Refusal("conjugation", missing)`, with one entry per
+     affected tense: `Präsens (ich, du, wir, ihr)`, or `Präteritum (all
+     persons)` when the tense has no forms at all. Confirm then reads
+     `Conjugation - missing: Präsens (ich, du, wir, ihr)`.
+   - So `nieseln` with Präsens gives `er/sie/es` and `sie/Sie` cards and
+     names the other four. A verb with no table, or a German-edition-only
+     verb (no English entry, §7.11), has every chosen tense refused as
+     "(all persons)".
+   - Refusals repeat on every request, as 011 recorded for articles.
+
+   **Deviation** from a strict reading of the spec's "refuses that card
+   type": refusing every conjugation card over one gap would cost `nieseln`
+   its only real forms for no gain. Each conjugation card needs exactly one
+   form, so refusing per card is 012's rule applied at the size of one card.
+
+**Card content and identity** (the `conjugation` row of §7.2)
+- **Content** is `{infinitive, hint, separable_prefix, slot, forms}`, e.g.
+  `{"infinitive": "anrufen", "hint": "to call, to phone",
+  "separable_prefix": "an", "slot": "ind.pres.1sg", "forms": ["rufe an"]}`.
+  `separable_prefix` is `""` when the verb isn't separable, as on
+  Stammformen.
+- **`slot` is stored; the tense and person labels are not.** The labels come
+  from the shared vocabulary (below) when the card is shown. `slot` is what
+  `check` compares with upstream.
+- **`hint`** follows Stammformen's rule: the first chosen English gloss, or
+  else the first chosen German definition.
+  - If no sense is picked in this add, the hint is the chosen entry's first
+    English gloss. That happens when conjugation cards are requested later
+    for a verb whose senses already have cards.
+  - The hint is needed for the same reason as on Stammformen. Homographs
+    with separate entries conjugate differently (hängen: `hing` / `hängte`;
+    schaffen; bewegen), and their fronts would otherwise be identical.
+- **Dedupe identity is (`conjugation`, `slot`)**, not the content. The hint
+  follows whichever sense was picked first, and forms change between builds
+  (011's finding for articles). `_identity` in `learning/cards.py` gains
+  this per-type key.
+- **Scope** is `conjugation`, shared with Stammformen. It is already in
+  `CARD_SCOPE` and in the `card_type` CHECK, so no migration is needed.
+
+**Interfaces**
+- **`lexicon/model.py` gains the read-side slot vocabulary**, moved out of
+  `render.py`'s private copies:
+  - `PERSONS`: pairs of slot suffix and label;
+  - `TENSES`: pairs of stem and German name, in lookup order. `render.py`'s
+    default set is its first three.
+  - A slot is `f"{stem}.{suffix}"`.
+
+  The vocabulary moves here because render, the planner and the TUI all
+  need it, and `lexicon.model` is the one module all three may import (the
+  layering test lists it for front-ends).
+- **Planner.** The signatures become
+  `plan_word_cards(headword, entry_index, en_senses, de_senses, tenses:
+  Sequence[str] = ())` and `PlanWordCards.execute(…, tenses)`. `tenses` holds
+  stems from `TENSES`. Conjugation cards don't depend on which senses are
+  picked.
+- **Checker:** `check_conjugation(content, given: str) -> FieldCheck`, in
+  `learning/answers.py`. It reuses 012's `FieldCheck`, with the person as
+  `label` and `expected` as the forms joined with `/`.
+- **Answering:** `answer_conjugation` in `learning/study.py`, through
+  `_answer_checked`. The grade is Good if the answer matches and Again
+  otherwise, and the review's `answer` is the typed string.
+- **Use case:** `AnswerConjugation(config).execute(card_id, given, now,
+  session_id, duration_ms) -> Result[FieldCheck, LearningDbError]`, in
+  `use_cases/study.py`. That module re-exports `FieldCheck` for the TUI, as
+  it does `StammformenCheck`.
+- **`check`** (§8.1, issue 021): a conjugation card counts as changed unless
+  its slot's forms and its `separable_prefix` equal upstream's.
+
+**TUI**
+- **Add word gets a tense step** for verbs, before Confirm.
+  - It is a `SelectionList` of the 14 tenses, none ticked.
+  - A tense is marked "(has cards)" when the entry has forms for it and a
+    single `PlanWordCards` call with all 14 tenses plans no new card in it.
+    One call, not 14: §7.9 already named the per-sense calls as the thing to
+    clean up.
+  - Confirm counts `n x Conjugation`. Its "Already have" figure includes the
+    requested conjugation cards that dedupe dropped.
+- **Study** reuses the Stammformen field rows, with a single row labelled
+  with the person.
+  - The heading is "Conjugation".
+  - The front shows `infinitive - hint`, then the tense name above the
+    field. There is no badge (decision 6).
+  - Feedback works as in 012: `WRONG` on the row and `-> expected` below it.
+    The main-clause note follows only under decision 6's condition.
+
+```
+=============== Add word ===============
+Step 3 of 4: Conjugation tenses (6 cards
+each)
+ [ ] Präsens
+ [ ] Präteritum
+ [ ] Perfekt  (has cards)
+ [ ] Plusquamperfekt
+ [ ] Futur I
+ …
++-----------------+ +------------------+
+|     < Back      | |      Next >      |
++-----------------+ +------------------+
+n Next  b Back  esc Cancel
+```
+
+```
+========= Study - 7 due, 8 new =========
+
+              Conjugation
+
+      anrufen - to call, to phone
+
+                Präsens
+ ich        [ rufe an_              ]
+
+
+enter Check  esc End
+```
+
+```
+========= Study - 6 due, 8 new =========
+
+              Conjugation
+
+      anrufen - to call, to phone
+
+                Präsens
+ ich        rufe             WRONG
+            -> rufe an
+
+          WRONG - graded Again
+      trennbar: the prefix an goes
+       to the end in main clauses
++-------------------------------------+
+|            Next  (enter)            |
++-------------------------------------+
+enter Next  esc End
+```
+
+A Perfekt card for the same verb shows `Perfekt` and `ich [ … ]`, and
+expects `habe angerufen`. Perfekt shows no separable note, even on a wrong
+answer, because none of its forms ends in ` an`.
+
+**Consequence worth a veto: sibling burying (issue 015).** The spec buries
+siblings per word. Once 015 lands, a verb's conjugation cards are introduced
+and reviewed at most one a day, sharing that one slot with the verb's
+meaning and Stammformen cards. Three tenses make 18 cards, so introducing
+them takes at least 18 days. That follows the spec as written. If it proves
+too slow, burying could work per (word, card type) instead. That would be a
+spec change, so it is the user's call.
+
+**By category.** Only what 013 changes; everything else in §14 stands.
+- **State and data lifecycle.** `CreateWordCards`' single transaction (§7.3)
+  covers conjugation cards too, so one request's cards land together or not
+  at all. Refusals are plan data and are never stored. Each answer is one
+  grade transaction (§7.4). Removal is 017's per-card delete; there is no
+  per-tense bulk delete in v1. Dropping the Stammformen badge changes
+  rendering only: stored cards keep their content.
+- **Error propagation.** Refusals are values in `CardPlan`, not errors.
+  Storage failures are `LearningDbError`: the TUI shows a toast and keeps the
+  card on screen, as in 012. There is no new error type. The card carries
+  its own forms, so nothing can be missing when an answer is checked.
+- **Concurrency and ownership.** Nothing new. The TUI is single-threaded and
+  is the only writer of `learning.db`.
+- **Reuse.** 013 reuses, rather than rebuilds:
+  - from 010–012: `answer_matches`, `FieldCheck`, `_answer_checked`,
+    `CardPlan` / `Refusal`, `drop_live_duplicates`, `CARD_SCOPE`, the
+    `card_type` CHECK, and the Stammformen field rows and feedback;
+  - from lookup: its tense and person vocabulary, and `Entry.conjugation` as
+    the accepted answers.
+
+  What 013 factors out for the next piece of work is the shared vocabulary.
+- **Extension points.** None new. The offered list is `TENSES`, which lookup
+  shares. Adding the imperative would be a deliberate change in two places,
+  not a hook.
+- **Build vs. buy.** Nothing to buy. The forms are wiktextract's. Building
+  Sie or imperative forms by rule was rejected (decisions 1 and 2).
+- **Abstractions introduced.** None. The vocabulary moves rather than being
+  added, and the per-type dedupe key is a branch in `_identity`.
+- **Alternatives rejected:**
+  - **A separate Sie card, or one built from the 3pl form plus "Sie".** It
+    duplicates the 3pl slot exactly.
+  - **Typing the pronoun as part of the answer.** The person is already on
+    the front, and 012's rows take the form alone.
+  - **Merging persons with identical answers** (`wir` with `sie/Sie`). Card
+    sets would then vary by verb and tense, and the person → form mapping
+    is what the cards drill.
+  - **Imperative cards.** Decision 2.
+  - **Offering only Präsens, Präteritum and Perfekt.** That narrows a choice
+    the spec gives the learner.
+  - **Offering only the tenses a verb has forms for.** A verb without a table
+    would then offer nothing to refuse, which departs from 012, where the
+    card type is attempted and its gap named.
+  - **Pre-selecting the default three tenses.** The cards are made on request.
+  - **A cloze front, `ich ___ an`, typing only the finite part.** Cloze cards
+    are a spec non-goal, and the answer would no longer be the split form
+    012 set.
+  - **Building Perfekt from `AUXILIARY_3SG` and a person table.** The data
+    already has per-person forms, and building our own would drift from what
+    lookup shows.
+  - **Refusing the whole card type, or a whole tense, over one missing form.**
+    Decision 7.
+  - **Copying the tense and person labels into the content.** They are
+    Harald's own vocabulary, not upstream content, and `slot` already pins
+    them.
+  - **Accepting every variant form of a slot.** `Entry.conjugation` shows
+    plain forms, or else only the first variant, so the card would accept
+    forms that lookup never shows.
+  - **A trennbar tick on each conjugation card**, set by the learner beside
+    the typed form.
+    - It is redundant: the typed form already shows whether the learner
+      splits the verb.
+    - It would be asked up to 84 times per verb.
+    - It can contradict the typed answer (ticked, but `anrufe` typed),
+      which leaves the grade ambiguous.
+    - It would be graded against `separable_prefix`, a single flag read
+      from the head template (§3.3), which is weaker evidence than the
+      forms the card already checks.
+  - **An English front on conjugation cards** (`to call`, Präsens, `ich`).
+    A miss could then be a meaning lapse, and it would be graded in the
+    conjugation FSRS scope, mixing meaning lapses into conjugation's
+    scheduling.
+  - **`an|rufen` on the back of `meaning_en_de` cards.** Declined by the
+    user.
+
+**Size and order.** One slice, comparable to 012. Split it into five
+logical commits:
+1. Drop the badge from the Stammformen front (decision 6). It changes a
+   shipped card and stands apart from the new card type, so it gets its own
+   commit and lands first: the `stammformen` branch of `_card_faces` in
+   `tui/study.py`, and 012's pilot test asserting the badge absent and the
+   note still shown. Lookup's badge and its smoke test are untouched.
+2. Move the vocabulary to `lexicon/model.py`. No behaviour changes.
+3. The planner, dedupe key, checker, `answer_conjugation` and
+   `AnswerConjugation`, with unit and component tests. Fixtures: laufen,
+   anrufen, and a synthesised gappy entry for refusals, as 012 did.
+   Decision 7 should be confirmed before this commit lands.
+4. The Add word tense step.
+5. The Study face, with pilot tests at 40x30, 40x12 and 100x30. They cover
+   a front with no badge, and the note shown only on a wrong answer to a
+   split form.
+
+013 depends only on 012 and can land before or after 015.
+
+**Acceptance-criteria clarifications for issue 013.** The wording is the
+user's to change:
+- Line 3 ("Blocked on spec open question 5 …") can go.
+- **AC 1:**
+  - the persons are ich, du, er/sie/es, wir, ihr and sie/Sie, with formal
+    Sie not separate;
+  - the tenses offered are the 14 finite tenses of lookup's full table, and
+    the imperative is not among them;
+  - conjugation cards can be requested on a later add without picking a
+    sense.
+- **AC 2:** the answer is the verb form without the pronoun, as the data
+  gives it:
+  - split for separable verbs in the simple tenses (`rufe an`);
+  - auxiliary included in the compound tenses (`habe angerufen`).
+
+  Any form the slot lists is accepted.
+- **AC 3:** refusal is per (tense, person). The chosen tense's other persons
+  are still created, and the refusal names each affected tense with its
+  missing persons.
+
+The frozen spec still lists open question 5 as open.
 
 ---
 
@@ -3335,7 +3759,8 @@ enter Next   esc End
   field checks.
 - The hint gloss tells homograph verbs apart (umfahren: `fährt um` vs
   `umfährt`), so `stammformen` gains `hint` (§7.2).
-- A separable verb shows the TRENNBAR badge from `separable_prefix` (§7.2).
+- A separable verb shows no badge on the front (§7.12, decision 6).
+  `separable_prefix` drives only the feedback's main-clause note (§7.2).
 
 ```
 ========================== Study - 7 due, 8 new left ===========================
@@ -3343,13 +3768,13 @@ enter Next   esc End
                                   Stammformen
 
                          anrufen  -  to call, to phone
-               TRENNBAR  an|rufen   (answer with the split forms)
 
         er/sie/es   [ ruft an                           ]
         Präteritum  [ rief an                           ]
         Perfekt     [ hat angerufen_                    ]
 
         ae/oe/ue/ss are accepted for ä/ö/ü/ß
+
 
 
 
@@ -3372,13 +3797,13 @@ enter Next field / Check   tab Field   esc End
                                   Stammformen
 
                          anrufen  -  to call, to phone
-               TRENNBAR  an|rufen   (answer with the split forms)
 
         er/sie/es   ruft an                    ok
         Präteritum  rief                       WRONG  rief an
         Perfekt     hat angerufen              ok
 
   WRONG - graded Again.   trennbar: the prefix goes to the end in main clauses
+
 
 
 
@@ -3614,7 +4039,7 @@ enter Open   ^t DE/EN   tab List/Input   esc Back
 Stammformen at 80×12:
 
 ```
- Stammformen   anrufen - to call, to phone   TRENNBAR an|rufen
+ Stammformen   anrufen - to call, to phone
 
         er/sie/es   [ ruft an                           ]
         Präteritum  [ rief an                           ]
@@ -4270,8 +4695,9 @@ Article card and feedback:
 enter Next  esc End
 ```
 
-Stammformen card for a separable verb, and feedback. The TRENNBAR badge
-comes from the card's `separable_prefix` (§7.2):
+Stammformen card for a separable verb, and feedback. The front carries no
+separable badge (§7.12, decision 6); the card's `separable_prefix` drives the
+feedback's main-clause note (§7.2):
 
 ```
 ========= Study - 7 due, 8 new =========
@@ -4279,14 +4705,14 @@ comes from the card's `separable_prefix` (§7.2):
               Stammformen
 
       anrufen - to call, to phone
-           TRENNBAR  an|rufen
-     (answer with the split forms)
 
  er/sie/es  [ ruft an               ]
  Präteritum [ rief an               ]
  Perfekt    [ hat angerufen_        ]
 
  ae/oe/ue/ss accepted for ä/ö/ü/ß
+
+
 
 
 
@@ -4306,8 +4732,6 @@ enter Next/Check  esc End  ? Keys
               Stammformen
 
       anrufen - to call, to phone
-           TRENNBAR  an|rufen
-     (answer with the split forms)
 
  er/sie/es  ruft an          ok
  Präteritum rief             WRONG
@@ -4321,6 +4745,8 @@ enter Next/Check  esc End  ? Keys
 +-------------------------------------+
 |            Next  (enter)            |
 +-------------------------------------+
+
+
 
 
 
@@ -4407,7 +4833,7 @@ Cards:
    en>de  tape, ribbon       10-19
    de>de  zumeist aus ein... today
    art.   Band (Bänder)      today
-   stamm  anrufen  TRENNBAR  new
+   stamm  anrufen            new
    phrase History repeat...  susp.
    ...
 
@@ -4594,7 +5020,7 @@ enter Open  ^t DE/EN  esc Back
 Stammformen (separable):
 
 ```
- anrufen - to call  TRENNBAR an|rufen
+ anrufen - to call
  er/sie/es  [ ruft an               ]
  Präteritum [ rief an               ]
  Perfekt    [ hat angerufen_        ]
@@ -5701,7 +6127,7 @@ and 004b (the parallel task graph, with the four criteria in its row).
 | 10 | 008 English → German | §3.3 English → German, §3.7 `en_translation_stage`, §4.2, §4.4 | fuzzy for English confirmed (formerly open question 7). Bench step: `use` in `warm.lookup_e2e` |
 | 11 | 010 add word + meaning cards + study | §7.1 whole schema as models, §7.2, §7.3, §7.4, §7.6 Alembic `0001` + `migrate.py`, §7.7 kohle's infrastructure (`harald/core`, `harald/db`, `harald/infrastructure`), §7.8 audit trail, §8.2 hint capture plus `link_state`/`check_ack` columns, §14.2 `Result` in the TUI | the first slice to touch `learning.db`. Bench step: `warm.grade`, `warm.read_3000_entities`, `cold.tui_start` with `learning.db` |
 | 12 | 011 article cards | §7.2, §7.4 checked grading | |
-| 13 | 012 Stammformen | §5 `answer_matches`, §7.2 (`separable_prefix`, TRENNBAR badge), §12.8 | separable verbs: split forms plus the highlight (open question 5 part 2, resolved) |
+| 13 | 012 Stammformen | §5 `answer_matches`, §7.2 (`separable_prefix`, TRENNBAR badge), §12.8 | separable verbs: split forms plus the highlight (open question 5 part 2, resolved). The user dropped the badge on 2026-10-27; the 013 slice removes it (§7.12, decision 6) |
 | 14 | 015 new cap + sibling burying | §7.4 | cap 20 confirmed |
 | 15 | 014 German → German cards | §7.3 German picker | |
 | 16 | 016 decks | §7.1, §7.5 | |
@@ -5711,24 +6137,20 @@ and 004b (the parallel task graph, with the four criteria in its row).
 | 20 | 020 write phrase in `$EDITOR` | §9 | |
 | 21 | 022 backup | §10 | trigger points and retention confirmed |
 | 22 | 021 `harald check` | §8 entire, §7.8 audited repairs, §12.8 Check screen, §11 CLI | depends on 004a and 010. Acceptance-criteria changes are listed in §8.4 |
-| – | 013 per-(tense, person) cards | §7.2 (`separable_prefix` carried) | **blocked on open question 5 part 1** (persons, Sie, imperative) |
+| – | 013 per-(tense, person) cards | §7.12, §7.2; §12.3, §12.4, §12.8 for the Stammformen front without its badge | **unblocked 2026-10-27**: open question 5 part 1 is resolved in §7.12. One slice after 012, before or after 015, in five commits; the first drops the Stammformen badge. Decision 7 (per-card refusal) confirmed by the user 2026-10-27 |
 
 ---
 
 ## 16. Open items needing the user's decision
 
-**Blocked (no answer invented):**
-- **Open question 5, part 1, blocks issue 013**: which persons count (is
-  the formal Sie separate from 3rd person plural?) and which persons the
-  imperative has. Facts for the decision:
-  - the data has **no Sie rows** (Sie forms would be the 3pl form plus
-    "Sie", constructed by rule);
-  - the imperative has **only du and ihr** in the data (a Sie imperative
-    would also be constructed);
-  - `formal` in the data is a register marker, not a person.
-
-  Part 2 is resolved: separable verbs use the split forms plus the TRENNBAR
-  highlight (§7.2).
+**Blocked:** nothing.
+- Open question 5 part 1 (persons, Sie, imperative) used to block issue
+  013. It was answered on 2026-10-27, on the defaults the user gave. The
+  decisions, the data behind them and two deviations are in §7.12.
+- Part 2: separable verbs use the split forms. The TRENNBAR highlight that
+  012 shipped on the Stammformen front is dropped from Stammformen and
+  conjugation cards alike, on the user's decision of 2026-10-27 (§7.12,
+  decision 6). That reverses the earlier resolution on this point.
 
 **Still open:**
 - **The Core fallback's limit**, a consequence of your ORM decisions. Moving
@@ -5749,6 +6171,9 @@ and 004b (the parallel task graph, with the four criteria in its row).
   and AGENTS.md are already renamed.
 - **Proper nouns:** the spec is silent on them, so nothing needs to change.
 - **Issue 021's acceptance criteria** need the six changes listed in §8.4.
+- **Issue 013:** line 3 ("Blocked on spec open question 5") can go. The
+  acceptance criteria could take the three clarifications at the end of
+  §7.12. The spec still lists open question 5 as open.
 
 **Notes, informational:**
 - **`Option` has no caller in today's code** (§14.10). Every current
@@ -5777,6 +6202,14 @@ and 004b (the parallel task graph, with the four criteria in its row).
   keeps the session going, instead of crashing the TUI.
 
 **Gaps found while designing, decided here but worth a veto:**
+- **Separable-verb conjugation fronts** (§7.12, decision 6). The front
+  shows `ich [ ]`, not `ich rufe … an`, which would give away the answer.
+  Prefix-last applies to the simple tenses only, because the data joins the
+  prefix in compound ones.
+- **All 14 finite tenses are offered, none pre-selected** (§7.12,
+  decision 3).
+- **Sibling burying slows conjugation cards** to one a day per verb once
+  015 lands (§7.12).
 - **Where `T | None` stays** (§14.10, rule 4). Data-record fields, mapped
   columns, parameters with a `None` default, private helpers and hot paths
   keep `T | None`, and `Option` is required only at public and use-case
@@ -5830,7 +6263,11 @@ and 004b (the parallel task graph, with the four criteria in its row).
 - the audit trail retained (§7.8);
 - proper nouns imported (§3.3);
 - `check` in CLI and TUI with three repair actions (§8);
-- separable verbs split and highlighted;
+- separable verbs split. The highlight confirmed for 012 was withdrawn on
+  2026-10-27: no badge on Stammformen or conjugation cards, no trennbar
+  tick, no `an|rufen` on the meaning card, and the conjugation front is
+  `infinitive - hint`, tense, `ich [ ]` (§7.12, decision 6). Lookup keeps
+  its badge;
 - backups after each session and on exit, plus `harald backup`, keeping 10;
 - a daily cap of 20; fuzzy matching for German and English → German but
   not phrases;
