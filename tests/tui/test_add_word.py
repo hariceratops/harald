@@ -105,6 +105,30 @@ def test_a_headword_with_several_entries_asks_which_one(built: Workspace) -> Non
     _drive(built, (100, 30), script)
 
 
+@pytest.mark.parametrize("size", SIZES)
+def test_picker_steps_hint_at_space_and_an_empty_confirm_says_why(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await _open_entry(app, pilot, "Hund")
+        await pilot.press("a")
+        await pilot.pause()
+        step = static_lines(app.screen, "#step")
+        assert any("space ticks a row" in line for line in step)
+        assert all(len(line) <= size[0] for line in step)
+        assert_inside(app.screen, size)
+        await pilot.press("n")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#summary")
+        assert any("Nothing was ticked" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert_inside(app.screen, size)
+        assert not any("space ticks a row" in line for line in static_lines(app.screen, "#step"))
+        assert _cards(built) == []
+
+    _drive(built, size, script)
+
+
 def test_a_german_only_headword_goes_straight_to_the_german_step(built: Workspace) -> None:
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await _open_entry(app, pilot, "Fernweh")

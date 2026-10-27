@@ -189,8 +189,9 @@ class AddWordScreen(Screen[None]):
             "tense": "Conjugation tenses (6 cards each)",
             "confirm": "Confirm",
         }
+        hint = "" if step == "confirm" else "\nspace ticks a row, n goes on"
         self.query_one("#step", Static).update(
-            Content(f"Step {self._at + 1} of {total}: {titles[step]}")
+            Content(f"Step {self._at + 1} of {total}: {titles[step]}{hint}")
         )
         picker.clear_options()
         if step == "en":
@@ -256,6 +257,8 @@ class AddWordScreen(Screen[None]):
         lines += [f"  {n} x {_CARD_NAMES[t]}" for t, n in by_type.items()]
         if not plan.cards:
             lines.append("  nothing new")
+        if picked == 0:
+            lines.append("Nothing was ticked: b goes back, space ticks a row")
         if picked > len(plan.cards):
             lines.append(f"Already have: {picked - len(plan.cards)}")
         lines.append("Refused")
