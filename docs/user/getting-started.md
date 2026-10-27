@@ -60,7 +60,15 @@ says so. Adding a verb also adds a Stammformen card: type the 3rd person
 singular present, the Präteritum and the Perfekt (`hat` or `ist` plus the
 Partizip II), moving between the three fields with `enter`; `ae`, `oe`, `ue`
 and `ss` are accepted for `ä`, `ö`, `ü` and `ß`. A verb whose data lacks a form
-is refused the card and the confirm step names the missing forms. A summary of cards reviewed and
+is refused the card and the confirm step names the missing forms. Neither card
+hints that a verb is separable; typing the form without the prefix counts as
+wrong. Adding a verb also offers a tense step, with no tense ticked: each
+ticked tense makes six conjugation cards, one per person (ich, du, er/sie/es,
+wir, ihr, sie/Sie). Tenses that already have cards are marked, and a later add
+can request more tenses without picking a sense again. A conjugation card shows
+the verb, the tense and one person; type the form without the pronoun, such as
+`rufe an`. A missing form refuses only its own person and tense, and the
+confirm step names it. A summary of cards reviewed and
 answered correctly ends the session. Cards live in `learning.db`, created on
 first use; Harald refuses one written by a newer version.
 
