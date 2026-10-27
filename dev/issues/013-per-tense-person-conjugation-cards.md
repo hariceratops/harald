@@ -13,7 +13,7 @@ Spec: `dev/specs/harald-v1.md`
 
 ## Status
 
-Built in seven commits. All four criteria are met in unit, component and
+Built in seven commits, plus docs, review fixes and the Add word hint. All four criteria are met in unit, component and
 pilot tests at 40x30, 40x12 and 100x30. Smoke-tested by hand on `anrufen`
 as far as the Add word steps; the conjugation study card and typing on the
 Termux soft keyboard are not yet checked by hand. Decisions and
@@ -23,6 +23,17 @@ departures are in design §7.12.
 - `learning/content.py`: `_conjugation_cards` returned `Refusal | None`;
   AGENTS.md wants `Option` for an expected no-value. Fixed by returning a
   list.
-- Found in the smoke run, not fixed here: the Add word steps give no hint
-  that a row must be ticked with `space`, so Next with nothing ticked ends
-  on "nothing new". A separate change.
+- Found in the smoke run: the Add word steps gave no hint that a row must
+  be ticked with `space`, so Next with nothing ticked ended on "nothing
+  new". Fixed in 3c55951.
+
+## Review 2026-10-27 (range dbab7cb..HEAD)
+- `tui/addword.py`: the "Nothing was ticked" line on Confirm tested the
+  forms found, not the picks, so ticking a tense whose forms are all missing
+  said nothing was ticked above the refusal. It now tests the picks.
+- Two comments explained WHAT: the `check_conjugation` docstring and the
+  slot-format comment in `lexicon/model.py`. Removed.
+- Stale artifacts: the note above saying the hint was unfixed, and the
+  commit count in Status.
+- Design §7.12 and §12 Add word wireframes and the user guide did not show
+  the picker hint or the "Nothing was ticked" line.
