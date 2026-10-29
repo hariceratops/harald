@@ -38,3 +38,17 @@ and tests it at 40x30, 40x12 and 100x30. Awaiting the user's hand check.
 - `StudyScreen.BINDINGS` binds keys 1, 2 and 3 while the grade buttons are
   Again/Good only; key 3 serves article cards. Open.
 - 019's typed-attempt criterion is wording only until 019 is built.
+
+## Review 2026-10-29 (range 28818ff..6366971, follow-ups)
+- Two bullets of "Review 2026-10-29 (range e63293d..HEAD)" are fixed, not
+  open: `action_reveal` now undoes `_revealed` when the Again grade is not
+  saved, and the key 3 binding has a comment saying why (both 33a881d).
+- Trailer decision: commits carry the authoring model, `Claude Sonnet 5.5`,
+  not the commit skill's `Claude Opus 5` (user's decision, 2026-10-29).
+- Commits ab72617, f37c637, 3ba29f9, 3b117be, 68881a8 and 6366971 have no
+  `Refs` trailer, and 33a881d also holds the key 3 comment, which is not
+  part of the failed-write fix. Not rewritten.
+- The conjugation wireframe line added in 6366971 read "ae/oe/ue/ss
+  accepted for"; the card says "are accepted for". Reworded.
+- Two lines in the guide and in design §7.13 ran past the wrapping used
+  around them. Reflowed.
