@@ -1,4 +1,5 @@
 import asyncio
+import re
 import sqlite3
 from datetime import UTC, datetime
 
@@ -446,9 +447,9 @@ def test_a_conjugation_digraph_is_accepted(built: Workspace) -> None:
     _drive(built, (40, 30), script)
 
 
-def _seed_de_de(ws: Workspace) -> str:
-    word = LoadHeadword(ws.config).execute("Fernweh", "noun").unwrap().unwrap()
-    plan = PlanWordCards(ws.config).execute(word, None, [], [(0, 0)]).unwrap()
+def _seed_de_de(ws: Workspace, lemma: str = "Fernweh", entry: int | None = None) -> str:
+    word = LoadHeadword(ws.config).execute(lemma, "noun").unwrap().unwrap()
+    plan = PlanWordCards(ws.config).execute(word, entry, [], [(0, 0)]).unwrap()
     plan = CardPlan(
         plan.word_hint,
         tuple(c for c in plan.cards if c.card_type == "meaning_de_de"),
@@ -500,5 +501,19 @@ def test_german_german_card_with_an_empty_attempt_is_graded_again(built: Workspa
         await pilot.press("enter")
         await pilot.pause()
         assert _answers(built) == [(1, "")]
+
+    _drive(built, (40, 30), script)
+
+
+def test_german_german_card_shows_the_article_on_the_back(built: Workspace) -> None:
+    _seed_de_de(built, "Band", entry=0)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        lines = [line.strip() for line in static_lines(app.screen, "#card")]
+        assert any(re.fullmatch(r"(der|die|das)(/(der|die|das))* Band", line) for line in lines)
 
     _drive(built, (40, 30), script)
