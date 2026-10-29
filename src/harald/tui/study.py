@@ -118,7 +118,8 @@ class StudyScreen(Screen[None]):
         # check_action refuses, so a second "continue" binding on space is never reached
         Binding("space", "advance", "Next"),
         Binding("enter", "continue", "Next"),
-        # the grade buttons already name their keys, and more hints overflow 40 columns
+        # the grade buttons already name their keys, and more hints overflow 40 columns;
+        # key 3 is der/die/das on article cards and refused by check_action elsewhere
         *(Binding(str(n), f"grade({n})", show=False) for n in (1, 2, 3)),
         Binding("escape", "end", "End"),
     ]
@@ -268,8 +269,8 @@ class StudyScreen(Screen[None]):
         if self._attempt:
             self._show()
             self.set_focus(None)
-        else:
-            self._grade(1, "No answer - graded Again")
+        elif not self._grade(1, "No answer - graded Again"):
+            self._revealed = False
 
     def action_continue(self) -> None:
         self._next()
@@ -358,9 +359,9 @@ class StudyScreen(Screen[None]):
             return
         self._grade(_RATING[rating])
 
-    def _grade(self, rating: int, feedback: str | None = None) -> None:
+    def _grade(self, rating: int, feedback: str | None = None) -> bool:
         if self._card is None:
-            return
+            return False
         duration_ms = int((time.monotonic() - self._front_at) * 1000)
         graded = Grade(self._config).execute(
             self._card[0],
@@ -372,15 +373,16 @@ class StudyScreen(Screen[None]):
         )
         if graded.is_err:
             self.notify(str(graded.unwrap_err()), severity="error")
-            return
+            return False
         self._graded += 1
         if feedback is None:
             self._next()
-            return
+            return True
         self._feedback = [feedback]
         self._grades_at = time.monotonic()
         self._show()
         self.set_focus(None)
+        return True
 
     def action_end(self) -> None:
         self._finish()

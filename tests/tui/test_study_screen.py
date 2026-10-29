@@ -7,7 +7,9 @@ import pytest
 from textual.pilot import Pilot
 from textual.widgets import Button, Input
 
+from harald.core.result import Result
 from harald.learning.content import CardPlan
+from harald.learning.errors import StorageError
 from harald.tui.app import HaraldApp
 from harald.tui.home import HomeScreen
 from harald.tui.study import StudyScreen, SummaryScreen
@@ -515,5 +517,31 @@ def test_german_german_card_shows_the_article_on_the_back(built: Workspace) -> N
         await pilot.pause()
         lines = [line.strip() for line in static_lines(app.screen, "#card")]
         assert any(re.fullmatch(r"(der|die|das)(/(der|die|das))* Band", line) for line in lines)
+
+    _drive(built, (40, 30), script)
+
+
+def test_a_failed_write_on_an_empty_attempt_leaves_the_front_showing(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(built)
+
+    class Failing:
+        def __init__(self, config: object) -> None: ...
+
+        def execute(self, *args: object, **kwargs: object) -> Result[None, StorageError]:
+            return Result.err(StorageError("disk full"))
+
+    monkeypatch.setattr("harald.tui.study.Grade", Failing)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not any("you:" in line for line in static_lines(app.screen, "#card"))
+        assert app.screen.query_one("#fields").display
+        assert app.screen.query_one("#reveal", Button).display
+        assert app.screen.check_action("reveal", ())
 
     _drive(built, (40, 30), script)
