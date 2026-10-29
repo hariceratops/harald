@@ -62,7 +62,7 @@ def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str]
             [_word(content), *([example["text"]] if example else [])],
         )
     if card_type == "meaning_de_de":
-        return "German -> German", [_word(content), content["pos"]], [content["definition"]]
+        return "German -> German", [content["definition"]], [_word(content)]
     if card_type == "article":
         lemma = content["lemma"]
         plural = f"   (pl. {content['plural']})" if content.get("plural") else ""

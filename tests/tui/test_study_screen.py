@@ -440,3 +440,61 @@ def test_a_conjugation_digraph_is_accepted(built: Workspace) -> None:
         assert [r for r, _ in _answers(built)] == [3]
 
     _drive(built, (40, 30), script)
+
+
+def _seed_de_de(ws: Workspace) -> str:
+    word = LoadHeadword(ws.config).execute("Fernweh", "noun").unwrap().unwrap()
+    plan = PlanWordCards(ws.config).execute(word, None, [], [(0, 0)]).unwrap()
+    plan = CardPlan(
+        plan.word_hint,
+        tuple(c for c in plan.cards if c.card_type == "meaning_de_de"),
+        plan.refusals,
+    )
+    CreateWordCards(ws.config).execute(plan, datetime(2026, 1, 1, tzinfo=UTC)).unwrap()
+    return str(plan.cards[0].content["definition"])
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_german_german_card_asks_for_the_word_from_the_definition(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    definition = _seed_de_de(built)
+    first = definition.split()[0]
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        assert isinstance(app.screen, StudyScreen)
+        lines = static_lines(app.screen, "#card")
+        assert any(first in line for line in lines)
+        assert not any("Fernweh" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert app.screen.query_one("#fields").display
+        assert app.screen.query_one("#sf0", Input).display
+        assert_inside(app.screen, size)
+
+        await pilot.press(*"Fernweh", "enter")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        you = next(i for i, line in enumerate(lines) if "you: Fernweh" in line)
+        assert any("Fernweh" in line for line in lines[you + 1 :])
+        assert all(len(line) <= size[0] for line in lines)
+        assert_inside(app.screen, size)
+        await pilot.press("2")
+        await pilot.pause()
+        assert _answers(built) == [(3, "Fernweh")]
+
+    _drive(built, size, script)
+
+
+def test_german_german_card_with_an_empty_attempt_is_graded_again(built: Workspace) -> None:
+    _seed_de_de(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert _answers(built) == [(1, "")]
+
+    _drive(built, (40, 30), script)
