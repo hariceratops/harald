@@ -31,7 +31,7 @@ Working today:
 - `harald` opens a Textual TUI for German lookup and entry
   browsing, down to 40 columns. Not yet verified on the phone.
 - In the TUI, `a` on an entry adds meaning cards for chosen senses, and `s` on
-  Home studies due cards with a 1-4 self-grade (FSRS) and a session summary.
+  Home studies due cards, graded Again or Good (FSRS) and a session summary.
 
 Planned: Tatoeba phrase search,
 `harald-cli check`, backups. See the [roadmap](#roadmap).

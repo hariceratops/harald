@@ -90,7 +90,9 @@ Screen.-narrow #buttons #next,
 Screen.-narrow #buttons #cont,
 Screen.-narrow #buttons #art1,
 Screen.-narrow #buttons #art2,
-Screen.-narrow #buttons #art3 {
+Screen.-narrow #buttons #art3,
+Screen.-narrow #buttons #grade1,
+Screen.-narrow #buttons #grade2 {
     width: 1fr;
 }
 

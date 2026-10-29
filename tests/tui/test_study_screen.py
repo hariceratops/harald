@@ -41,24 +41,38 @@ def test_study_reveal_grade_and_summary(built: Workspace, size: tuple[int, int])
         assert isinstance(app.screen, StudyScreen)
         assert any("der Hund" in line for line in static_lines(app.screen, "#card"))
         assert app.screen.query_one("#reveal", Button).display
-        assert not app.screen.query_one("#grade4", Button).display
+        assert app.screen.query_one("#fields").display
+        assert not app.screen.query_one("#grade2", Button).display
         assert_inside(app.screen, size)
 
-        await pilot.press("space")
+        await pilot.press(*"dog", "enter")
         await pilot.pause()
-        assert app.screen.query_one("#grade4", Button).display
+        assert app.screen.query_one("#grade2", Button).display
+        assert not app.screen.query_one("#fields").display
+        assert any("you: dog" in line for line in static_lines(app.screen, "#card"))
         assert_inside(app.screen, size)
-        await pilot.press("4")
+        await pilot.press("2")
         await pilot.pause()
-        assert len(_reviews(built)) == 1
+        assert [r for r, _ in _reviews(built)] == [3]
+        assert _answers(built) == [(3, "dog")]
 
-        await pilot.press("space")
-        await pilot.press("4")
+        await pilot.press("enter")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        assert any("No answer - graded Again" in line for line in lines)
+        assert any("you: (no answer)" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert app.screen.query_one("#cont", Button).display
+        assert [r for r, _ in _reviews(built)] == [3, 1]
+        assert _answers(built)[1] == (1, "")
+        assert_inside(app.screen, size)
+        # the lapsed card is inside the learn-ahead window, so it would come straight back
+        await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, SummaryScreen)
         lines = static_lines(app.screen, "#summary")
         assert any("2 cards reviewed" in line for line in lines)
-        assert any("2 answered correctly" in line for line in lines)
+        assert any("1 answered correctly" in line for line in lines)
         assert all(len(line) <= size[0] for line in lines)
         assert_inside(app.screen, size)
         sessions = {s for _, s in _reviews(built)}
@@ -71,14 +85,15 @@ def test_study_reveal_grade_and_summary(built: Workspace, size: tuple[int, int])
     _drive(built, size, script)
 
 
-def test_a_grade_before_the_reveal_is_ignored(built: Workspace) -> None:
+def test_a_grade_key_before_the_reveal_is_typed_not_graded(built: Workspace) -> None:
     _seed(built)
 
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await pilot.press("s")
-        await pilot.press("3")
+        await pilot.press("2")
         await pilot.pause()
         assert _reviews(built) == []
+        assert app.screen.query_one("#sf0", Input).value == "2"
 
     _drive(built, (40, 30), script)
 
@@ -89,15 +104,16 @@ def test_grade_buttons_ignore_a_tap_right_after_they_appear(built: Workspace) ->
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await pilot.press("s")
         await pilot.pause()
+        app.screen.query_one("#sf0", Input).value = "dog"
         await pilot.click("#reveal")
         await pilot.pause()
-        await pilot.click("#grade4")
+        await pilot.click("#grade2")
         await pilot.pause()
         assert _reviews(built) == []
         await asyncio.sleep(0.35)
-        await pilot.click("#grade4")
+        await pilot.click("#grade2")
         await pilot.pause()
-        assert [r for r, _ in _reviews(built)] == [4]
+        assert [r for r, _ in _reviews(built)] == [3]
 
     _drive(built, (40, 30), script)
 

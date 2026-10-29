@@ -51,9 +51,11 @@ German to German card), then confirm with `c`. Senses that already have cards
 are marked. `n` and `b` move between steps, `space` toggles a sense; each step says so
 under its title. Confirming with nothing ticked says that nothing was ticked.
 
-Studying shows the next due card. `space` reveals the answer, then `1` Again,
-`2` Hard, `3` Good or `4` Easy grades it; each grade is saved at once. On
-a touch screen the same actions are buttons. Adding a noun also adds an article
+Studying shows the next due card. On a meaning card, type your answer first
+and press `enter`: the card then shows what you typed above the real answer,
+and `1` Again or `2` Good grades it; each grade is saved at once. Pressing
+`enter` with nothing typed counts as not knowing and is graded Again. On a
+touch screen the same actions are buttons. Adding a noun also adds an article
 card: press `1` der, `2` die or `3` das, read the result, then `enter` or
 `space` continues; a right answer counts as Good, a wrong one as Again. A noun
 with no gender in the data is refused an article card, and the confirm step
