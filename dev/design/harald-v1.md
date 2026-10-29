@@ -2548,8 +2548,7 @@ The frozen spec still lists open question 5 as open.
 
 ### 7.13 Self-graded cards: a typed attempt, then Again or Good (2026-10-28)
 
-Relayed by the main session on 2026-10-28, and already implemented in
-`tui/study.py` and its pilot tests. It changes the four self-graded card
+Implemented in `tui/study.py` and its pilot tests. It changes the four self-graded card
 types: `meaning_de_en`, `meaning_en_de`, `meaning_de_de` and
 `phrase_en_de`. Article, Stammformen and conjugation cards are unchanged.
 
@@ -2598,9 +2597,10 @@ phrase cards cost most, because their attempt is a sentence.
   floor is 12 (§12.8). The short layout becomes the usual study layout
   rather than an edge case, so issue 009's measurement of the real rows
   matters more.
-- At 40×12 the empty attempt's back falls below the fold, and the tests
-  don't notice. The measured row budget is in §12.8, "Keyboard up,
-  portrait, 40×12".
+- At 40×12 the empty attempt's back used to fall below the fold. Under
+  `-short` the study card now drops its blank lines, and `assert_inside`
+  fails when the body needs scrolling (13fc268). The measured row budget
+  is in §12.8, "Keyboard up, portrait, 40×12".
 - Textual cannot show or hide the Android keyboard. Whether it stays up
   across the grade and across article cards is up to Termux, and
   unverified (009).
@@ -6470,17 +6470,16 @@ and 004b (the parallel task graph, with the four criteria in its row).
   - whether reflexive verbs' lemmas are stored with `sich` has not been
     checked against the data, and an English → German check would depend
     on it;
-  - the code's `meaning_de_de` face is the wrong way round. `_card_faces`
-    shows the word on the front and the definition on the back, the
-    opposite of §7.2, the spec and issue 014, so with the Answer field it
-    asks for a definition. Issue 014 has to turn it round either way;
+  - (done in 7bbf142: the `meaning_de_de` face was the wrong way round,
+    showing the word on the front and the definition on the back; it now
+    shows the definition and asks for the word, as §7.2 says;)
   - the attempts stored since §7.13 would let a checker be tried against
     real answers before it grades anything.
 - **Small follow-ups to §7.13**, code changes for the `change` door:
-  - at 40×12 the empty attempt pushes the back below the fold, and the
-    tests can't see it (§12.8, 40×12). Merging heading, word and part of
-    speech into one row under `-short`, as the frames intended, would fit
-    it, and a height check in `assert_inside` would catch it;
+  - (done in 13fc268: at 40×12 the empty attempt pushed the back below the
+    fold. Dropping the blank lines under `-short` fitted it, so heading,
+    word and part of speech stay on separate rows, unlike the frames, and
+    `assert_inside` now catches a body that needs scrolling;)
   - (done with §7.13: the two grade buttons take `1fr`, and the space
     binding reads "Next").
 
