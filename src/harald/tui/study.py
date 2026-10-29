@@ -209,15 +209,22 @@ class StudyScreen(Screen[None]):
         _, card_type, content = self._card
         typed = card_type in _TYPED
         heading, front, back = _card_faces(card_type, content)
+        short = self.has_class("-short")
+        if short:
+            front = [line for line in front if line]
+            feedback = [line for line in self._feedback or [] if line]
+        else:
+            feedback = self._feedback or []
+        gap = [] if short else [Text("")]
         parts: list[RenderableType] = [
             Text(heading, style="dim", justify="center"),
-            Text(""),
+            *gap,
             Text("\n".join(front), justify="center"),
         ]
         if self._feedback is not None:
             parts += [
-                Text(""),
-                Text("\n".join(self._feedback), justify="left" if typed else "center"),
+                *gap,
+                Text("\n".join(feedback), justify="left" if typed else "center"),
             ]
         if self._revealed:
             parts += [Text("-" * 20, style="dim", justify="center")]

@@ -20,3 +20,5 @@ def assert_inside(screen: Screen[Any], size: tuple[int, int]) -> None:
             continue
         region = widget.region
         assert region.x >= 0 and region.right <= size[0], f"{widget} overflows the width"
+    for body in screen.query("#body"):
+        assert body.max_scroll_y == 0, f"{body} needs scrolling at height {size[1]}"
