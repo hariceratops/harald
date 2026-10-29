@@ -21,7 +21,7 @@ Each item is a vertical slice; the numbers are the issue files in
 - [ ] 011 Article cards (built; awaiting confirmation)
 - [ ] 012 Stammformen cards (built; awaiting confirmation)
 - [ ] 013 Per-tense, per-person conjugation cards (built; awaiting confirmation)
-- [ ] 014 German → German cards
+- [ ] 014 German → German cards (built; awaiting confirmation)
 - [ ] 015 New-card cap and sibling burying
 - [ ] 016 Decks
 - [ ] 017 Edit, suspend and delete cards

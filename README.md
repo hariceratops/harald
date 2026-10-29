@@ -87,7 +87,7 @@ Test layers, build internals and workflow are in the
 - [ ] TUI browsing, verified in Termux (built; Termux checks outstanding)
 - [ ] Add a word; meaning cards and study (built; awaiting confirmation)
 - [ ] Article, Stammformen and per-tense conjugation cards (built; awaiting confirmation)
-- [ ] German → German cards
+- [ ] German → German cards (built; awaiting confirmation)
 - [ ] New-card cap and sibling burying
 - [ ] Decks
 - [ ] Edit, suspend, delete cards
