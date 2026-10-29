@@ -2396,7 +2396,7 @@ n Next  b Back  esc Cancel
  ich        [ rufe an_              ]
 
 
-enter Check  esc End
+esc End
 ```
 
 ```
@@ -3975,7 +3975,7 @@ enter Next   esc End
 
 
 
-enter Next field / Check   tab Field   esc End
+esc End
 ```
 
 **Stammformen feedback**, shown in place on the same rows (§12.4).
@@ -4004,7 +4004,7 @@ enter Next field / Check   tab Field   esc End
 |                                Next  (enter)                                |
 +-----------------------------------------------------------------------------+
 
-enter Next   esc End
+space Next   enter Next   esc End
 ```
 
 **Session summary.** Computed from the review log (§7.4). The backup line
@@ -4239,7 +4239,7 @@ Stammformen at 80×12:
 
 
 
-enter Next field / Check   tab Field   esc End
+esc End
 ```
 
 Add word step 1 at 80×12:
@@ -4961,7 +4961,7 @@ feedback's main-clause note (§7.2):
 
 
 
-enter Next/Check  esc End  ? Keys
+esc End
 ```
 
 ```
@@ -4988,7 +4988,7 @@ enter Next/Check  esc End  ? Keys
 
 
 
-enter Next  esc End
+space Next  enter Next  esc End
 ```
 
 Session summary:
@@ -5269,7 +5269,7 @@ Stammformen (separable):
 
 
 
-enter Next/Check  esc End
+esc End
 ```
 
 Add word, steps 1 and 3:
