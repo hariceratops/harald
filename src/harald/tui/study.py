@@ -163,6 +163,9 @@ class StudyScreen(Screen[None]):
     def on_mount(self) -> None:
         self._next()
 
+    def on_resize(self) -> None:
+        self._show()
+
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if self._card is None:
             return action in ("end",)

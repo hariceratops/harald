@@ -545,3 +545,17 @@ def test_a_failed_write_on_an_empty_attempt_leaves_the_front_showing(
         assert app.screen.check_action("reveal", ())
 
     _drive(built, (40, 30), script)
+
+
+def test_a_graded_card_refits_when_the_terminal_gets_shorter(built: Workspace) -> None:
+    _seed_verb(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _type_fields(app, pilot, "ruft an", "rief", "")
+        await pilot.resize_terminal(40, 12)
+        await pilot.pause()
+        assert_inside(app.screen, (40, 12))
+
+    _drive(built, (40, 30), script)
