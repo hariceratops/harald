@@ -2395,7 +2395,7 @@ n Next  b Back  esc Cancel
                 Präsens
  ich        [ rufe an_              ]
 
- ae/oe/ue/ss accepted for ä/ö/ü/ß
+ ae/oe/ue/ss are accepted for ä/ö/ü/ß
 
 esc End
 ```
@@ -2549,8 +2549,8 @@ The frozen spec still lists open question 5 as open.
 
 ### 7.13 Self-graded cards: a typed attempt, then Again or Good (2026-10-28)
 
-Implemented in `tui/study.py` and its pilot tests. It changes the four self-graded card
-types: `meaning_de_en`, `meaning_en_de`, `meaning_de_de` and
+Implemented in `tui/study.py` and its pilot tests. It changes the four
+self-graded card types: `meaning_de_en`, `meaning_en_de`, `meaning_de_de` and
 `phrase_en_de`. Article, Stammformen and conjugation cards are unchanged.
 
 **Behaviour**
@@ -4949,7 +4949,7 @@ feedback's main-clause note (§7.2):
  Präteritum [ rief an               ]
  Perfekt    [ hat angerufen_        ]
 
- ae/oe/ue/ss accepted for ä/ö/ü/ß
+ ae/oe/ue/ss are accepted for ä/ö/ü/ß
 
 
 
