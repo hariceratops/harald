@@ -98,8 +98,11 @@ def test_a_grade_key_before_the_reveal_is_typed_not_graded(built: Workspace) -> 
     _drive(built, (40, 30), script)
 
 
-def test_grade_buttons_ignore_a_tap_right_after_they_appear(built: Workspace) -> None:
+def test_grade_buttons_ignore_a_tap_right_after_they_appear(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _seed(built)
+    monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 60.0)
 
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await pilot.press("s")
@@ -110,7 +113,8 @@ def test_grade_buttons_ignore_a_tap_right_after_they_appear(built: Workspace) ->
         await pilot.click("#grade2")
         await pilot.pause()
         assert _reviews(built) == []
-        await asyncio.sleep(0.35)
+        monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 0.0)
+        await asyncio.sleep(0.3)
         await pilot.click("#grade2")
         await pilot.pause()
         assert [r for r, _ in _reviews(built)] == [3]
