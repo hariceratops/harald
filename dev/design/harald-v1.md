@@ -2395,6 +2395,7 @@ n Next  b Back  esc Cancel
                 Präsens
  ich        [ rufe an_              ]
 
+ ae/oe/ue/ss accepted for ä/ö/ü/ß
 
 esc End
 ```

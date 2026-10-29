@@ -559,3 +559,37 @@ def test_a_graded_card_refits_when_the_terminal_gets_shorter(built: Workspace) -
         assert_inside(app.screen, (40, 12))
 
     _drive(built, (40, 30), script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_typed_cards_hint_at_the_digraphs_until_they_are_checked(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_verb(built)
+    _seed_conjugation(built, "anrufen", "ind.pres.1sg")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        for answers in (("ruft an", "rief an", "hat angerufen"), ("rufe an",)):
+            hint = static_lines(app.screen, "#digraphs")
+            assert any("ae/oe/ue/ss are accepted for ä/ö/ü/ß" in line for line in hint)
+            assert all(len(line) <= size[0] for line in hint)
+            assert_inside(app.screen, size)
+            await _type_fields(app, pilot, *answers)
+            assert not app.screen.query_one("#digraphs").display
+            await pilot.press("enter")
+            await pilot.pause()
+
+    _drive(built, size, script)
+
+
+def test_a_meaning_card_does_not_mention_the_digraphs(built: Workspace) -> None:
+    _seed(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        assert not app.screen.query_one("#digraphs").display
+
+    _drive(built, (40, 30), script)

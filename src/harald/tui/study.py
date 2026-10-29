@@ -145,6 +145,7 @@ class StudyScreen(Screen[None]):
                     with Horizontal(classes="field", id=f"row{i}"):
                         yield Static(label, classes="field-label", id=f"lbl{i}")
                         yield Input(compact=True, id=f"sf{i}")
+            yield Static("ae/oe/ue/ss are accepted for ä/ö/ü/ß", id="digraphs")
         with Horizontal(id="buttons"):
             yield self._button("Show answer", "reveal")
             for n, name in _GRADES:
@@ -241,9 +242,9 @@ class StudyScreen(Screen[None]):
         checked = article or typed
         asking = article and self._feedback is None
         grading = not checked and self._revealed and self._feedback is None
-        self.query_one("#fields").display = (
-            not article and not self._revealed and not self._feedback
-        )
+        asking_text = not article and not self._revealed and not self._feedback
+        self.query_one("#fields").display = asking_text
+        self.query_one("#digraphs").display = asking_text and typed
         self.query_one("#reveal").display = not checked and not self._revealed
         self.query_one("#buttons").set_class(grading, "-grading")
         for n, _ in _GRADES:

@@ -62,7 +62,7 @@ with no gender in the data is refused an article card, and the confirm step
 says so. Adding a verb also adds a Stammformen card: type the 3rd person
 singular present, the Präteritum and the Perfekt (`hat` or `ist` plus the
 Partizip II), moving between the three fields with `enter`; `ae`, `oe`, `ue`
-and `ss` are accepted for `ä`, `ö`, `ü` and `ß`. A verb whose data lacks a form
+and `ss` are accepted for `ä`, `ö`, `ü` and `ß`, and the card says so under the fields. A verb whose data lacks a form
 is refused the card and the confirm step names the missing forms. Neither card
 hints that a verb is separable; typing the form without the prefix counts as
 wrong. Adding a verb also offers a tense step, with no tense ticked: each

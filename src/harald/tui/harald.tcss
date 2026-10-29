@@ -118,3 +118,9 @@ Screen.-short #buttons Button {
 .field Input {
     width: 1fr;
 }
+
+#digraphs {
+    width: 100%;
+    color: $text-muted;
+    text-align: center;
+}
