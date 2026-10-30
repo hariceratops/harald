@@ -6469,9 +6469,58 @@ and 004b (the parallel task graph, with the four criteria in its row).
   word, so a check is conceivable there, unlike glosses and phrases. The
   spec's non-goal "No typed checking of meaning or phrase answers" rules it
   out, so it needs a spec revision, which is yours. Before it is designed:
-  - whether reflexive verbs' lemmas are stored with `sich` has not been
-    checked against the data, and an English → German check would depend
-    on it;
+  - (checked 2026-10-30 against the real `lexicon.db`: simple reflexive verbs
+    are stored with a bare lemma. `freuen` and `beeilen` are in the lexicon,
+    and `sich freuen` and `sich beeilen` match nothing. Reflexivity is a
+    `[reflexive]` label on the sense. Of 10,981 verb entries, 1,060 have a
+    reflexive sense and 342 have only reflexive senses. The 49 verb headwords
+    that do start with `sich` are idioms (`sich auf den Weg machen`), and
+    their conjugation forms carry the pronoun (`werde mich auf den Weg
+    machen`). For an English → German check this means:
+    - the stored answer is the bare lemma, so `beeilen` would be marked right
+      and `sich beeilen`, which a learner of a reflexive-only verb would
+      likely type, would be marked wrong unless the checker accepts a leading
+      `sich`;
+    - the only record of whether a sense is reflexive is the free-text label,
+      so a checker that accepts the bare lemma with an optional `sich` needs
+      no new data;)
+  - (checked 2026-10-30, two rough edges in the conjugation cards of
+    reflexive verbs:
+    - the stored forms of simple reflexive verbs have no reflexive pronoun
+      (`freue`, `beeile`), so a learner who types `freue mich` is marked
+      wrong, while the card says to type the form without the pronoun;
+    - the data has a suspect auxiliary for some of them. `beeilen` has
+      `bin beeilt` in the Perfekt, and `verschulden` looks similar. Of the 342
+      reflexive-only verbs, six have `bin`: `ausgehen`, `verkriechen`,
+      `hinknien` and `festlaufen` look right for `sein` and `beeilen` and
+      `verschulden` look wrong, which is a reading, not a check against a
+      dictionary. A card expects what the data says, so a learner who types
+      the correct `habe` form is marked wrong for a wrong entry. Whether to
+      correct this in the build is answered below;)
+  - (decided 2026-10-30: the conjugation check accepts the reflexive
+    pronoun. `check_conjugation` compares the typed text with the stored
+    forms of the slot; it will also accept each stored form with the pronoun
+    for that person put after the first word: 1sg `mich`, 2sg `dich`, 3sg
+    `sich`, 1pl `uns`, 2pl `euch`, 3pl `sich`. That covers `freue mich`,
+    `habe mich gefreut`, `werde mich freuen` and `rufe mich an`. It only
+    widens what is accepted, so no answer that is right today turns wrong.
+    It needs the card to know that the verb is reflexive, or `koche mich`
+    would be accepted for `kochen`. That is a new field in the conjugation
+    card's content, set when the card is made from the sense labels (any
+    reflexive sense counts, so a verb like `freuen`, with reflexive and
+    other senses, accepts both forms). Existing cards lack the field and
+    read as not reflexive, so they keep today's behaviour. It does not touch
+    the suspect auxiliaries in the data. Not built yet: a `change` for 013's
+    code;)
+  - (decided 2026-10-30: the suspect auxiliaries in the data, `bin beeilt`
+    and the like, are accepted as they are, since about two entries of 342
+    reflexive-only verbs are affected;)
+  - (decided 2026-10-30, for the typed meaning check if the spec allows it:
+    accept the lemma with an optional leading `sich`, so `beeilen` and
+    `sich beeilen` are both right. It needs no new data, because the lemma
+    is stored bare. It does not need the reflexive field above, and it
+    would accept `sich kochen` for `kochen`, which is wrong German and
+    harmless in a recall check;)
   - (done in 7bbf142: the `meaning_de_de` face was the wrong way round,
     showing the word on the front and the definition on the back; it now
     shows the definition and asks for the word, as §7.2 says;)
