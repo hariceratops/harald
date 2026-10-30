@@ -3797,7 +3797,7 @@ esc End
 ```
 ========================== Study - 10 due, 8 new left ==========================
 
-                               Deutsch -> Deutsch
+                              German -> German
 
 
    zumeist aus einem bestimmten Gewebe/Stoff bestehendes längeres, schmales,
@@ -4799,7 +4799,7 @@ esc End
 ```
 ======== Study - 10 due, 8 new =========
 
-           Deutsch -> Deutsch
+          German -> German
 
  zumeist aus einem bestimmten
  Gewebe/Stoff bestehendes längeres,
