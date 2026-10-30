@@ -34,9 +34,9 @@ and tests it at 40x30, 40x12 and 100x30. Awaiting the user's hand check.
 - `StudyScreen.action_reveal` sets `_revealed = True` before grading an
   empty attempt; if the write fails, `_grade` notifies without redrawing,
   so the card reads as revealed while the front is still shown. Enter
-  retries. Open.
+  retries. Fixed in 33a881d.
 - `StudyScreen.BINDINGS` binds keys 1, 2 and 3 while the grade buttons are
-  Again/Good only; key 3 serves article cards. Open.
+  Again/Good only; key 3 serves article cards. Fixed in 33a881d.
 - 019's typed-attempt criterion is wording only until 019 is built.
 
 ## Review 2026-10-29 (range 28818ff..6366971, follow-ups)
@@ -52,3 +52,6 @@ and tests it at 40x30, 40x12 and 100x30. Awaiting the user's hand check.
   accepted for"; the card says "are accepted for". Reworded.
 - Two lines in the guide and in design §7.13 ran past the wrapping used
   around them. Reflowed.
+- Heading (user, 2026-10-30): the card heading stays `German -> German`,
+  like the other card headings. The two wireframes that read `Deutsch ->
+  Deutsch` now match.
