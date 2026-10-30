@@ -2527,7 +2527,7 @@ logical commits:
 
 **Acceptance-criteria clarifications for issue 013.** The wording is the
 user's to change:
-- Line 3 ("Blocked on spec open question 5 …") can go.
+- (done: line 3 of the issue now points at §7.12.)
 - **AC 1:**
   - the persons are ich, du, er/sie/es, wir, ihr and sie/Sie, with formal
     Sie not separate;
@@ -2545,7 +2545,8 @@ user's to change:
   are still created, and the refusal names each affected tense with its
   missing persons.
 
-The frozen spec still lists open question 5 as open.
+The spec records the resolution: open question 5 is marked resolved and the
+requirements carry the persons, tenses, separable forms and refusal rule.
 
 ### 7.13 Self-graded cards: a typed attempt, then Again or Good (2026-10-28)
 
@@ -6495,9 +6496,8 @@ and 004b (the parallel task graph, with the four criteria in its row).
   and AGENTS.md are already renamed.
 - **Proper nouns:** the spec is silent on them, so nothing needs to change.
 - **Issue 021's acceptance criteria** need the six changes listed in §8.4.
-- **Issue 013:** line 3 ("Blocked on spec open question 5") can go. The
-  acceptance criteria could take the three clarifications at the end of
-  §7.12. The spec still lists open question 5 as open.
+- **Issue 013:** done. Line 3 points at §7.12 and the acceptance criteria
+  carry the clarifications. The spec now marks open question 5 resolved.
 
 **Notes, informational:**
 - **`Option` has no caller in today's code** (§14.10). Every current
