@@ -3,8 +3,12 @@ from datetime import UTC, datetime, timedelta
 
 from fsrs import Scheduler
 
+from harald.core.option import Option
+from harald.core.result import Result
+from harald.learning.db import transact
 from harald.learning.models import CARD_TYPES
 from harald.learning.scheduling import CARD_SCOPE, scheduler_for
+from harald.learning.study import _answer_checked
 from harald.lexicon.model import Headword
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 from harald.use_cases.lexicon import LoadHeadword
@@ -162,3 +166,29 @@ def test_session_summary_counts_cards_and_first_grades(built: Workspace) -> None
 
     assert (summary.reviewed, summary.correct) == (2, 1)
     assert SessionSummary(built.config).execute("none").unwrap().reviewed == 0
+
+
+def test_a_checked_answer_with_no_rating_writes_no_review_and_no_audit_entry(
+    built: Workspace,
+) -> None:
+    (first,) = _add(built)[:1]
+
+    checked = transact(
+        built.config.learning_db,
+        lambda ctx: _answer_checked(
+            ctx,
+            first,
+            T0,
+            "s1",
+            None,
+            lambda scope: scheduler_for(scope, False),
+            lambda _card: ("refused", Option.none(), "x"),
+        ),
+    )
+
+    assert checked == Result.ok("refused")
+    with sqlite3.connect(built.config.learning_db) as db:
+        reviews = db.execute("SELECT COUNT(*) FROM review").fetchone()
+        updates = db.execute("SELECT COUNT(*) FROM operations WHERE action = 'update'").fetchone()
+    assert reviews == (0,)
+    assert updates == (0,)
