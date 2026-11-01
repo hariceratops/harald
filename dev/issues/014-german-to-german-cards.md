@@ -7,7 +7,7 @@ Spec: `dev/specs/harald-v1.md`
 ## Acceptance Criteria
 
 - When adding a word, a separate picker offers German-edition senses.
-- Each picked German-edition sense yields a self-graded card that shows the German definition and asks for the German word. The learner types an attempt before the answer is revealed; it is stored with the review, and an empty attempt is graded Again.
+- Each picked German-edition sense yields a card that shows the German definition and the part of speech and asks for the German word. The learner types the word and Harald checks it (issue 025); an empty attempt is graded Again. A note can be added to the sense (issue 026).
 - These cards share the meaning-card FSRS parameter scope.
 
 ## Status 2026-10-29

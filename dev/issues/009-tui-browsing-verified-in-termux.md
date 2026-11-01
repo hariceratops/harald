@@ -21,6 +21,8 @@ a by-hand run in Termux; record the results here:
 - [ ] TUI startup time.
 - [ ] Real row count in portrait with the keyboard up (§12.7 q4).
 - [ ] Taps arrive as clicks, swipes as scroll.
+- [ ] Typing on the soft keyboard (issues 023 to 026): autocorrect and autocapitalisation, the keyboard staying up through check, retry and Next, and taps on `Check (enter)`.
+- [ ] The note box (issue 026) with the soft keyboard up, and taps on `h Note`.
 
 ## Review notes
 
