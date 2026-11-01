@@ -21,7 +21,7 @@ Spec: `dev/specs/harald-v1.md`
 
 ## Status
 
-Commit step (4) of design 7.14 is built (the earlier steps landed before it); the issue is not closed.
+Built in four commits (article card removed, `_answer_checked` takes a rating, `check_meaning`, the study screen). Every criterion is met in unit, component, pilot and smoke tests; the Termux checks are open (below).
 
 Built in `src/harald/tui/study.py` and `harald.tcss`:
 - `meaning_en_de` cards are checked through `AnswerMeaning`; Enter in the field and the `#check` button (`Check (enter)`, in Show answer's place) both run it. German -> English, German -> German and phrase cards stay self-graded.
@@ -30,6 +30,8 @@ Built in `src/harald/tui/study.py` and `harald.tcss`:
 - The 300 ms tap guard covers every study button; its clock is `_shown_at`.
 - `StudyScreen.on_mount` runs `QueryLexiconInfo` first; on an error it toasts `Checking answers needs lexicon.db: <error>` and pops to Home.
 - Measured at 40x12 with the Hund fixture: after the check the card takes 9 of the 10 body rows (design: 9); the first card's front takes 6 card rows plus the field and the digraph row, because of the first-card quirk's two blank lines.
+
+Measured on the real `lexicon.db` (2026-11-01): 25,139 of 128,785 senses (19.5%) carry a label. Most of the rest have `[]`, so the label on the front helps for about one sense in five, and its absence is the normal case.
 
 Not built, by design (issue 024): the retry state and cue (`TryAgain`), slip and other-word verdict lines, and the second-try line. `_answer_meaning` asserts `MeaningGraded` because `check_meaning` cannot return `TryAgain` yet.
 
