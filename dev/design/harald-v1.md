@@ -1,6 +1,9 @@
 # Harald v1: design
 
-Spec: `dev/specs/harald-v1.md` (frozen). Issues: `dev/issues/001`–`022`.
+Spec: `dev/specs/harald-v1.md` (frozen). Issues: `dev/issues/001`–`027`.
+Change 3 (typed meaning checks and sense notes, issues 023–027) was settled in
+`dev/inbox/change3-typed-meaning-check.md`; its decisions are cited here by their
+numbers in that brief's log (D1–D44, P1–P64, F1–F14).
 Background read: `dev/inbox/harald-data-and-modes.md`. `german_learning_app_design.md`
 is superseded, and only its rejected ideas matter here (see §14.8).
 
@@ -348,7 +351,8 @@ src/harald/
     build.py            BuildLexicon: the build, then the info report; BuildDone
     cards.py            PlanWordCards; CreateWordCards, SavePhrase, EditCard, SetSuspended,
                         DeleteCard (UnitOfWork subclasses; all from issue 010)
-    study.py            NextCard, Grade, SessionSummary
+    study.py            NextCard, Grade, AnswerStammformen, AnswerConjugation,
+                        AnswerMeaning (§7.14), SessionSummary
     decks.py            CreateDeck, DeleteDeck, SetDeckMembership
     check.py            the check listing and its three repairs (§8)
     backup.py           BackUp
@@ -375,7 +379,7 @@ src/harald/
                         Lexicon = read-only engine + session factory
     model.py            public result dataclasses: Headword, Entry, Sense, Example, ...
     fuzzy.py            fuzzy_deletes(key), osa_within(a, b, k)   (also used by build)
-    lookup.py           lookup_de(), lookup_en(), load_headword()
+    lookup.py           lookup_de(), lookup_en(), load_headword(), known_words() (§5.1)
     phrases.py          search_phrases(), de_lemma_tokens()     (also used by build)
   learning/             learning.db
     errors.py           LearningDbError family
@@ -389,7 +393,8 @@ src/harald/
       versions/0001_initial.py    reviewed autogenerate output for the models
     content.py          per-card-type content dataclasses (JSON in card.content)
     cards.py            card services: *_service(ctx, …) over DbTransactionContext (§7.7)
-    answers.py          check_article(), check_stammformen(): pure
+    answers.py          check_meaning(), check_stammformen(), check_conjugation(): pure
+                        (§5.1, §7.14)
     study.py            study services; FSRS scopes
     decks.py            deck services
     check.py            re-resolution for `harald check` (§8.1)
@@ -402,6 +407,8 @@ src/harald/
 tests/                  (layers settled by the tdd step)
 dev/bench/              benchmark harness: bench.py, queries.toml, budgets.toml and the two
                         baselines committed; results/ gitignored (§14.9)
+dev/audit/              checked_answers.py: the read-only audit of checked answers
+                        (issue 027, §7.14)
 ```
 
 `main.py` is deleted. pyproject's `name = "german"` becomes `harald`. The
@@ -576,8 +583,12 @@ to 0.
     0.38% of single-edit typos spell a name exactly, and candidate sets grow
     2%.
   - **Cards:** meaning cards only (German → English, English → German, and
-    German → German when the German edition defines the name). The article
-    and Stammformen rules apply to `noun` and `verb`, so they never trigger.
+    German → German when the German edition defines the name). The meaning
+    check's article rules (§5.1) and the Stammformen card apply to `noun` and
+    `verb` only. On a name the article is optional and never changes the
+    grade (the user's decision, 2026-11-01): one typed is accepted whether or
+    not it matches the gender the importer stores (`is_noun` covers `name`),
+    and none typed passes as well.
 - German edition, `lang_code == "de"`: the same form-of and pos rules.
 
 **Per English-edition entry:**
@@ -648,7 +659,9 @@ translation.
   `headword` is created if missing: German-edition-only words exist and are
   searchable.
 - `label` = article plus lemma for nouns, using entry `tags` gender
-  (`das Band`), otherwise the lemma.
+  (`das Band`, `der/das Liter`), otherwise the lemma. Every German → German
+  card takes its gender back from its own entry's label, since each card's
+  gender comes from the entry its sense came from (§7.2).
 - `de_sense` comes from senses in order: `sense_index` as given (`NULL` for
   headings), `gloss` = glosses joined with `" "`, `labels` mapped like the
   English edition.
@@ -656,7 +669,8 @@ translation.
 - **Nothing else is read from the German edition.** Gender, plural,
   conjugation and IPA come only from the English edition, as the spec scopes
   the German edition to definitions and examples. The one exception is the
-  display label.
+  display label, whose article also gives each German → German card its
+  gender (§7.2).
 
 **Tatoeba**:
 - Read the links first. Load only the German and English sentences they
@@ -1273,8 +1287,8 @@ budgets of §14.9.
 
 **Package boundary.** Everything SQLAlchemy stays inside `harald/lexicon/`.
 - The public functions (`open_lexicon`, `lookup_de`, `lookup_en`,
-  `load_headword`, `search_phrases`) take a `Lexicon` and return the frozen
-  dataclasses of `lexicon/model.py`.
+  `load_headword`, `known_words`, `search_phrases`) take a `Lexicon` and
+  return the frozen dataclasses of `lexicon/model.py`.
 - Callers never see a `Session`, a mapped class or a `Row`. Results are
   converted inside the package before the session closes.
 - So a later swap to Core, or to a Rust extension, stays local to the package.
@@ -1310,6 +1324,7 @@ swap inside the package:
 | English → German | `select(EnWord)….options(selectinload(EnWord.translations))` | column selects, assembled |
 | FTS5 phrase tiers | `session.execute(text("SELECT rowid FROM tatoeba_en_fts WHERE tatoeba_en_fts MATCH :q ORDER BY rank LIMIT :n"), …)`, then `select(TatoebaPair).where(TatoebaPair.id.in_(ids))` | the same `text()` through `connection.execute`; pairs by a column select |
 | version check | `select(Meta.value).where(Meta.key == "schema_version")` | a column select |
+| known word (the meaning check, §5.1) | `select(Headword.lemma, Headword.pos, KeyHeadword.kind)` joined through `KeyHeadword` to `SearchKey`, `where(SearchKey.lang == "de", SearchKey.key == fold(word))`. The `(lang, key)` unique index must drive it, so `_candidate_keys`' `lang \|\| ''` workaround is not copied; a component test asserts that the plan opens with `search_key_lang_key` | the same `select()` through `connection.execute` |
 
 FTS5 goes through `text()` because `MATCH`, `rank`, `bm25()` and virtual
 tables have no ORM expression. Mapping a virtual table would buy nothing
@@ -1345,6 +1360,86 @@ the quoted token string travels as the `:q` bind parameter (§4.3).
   `ae` is accepted for `ä`, and so is `ä` itself. The only over-acceptance is
   something like `daürt` for `dauert`, which is harmless.
 - `tokenize(s)` = `re.findall(r"\w+", s)`.
+- `normalise_answer(s)` is `answer_matches`' normalisation (NFC, strip,
+  collapsed whitespace, ä/ö/ü/ß and their capitals to digraphs), lifted
+  out of it unchanged, because the meaning check compares in the same form
+  (§5.1). `answer_matches` itself does not change.
+
+### 5.1 Checked meaning answers (issues 023–025)
+
+The spec's "Checked meaning answers" block, as one function:
+`check_meaning(content, given, first_try, previous, known) -> MeaningCheck`
+in `learning/answers.py`. It grades English → German and German → German
+answers. It is pure apart from `known`, the caller's exact lexicon lookup
+(`known_words`, §4.4), passed in the way §4.3 passes `lemma_of`. `given` is
+the answer, `first_try` the first answer when this is the retry, and
+`previous` the `answer` of the card's latest review. Interfaces and the
+study flow are in §7.14.
+
+**Parse**, once, before any rule:
+- **Article**, on nouns and proper nouns (`pos` `noun` or `name`). When the
+  answer has two or more words and the first, in any case, is one of `der`,
+  `die`, `das`, `ein`, `eine`, `einen`, `einem`, `einer`, `eines`, `den`,
+  `dem` or `des`, that is the article and the rest is the word `W` (the
+  user's decision, 2026-11-01). So `Der Hund`, as an autocapitalising
+  keyboard types it, has the article `der`, and `ein Hund` has an article
+  that is wrong for the card.
+- **`sich`**, on `pos == "verb"` only: a leading `sich` is dropped from `W`
+  unless the lemma itself starts with it (`sich auf den Weg machen`). D2
+  allowed it on any lemma; the spec allows it on verbs, and the spec wins.
+
+**Rules, in order; the first that applies decides.** `L` is the card's
+lemma. The slip allowance `k` follows `L`'s length as written (NFC, so
+Löwe has 4 letters): none up to 4 letters, 1 from 5 to 9, 2 from 10.
+Distances are OSA (`osa_within`, §4.1) between the `normalise_answer`
+forms, case-sensitive.
+
+| # | Condition | Result |
+|---|---|---|
+| 1 | the answer is empty after stripping | Again |
+| 2 | a noun (not a name) whose gender is `""`, and an article was typed | refused: no grade; `No article stored - type the word alone`; the text stays (D19). Plural-only nouns are here (`die Leute`, D38) |
+| 3 | `answer_matches(W, L)` | the word is right |
+| 4 | `W` and `L` differ only in case, and a lemma row (not a form) of `known(W)` matches `W` exactly | Again: another word (`essen` for `Essen`, `arm`, `laut`; D23) |
+| 5 | `W` and `L` differ only in case | a slip (`hund` for `Hund`), at any length |
+| 6 | `known(W)` has a row of the card's part of speech that is not a form of `L` itself | first try: one retry with the cue; second try: Again (D24) |
+| 7 | `known(W)` is not empty | Again: another word or word form |
+| 8 | the distance from `W` to `L` is within `k` | a slip (D22) |
+| 9 | anything else | Again |
+
+- **Then the article**, for a word that is right or a slip. On a noun with
+  a gender, only the definite article of one of the card's genders is right
+  (`ARTICLES`; Band, See and Leiter accept any of theirs), and gives Good.
+  Any other recognised article (`die` for `Hund`, `ein`, `den`) is wrong;
+  a wrong or missing one gives Hard, or Again when the previous answer also
+  had a wrong or missing article (D12). On a proper noun the article is
+  ignored: typed or not, matching the stored gender or not, the word alone
+  decides, and a right word is Good. Any other card gives Good.
+- **The previous answer** is its last ` | ` segment, parsed and judged by
+  the same rules, `known` included. It "had a wrong article" only when its
+  word was right or a slip and its article was wrong or missing. An empty
+  or `NULL` answer, or a wrong word, does not count (the brief's Round 4).
+  A same-day learning re-show is a previous review like any other.
+- **The second try** caps the result at Hard: a pass is Hard, an Again
+  stays Again, and rule 6 gives Again. A refusal (rule 2) on the second try
+  refuses again and keeps the retry open.
+- **The cue** is the first letter and the length of `L`, never of the
+  article (the TUI's wording is in §7.14).
+- **What it grades**: Again, Hard or Good, never Easy (spec). Hard comes
+  only from the article and the second try.
+- **Consequences of the order**, which follow from the spec's wording
+  rather than from choices made here:
+  - a known key is never a slip, so `schon` for `schön` is Again (rule 7);
+  - a form of the card's own word is not "another word", so `Hunde` for
+    `Hund` is Again, with no retry (rules 6 and 7);
+  - capitalisation plus one more slip is two slips: `madchen` for
+    `Mädchen` is Again;
+  - rule 4 sees lemmas only. Keys are case-folded, so an inflected form
+    whose other-case spelling is a word (`fliege` for `Fliege`) passes as
+    a slip. The spec says "itself a German word", and its examples are
+    lemmas.
+
+Rules 1–3 and the article need no lexicon. Issue 023 builds them; 024 adds
+`known` and rules 4–8 (§7.14).
 
 ---
 
@@ -1417,7 +1512,7 @@ CREATE TABLE phrase (id INTEGER PRIMARY KEY,
 CREATE TABLE card (id INTEGER PRIMARY KEY,
   word_id INTEGER REFERENCES word(id), phrase_id INTEGER REFERENCES phrase(id),
   card_type TEXT NOT NULL CHECK (card_type IN ('meaning_de_en','meaning_en_de','meaning_de_de',
-     'article','stammformen','conjugation','phrase_en_de')),
+     'stammformen','conjugation','phrase_en_de')),   -- 'article' dropped in place, §7.6
   content TEXT NOT NULL,                 -- JSON, §7.2: the card's own copy
   created_at TEXT NOT NULL,
   suspended INTEGER NOT NULL DEFAULT 0, deleted_at TEXT,
@@ -1462,7 +1557,8 @@ CREATE TABLE operations (id INTEGER PRIMARY KEY AUTOINCREMENT,      -- kohle's c
   between slices. Per-slice migrations would mean shipping and testing schema
   changes against real data with no benefit. `conjugation` is in the
   `card_type` CHECK now because changing a CHECK later means rebuilding the
-  table.
+  table. Until about v0.9 a change like that edits `0001` in place instead
+  (D9, §7.6); change 3 did so to drop `article`.
 - **Connection settings**, set by the engine's connect hook (§7.7):
   `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=FULL`,
   `busy_timeout=5000`. WAL lets `harald backup` read
@@ -1487,32 +1583,61 @@ CREATE TABLE operations (id INTEGER PRIMARY KEY AUTOINCREMENT,      -- kohle's c
 
 | card_type | content JSON | FSRS scope | answer |
 |---|---|---|---|
-| `meaning_de_en` | `lemma, pos, gender, gloss, labels, example?` | meaning | typed attempt, then self-graded (below); front: article + lemma (+ German example as context) and an Answer field, back: gloss (+ translation) |
-| `meaning_en_de` | same | meaning | typed attempt, then self-graded; front: gloss, labels, pos and an Answer field; back: article + lemma (+ example) |
-| `meaning_de_de` | `lemma, pos, gender, definition` | meaning | typed attempt, then self-graded; front: German definition and an Answer field; back: article + lemma |
-| `article` | `lemma, gender` (one or more of m/f/n), `plural`, `hint` | article | front: lemma, plural, hint; one keypress: `1` der, `2` die, `3` das; any listed gender is correct |
+| `meaning_de_en` | `lemma, pos, gender, gloss, labels, example?, note?` | meaning | typed attempt, then self-graded (below); front: article + lemma, pos, note, German example, and an Answer field; back: `[labels] gloss` (+ translation) |
+| `meaning_en_de` | same | meaning | checked (§5.1); front: `[labels] gloss`, pos, note, the example's translation, and a field labelled `Art. + noun` or `Word`; back: article + lemma (+ German example) |
+| `meaning_de_de` | `lemma, pos, gender, definition, labels, note?` | meaning | checked (§5.1); front: German definition, pos, note, and the field; back: article + lemma |
 | `stammformen` | `infinitive, hint, pres3sg, preterite, participle, auxiliaries, separable_prefix` | conjugation | front: infinitive and hint; three typed fields: er/sie/es Präsens, Präteritum, Perfekt (`ruft an` / `rief an` / `hat angerufen`); all must match |
 | `conjugation` | `infinitive, hint, separable_prefix, slot, forms` (§7.12) | conjugation | front: infinitive, hint, tense; one typed field labelled with the person; any of `forms` matches |
 | `phrase_en_de` | `{}`: the `phrase` row is the copy | phrase | typed attempt, then self-graded; front: English (+ note) and an Answer field, back: German |
 
-- **Self-graded**, since 2026-10-28 (§7.13): the front carries one Answer
-  field, the reveal shows the attempt as `you: …` above the back, and the
-  learner grades `1` Again or `2` Good. An empty attempt is graded Again
-  at once. The attempt is stored as the review's `answer` but never
-  compared, as the spec's "no typed checking of meaning or phrase answers"
-  requires.
+- **Self-graded** (German → English and phrase cards), since 2026-10-28
+  (§7.13): the front carries one Answer field, the reveal shows the attempt
+  as `you: …` above the back, and the learner grades `1` Again or `2` Good.
+  An empty attempt is graded Again at once. The attempt is stored as the
+  review's `answer` but never compared, as the spec's non-goal, no typed
+  checking of German → English or phrase answers, requires.
+- **Checked** (English → German and German → German), since change 3: the
+  answer is the word, with its article on a noun with a gender, graded by
+  the rules of §5.1 (Again, Hard or Good). The field is labelled
+  `Art. + noun` on such a noun and `Word` on every other checked card (D16,
+  D17). The review's `answer` is the typed text, or `first | second` after
+  a retry.
+- **`note`** (issue 026; D27–D36): the learner's one-line hint or mnemonic,
+  at most 36 characters (D30), stored only when one was written. Both cards
+  of an English sense carry the same note, and a German sense's note goes on
+  its German → German card. It is one dim row in parentheses under the part
+  of speech and above the example, on the front. The front stays on screen
+  through the reveal, the check and the retry, so the note is visible on
+  both sides (D36). Duplicate detection ignores it (§7.3). Stammformen and
+  conjugation cards take none (D35). The phrase note keeps its column on
+  the `phrase` table and gets the same look (D33).
+- **`labels`.** English senses' labels were always copied; the English →
+  German front now shows them as `[colloquial] gloss`, like the German →
+  English back (D37). German → German content gains the German sense's
+  `labels` (D37), stored for repairs (§8.3) but not shown in v1, since the
+  spec lists what that front shows. A card without the key reads as having
+  no labels.
+- **`gender`** is taken per card, from the entry its own sense came from
+  (the user's decision, 2026-11-01, widening D20). The two cards of an
+  English sense take the chosen English entry's gender. A German → German
+  card takes its own German entry's, parsed from that entry's label (`das
+  Band` → `n`, `der/das Liter` → `mn`, a bare lemma → `""`) by inverting
+  `ARTICLES`. So a German sense picked from `der Band` beside English senses
+  of `das Band` expects `der Band`. The code today gives every card the
+  chosen English entry's gender, or `""` without one.
 - `CARD_SCOPE` is a single dict from card type to scope. Moving
   `meaning_de_de` to its own scope is the one-line change the spec promises.
 - `example` is the sense's first translated `kind == 'example'` example,
   copied at creation. It exists because several German → English cards of
   one word would otherwise show identical fronts with nothing to say which
   sense is being asked for.
-- `hint` (article and Stammformen) is the word's first chosen English gloss,
-  or its first chosen German definition when only German senses were picked,
-  copied at creation. `plural` is copied for article cards. Without them,
-  homographs show identical fronts while expecting different answers: Band
-  n/m/f, See, Leiter for articles, and umfahren (`fährt um` vs `umfährt`) for
-  Stammformen. Found while laying out the study screens (§12.6).
+- `hint` (Stammformen; conjugation cards follow the same rule, §7.12) is the
+  word's first chosen English gloss, or its first chosen German definition
+  when only German senses were picked, copied at creation. Without it,
+  homograph verbs show identical fronts while expecting different answers:
+  umfahren (`fährt um` vs `umfährt`). Found while laying out the study
+  screens (§12.6). The article card, which copied a hint and the plural for
+  Band n/m/f, See and Leiter, is gone (§7.14).
 - **Separable verbs** (open question 5 part 2; revised by the user on
   2026-10-27, §7.12 decision 6):
   - the answers are the data's main-clause split forms (`ruft an`,
@@ -1531,7 +1656,8 @@ CREATE TABLE operations (id INTEGER PRIMARY KEY AUTOINCREMENT,      -- kohle's c
 ### 7.3 Adding a word (issues 010–014)
 
 `PlanWordCards(dic).execute(headword, entry | None, en_sense_ids, de_sense_ids) -> CardPlan`
-(issue 013 adds a `tenses` argument, §7.12)
+(issue 013 adds a `tenses` argument, §7.12; issue 026 adds `en_notes` and
+`de_notes`, §7.14)
 returns `CardPlan(word_hint, cards: list[NewCard], refusals: list[Refusal(card_type, missing: list[str])])`.
 - `PlanWordCards` is a plain use-case class in `use_cases/cards.py`
   (§11.2), because as designed here it reads only the lexicon.
@@ -1543,10 +1669,15 @@ returns `CardPlan(word_hint, cards: list[NewCard], refusals: list[Refusal(card_t
 - Every chosen English-edition sense gives one `meaning_de_en` and one
   `meaning_en_de` card. Every chosen German-edition sense (only those with a
   `sense_index`; headings can't be picked) gives one `meaning_de_de` card.
-- Article (nouns) and Stammformen (verbs) cards are added **once per word**,
-  whenever any sense is added. They are refused with the missing items named:
-  `missing: gender`; `missing: Präteritum, auxiliary`. German labels are used
-  for forms, because that is what the learner sees on the card.
+  Each card's `gender` comes from the entry its own sense came from (§7.2).
+- The Stammformen card (verbs) is added **once per word**, whenever any sense
+  is added. It is refused with the missing items named: `missing:
+  Präteritum, auxiliary`. German labels are used for forms, because that is
+  what the learner sees on the card.
+- **Nouns get no article card** (spec revision of 2026-11-01, D25). The
+  article is part of the typed English → German and German → German answer
+  (§5.1), so a noun without a gender is refused nothing; its checked cards
+  are typed without an article (D16).
 - The two pickers are separate: English-edition senses of the chosen English
   entry, and German-edition senses of the whole (lemma, pos) group, grouped
   under each `de_entry` label. German-edition-only headwords (no English
@@ -1554,13 +1685,18 @@ returns `CardPlan(word_hint, cards: list[NewCard], refusals: list[Refusal(card_t
   `(lemma, pos, '')`.
 - **Dedupe**: a planned card identical in `(word, card_type, content)` to a
   live card is dropped. The pickers mark senses that already have cards.
+  `note` is left out of the comparison (`cards._key`), so a noted card still
+  matches its sense's plan and keeps its "(has cards)" mark (issue 026).
+- **Notes** are entered on the pickers with `h` (D28, D29) and passed to the
+  planner as `en_notes` and `de_notes`. A sense that already has cards takes
+  none (D34). The flow is in §7.14.
 - `CreateWordCards(session).execute(plan, deck_ids) -> Result[list[int],
   LearningDbError]` runs in **one transaction** (`DbTransaction.execute`, §7.7):
   upsert the `word` row by hint key, insert the cards (fsrs state from a
   fresh `Card(card_id=<new id>)`), insert deck memberships. Refusals are
   shown before the user confirms, and they never block the other cards.
 
-### 7.4 Study (issues 010, 011, 012, 015, 016)
+### 7.4 Study (issues 010, 012, 015, 016, 023–025)
 
 `NextCard(session).execute(now, session_id, deck_id | None) ->
 Result[Option[StudyCard], LearningDbError]` (§14.10). Like every `learning.db` access it runs through
@@ -1579,9 +1715,17 @@ sibling-buried**.
 - **Day**: local time, starting at `day_starts_at` (default 04:00). "Today"
   means `reviewed_at ≥` the start of the current study day, converted to UTC.
 - **Sibling burying is computed, never stored**: a card is excluded if any
-  *other* card with the same `word_id` or `phrase_id` has a review today.
-  That leaves nothing to clean up, it survives a kill, and burying across
-  deck filters follows automatically.
+  *other* card with the same `word_id` or `phrase_id` **and the same
+  `card_type`** has a review today (D11; the spec's wording, D40). So a
+  noun's German → English and English → German cards can come up on the
+  same day, while two English → German cards of one word bury each other.
+  "Card type" here is the `card_type` value (`meaning_de_en`,
+  `meaning_en_de`, `meaning_de_de`, `stammformen`, `conjugation`,
+  `phrase_en_de`), not the FSRS scope (the user's decision, 2026-11-01), so
+  a word's German → English and English → German cards may appear on the
+  same day. Computing it leaves nothing to clean up, it
+  survives a kill, and burying across deck filters follows automatically.
+  Not built yet: `next_card` has neither burying nor the cap (issue 015).
 - `Grade(session).execute(card_id, rating, now, session_id, duration_ms,
   answer) -> Result[None, LearningDbError]` runs in **one transaction**
   (`DbTransaction.execute`): read the card's fsrs state, call
@@ -1593,20 +1737,32 @@ sibling-buried**.
   `answer` is what the learner gave: a checked card's answer, or a
   self-graded card's attempt (`''` when empty, §7.13). Self-graded reviews
   from before 2026-10-28 have `NULL`, because no attempt was asked for.
-- **Checked cards grade themselves**: correct → `Rating.Good`, wrong →
-  `Rating.Again`. The article card stays a single keypress, and a failed
-  conjugation check is a lapse.
-- **Self-graded cards are graded Again or Good** (since 2026-10-28,
-  §7.13). The learner types an attempt before the reveal, and an empty
-  attempt is graded Again without a further keypress. The study screen no
-  longer offers Hard or Easy on any card. `Grade` and FSRS still accept
-  all four ratings, the `rating` CHECK is unchanged, and earlier reviews
-  keep the Hard and Easy grades they were given.
+- **Checked cards grade themselves.** Stammformen and conjugation: correct →
+  `Rating.Good`, wrong → `Rating.Again`, so a failed check is a lapse.
+  English → German and German → German: Again, Hard or Good from
+  `check_meaning` (§5.1). D8 amends the confirmed "correct → Good, wrong →
+  Again" for these two. `_answer_checked` takes the rating from its caller,
+  or none for a refusal or a retry, which write nothing (§7.14).
+- **`AnswerMeaning` reads both databases**: the card and its previous answer
+  from `learning.db`, the typed word's rows from the lexicon (issue 024),
+  then writes at most one review in the same transaction. Study checks that
+  the lexicon opens before the first card (F10). The retry's first answer
+  lives on the screen only.
+- **Self-graded cards** (German → English, phrase) **are graded Again or
+  Good** (since 2026-10-28, §7.13). The learner types an attempt before the
+  reveal, and an empty attempt is graded Again without a further keypress.
+  The learner is never offered Hard or Easy; Hard comes only from the
+  meaning check. `Grade` and FSRS still accept all four ratings, the
+  `rating` CHECK is unchanged, and earlier reviews keep the Hard and Easy
+  grades they were given.
 - **Session summary** = `SessionSummary(session).execute(session_id)`, computed from the
   review log. "Reviewed" counts distinct cards. "Answered correctly" counts
   cards whose first grade in the session was not Again. Because it comes from
   durable rows, a summary is exact even when the session ran across learning
-  steps.
+  steps. `session_summary` counts `rating != 1`, so a Hard from the meaning
+  check (a wrong article, a second try) counts as answered correctly, and an
+  escalated Again does not. Refusals and first tries write no row, so a card
+  counts only once its final grade is written.
 - **Schedulers**: one `fsrs.Scheduler` per scope, built from the
   `fsrs_params` row or the package defaults and cached per process. Fuzzing
   stays on. Tests pass `enable_fuzzing=False` through a factory argument.
@@ -1650,6 +1806,21 @@ at runtime with kohle's infrastructure (§7.7). So, as in kohle's `env.py`,
   the user's data.
 - **A drift test** runs `alembic.command.check` against a database upgraded
   to head. It fails if the models and the revisions disagree.
+  - It does not see CHECK constraints. In Alembic 1.20.1 their comparison is
+    an opt-in plugin, `alembic.ext.checkconstraint_byname`, which `env.py`
+    doesn't enable (checked 2026-11-01). So a second migration test reads
+    the `card` table's SQL from `sqlite_master` after an upgrade and asserts
+    that its `card_type` CHECK lists exactly `CARD_TYPES`. 0001's CHECK is a
+    frozen copy of what `CARD_TYPES` generated, not generated itself.
+- **Until about v0.9, restructuring edits revision `0001` in place** (D9, the
+  user's policy, 2026-10-30). The app has never run on the phone, so no
+  `learning.db` exists that a new revision would have to carry. Change 3 is
+  the first use (D13): `CARD_TYPES` and 0001's literal CHECK lose `article`
+  together, and the empty dev `learning.db` is deleted and recreated.
+  - A file already at `0001` keeps its old CHECK silently, because Alembic
+    sees nothing to do. Only dev files can be in that state.
+  - From about v0.9, every schema change is a new revision with the
+    data-preservation test below.
 
 **Layout.** The script directory ships *inside* the package, because Harald
 runs installed on a phone, not from a checkout.
@@ -1961,6 +2132,9 @@ there to audit.
 - Backups, which only read.
 - There is no "backup restore" feature (backups are never read back), so
   there is nothing to audit there.
+- A refused meaning answer and the first try of a retry, which write nothing
+  (§7.14). The final grade is audited like any grade. Note edits come with
+  issue 017's `EditCard`, which audits content already.
 
 **Grades are audited too** (recommended, and adopted):
 - `Grade` records one group with two operations:
@@ -2058,7 +2232,13 @@ one batch.
 
 ---
 
-### 7.10 Deviations found while implementing 011 (2026-10-26)
+### 7.10 Deviations found while implementing 011 (2026-10-26; superseded 2026-11-01)
+
+**Superseded by change 3** (D25, issue 023): the article card type is
+removed, and the article is part of the typed answer (§5.1, §7.14). Issue
+011 is retired. These notes stay as the record of what was built. Three
+still hold for other cards: the single `advance` action on space, the
+lapsed card's return through learn-ahead, and the tap-guard test's timing.
 
 - **Article cards are deduped by type alone.** The hint is the word's first
   chosen gloss, which can differ between adds, so identity by content would
@@ -2343,7 +2523,10 @@ built from the 2026-10-03 dump and queried read-only on 2026-10-27.
   `label` and `expected` as the forms joined with `/`.
 - **Answering:** `answer_conjugation` in `learning/study.py`, through
   `_answer_checked`. The grade is Good if the answer matches and Again
-  otherwise, and the review's `answer` is the typed string.
+  otherwise, and the review's `answer` is the typed string. Since change 3
+  the caller hands `_answer_checked` that rating (§7.14). Accepting the
+  reflexive pronoun after the first word (D3) is decided but not built; it
+  is a separate `change` (§16). These cards take no note (D35).
 - **Use case:** `AnswerConjugation(config).execute(card_id, given, now,
   session_id, duration_ms) -> Result[FieldCheck, LearningDbError]`, in
   `use_cases/study.py`. That module re-exports `FieldCheck` for the TUI, as
@@ -2424,13 +2607,15 @@ A Perfekt card for the same verb shows `Perfekt` and `ich [ … ]`, and
 expects `habe angerufen`. Perfekt shows no separable note, even on a wrong
 answer, because none of its forms ends in ` an`.
 
-**Consequence worth a veto: sibling burying (issue 015).** The spec buries
-siblings per word. Once 015 lands, a verb's conjugation cards are introduced
-and reviewed at most one a day, sharing that one slot with the verb's
-meaning and Stammformen cards. Three tenses make 18 cards, so introducing
-them takes at least 18 days. That follows the spec as written. If it proves
-too slow, burying could work per (word, card type) instead. That would be a
-spec change, so it is the user's call.
+**Consequence worth a veto: sibling burying (issue 015).** The spec now
+buries siblings per (word, card type) (D11, D40, revised 2026-11-01), the
+change this paragraph once suggested. Card type is the `card_type` value,
+not the FSRS scope (the user's decision, 2026-11-01). It frees the verb's
+meaning and
+Stammformen cards from the conjugation cards' slot, but not the conjugation
+cards from each other, since they all have type `conjugation`. Once 015
+lands, a verb still introduces one of them a day, so three tenses (18 cards)
+take at least 18 days.
 
 **By category.** Only what 013 changes; everything else in §14 stands.
 - **State and data lifecycle.** `CreateWordCards`' single transaction (§7.3)
@@ -2553,6 +2738,9 @@ requirements carry the persons, tenses, separable forms and refusal rule.
 Implemented in `tui/study.py` and its pilot tests. It changes the four
 self-graded card types: `meaning_de_en`, `meaning_en_de`, `meaning_de_de` and
 `phrase_en_de`. Article, Stammformen and conjugation cards are unchanged.
+Since change 3 (§7.14) only `meaning_de_en` and `phrase_en_de` are
+self-graded: English → German and German → German answers are checked, and
+the article card is gone.
 
 **Behaviour**
 - **Front.** One Input labelled "Answer" sits under the front text and has
@@ -2568,14 +2756,15 @@ self-graded card types: `meaning_de_en`, `meaning_en_de`, `meaning_de_de` and
 - **An empty attempt** is graded Again at once, through the same `Grade`
   call, with `answer = ''`. The screen shows "No answer - graded Again",
   `you: (no answer)` and the back. Enter, space or Next continues, as after
-  an article answer.
-- **Hard and Easy are gone from the study screen.** The `Grade` use case and
+  a checked answer.
+- **Hard and Easy are gone from self-graded cards.** (The meaning check can
+  grade Hard by itself, §5.1.) The `Grade` use case and
   FSRS still accept all four ratings, the `rating` CHECK stays
   `BETWEEN 1 AND 4`, and earlier reviews keep the grades they were given.
   Nothing is migrated.
 - **Nothing is checked.** The attempt is shown and stored but never
-  compared with the card, so the spec's non-goal "No typed checking of
-  meaning or phrase answers" holds.
+  compared with the card, so the spec's non-goal, no typed checking of
+  German → English or phrase answers, holds.
 - **The session summary is unchanged.** An empty attempt is an Again, so
   that card does not count as answered correctly (§7.4).
 
@@ -2604,8 +2793,7 @@ phrase cards cost most, because their attempt is a sentence.
   fails when the body needs scrolling (13fc268). The measured row budget
   is in §12.8, "Keyboard up, portrait, 40×12".
 - Textual cannot show or hide the Android keyboard. Whether it stays up
-  across the grade and across article cards is up to Termux, and
-  unverified (009).
+  across the grade and the check is up to Termux, and unverified (009).
 
 **`review.answer` on a self-graded card** now holds:
 - the attempt;
@@ -2621,12 +2809,13 @@ migration.
   `2` to ratings 1 and 3.
 - `_grade(rating, feedback=None)` calls `Grade` with the attempt. Without
   `feedback` it moves to the next card; with it, it shows that feedback.
-- The digit bindings stay `1`–`3`, hidden from the footer. `check_action`
-  allows `1` and `2` on a revealed self-graded card that has no feedback
-  yet, and `1`–`3` on an unanswered article card.
-- `_focus_fields` now runs for every card type except article. It shows one
-  row unless the card is Stammformen, and labels it with the person on a
-  conjugation card and "Answer" otherwise.
+- The digit bindings, hidden from the footer, were `1`–`3`; `3` served
+  article cards and goes with them (§7.14). `check_action` allows `1` and
+  `2` on a revealed self-graded card that has no feedback yet.
+- `_focus_fields` runs for every card type. It shows one row unless the
+  card is Stammformen, and labels it with the person on a conjugation card,
+  `Art. + noun` or `Word` on a checked meaning card (§7.14), and "Answer"
+  otherwise.
 
 **By category**
 - **State and data lifecycle.** Unchanged in shape: each grade is one
@@ -2647,7 +2836,8 @@ migration.
   the checked cards; and the 300 ms tap guard (§12.5), which now also
   covers Next after an empty attempt. No new widget.
 - **Extension points.** None new. A typed check of some self-graded types
-  (§16) would replace the self-grade for those types, not plug into it.
+  would replace the self-grade for those types, not plug into it. Change 3
+  did exactly that for English → German and German → German (§7.14).
 - **Build vs. buy.** Nothing to buy.
 - **Abstractions introduced.** None. `_RATING` exists because keys 1 and 2
   are not FSRS's values 1 and 3. `_grade` exists because the grade keys and
@@ -2662,10 +2852,255 @@ migration.
     reopen the "I knew that" path.
 
 **Not part of this change: typed checking of `meaning_en_de` and
-`meaning_de_de`.** Both ask for a German word, so a check is conceivable
-there, unlike glosses and phrases. It contradicts the spec's non-goal, so it
-needs a spec revision, and that is the user's call. It is recorded as open
-in §16.
+`meaning_de_de`.** Both ask for a German word, so a check was conceivable
+there, unlike glosses and phrases, but the spec's non-goal ruled it out. The
+spec revision of 2026-11-01 allowed it, and it became change 3 (§5.1,
+§7.14).
+
+### 7.14 Checked meaning cards and sense notes (change 3, issues 023–027; 2026-11-01)
+
+The spec revision of 2026-11-01 makes English → German and German → German
+answers checked, puts the article into the typed noun and retires the
+article card, and lets the learner add a note to a sense. The decisions and
+their reasons are D6–D44 in the brief. The grading rules are §5.1; this
+section is the code shape. It supersedes §7.10 and §7.13's "not part of this
+change". The brief's alternatives are in §14.8.
+
+**Code facts this rests on** (checked on `feature/023-typed-meaning-check`,
+2026-11-01):
+- `_answer_checked` hard-codes `Rating.Good if correct else Rating.Again`
+  (`learning/study.py:139`). `grade_card` passes any rating through, and
+  `review.rating` is CHECKed `BETWEEN 1 AND 4`.
+- `session_summary` counts the first review per card in the session and
+  `rating != 1` as correct.
+- `plan_word_cards` builds one content dict per English sense
+  (`content.py:111–117`) and copies it into both meaning cards; de_de
+  content is `lemma, pos, gender, definition`; `gender` is
+  `entry.gender if entry else ""`.
+- `cards._key` keys meaning cards by their whole canonical content.
+- The English → German front shows the gloss, the part of speech and the
+  example's translation, not the labels; the German → German front shows
+  only the definition.
+- `harald` already refuses a missing or mismatched lexicon before Textual
+  starts (`tui/main.py` runs `QueryLexiconInfo`).
+- `next_card` has no burying and no cap yet (issue 015 is not built).
+- The Show answer button is handled before the 300 ms tap guard in
+  `on_button_pressed`, so it is not guarded.
+
+**Interfaces**
+- `lexicon/model.py`: `KnownWord(lemma: str, pos: str, inflected: bool)`.
+  `inflected` is `key_headword.kind == 1`.
+- `lexicon/lookup.py`: `known_words(lex, word) -> tuple[KnownWord, ...]`.
+  It folds `word` the way lookup does (`fold(" ".join(word.split()))`) and
+  runs one exact query (§4.4). The tuple is empty when the word is no German
+  key. There are no fuzzy candidates and no ranking.
+- `text.py`: `normalise_answer(s)`, lifted out of `answer_matches` (§5).
+- `learning/answers.py`: `check_meaning(content, given, first_try, previous,
+  known) -> MeaningCheck`, the rules of §5.1, where
+  `MeaningCheck = NoArticleStored | TryAgain | MeaningGraded`:
+  - `NoArticleStored()`: D19's refusal;
+  - `TryAgain(pos, first_letter, length)`: D24's cue;
+  - `MeaningGraded(rating, word, article, repeated_article, second_try,
+    expected)`. `rating` is an `fsrs.Rating` (Again, Hard or Good). `word` is
+    one of `right`, `slip`, `other_case_word`, `wrong`, `empty`. `article` is
+    one of `right`, `wrong`, `missing`, `not_asked`. `expected` is the
+    article or articles and the lemma, as the back shows them.
+
+  `check_article` and `ArticleCheck` go. `ARTICLES` stays, for
+  `check_meaning` and for `content.py`'s label parse.
+- `learning/study.py`:
+  - `_answer_checked`'s callback returns `tuple[T, Option[Rating], str]`
+    instead of `tuple[T, bool, str]`. `Option.none()` writes nothing and
+    returns `T`. The Stammformen and conjugation callers map their own bool,
+    `Option.some(Rating.Good if checked.correct else Rating.Again)`, so the
+    hard-coded line moves into them unchanged.
+  - `answer_meaning(ctx, card_id, given, first_try, now, session_id,
+    duration_ms, scheduler_for, known) -> Result[MeaningCheck,
+    LearningDbError]` reads the card's previous answer, the `answer` of its
+    latest review by `reviewed_at` then `id` (index `review_card`). It then
+    calls `_answer_checked` with a callback that runs `check_meaning` and
+    returns a rating for `MeaningGraded` only. The stored answer is `given`,
+    or `f"{first_try} | {given}"` after a retry, the way Stammformen joins
+    its fields.
+  - `answer_article` goes.
+- `use_cases/study.py`: `AnswerMeaning(config).execute(card_id, given,
+  first_try, now, session_id, duration_ms) -> Result[MeaningCheck,
+  LearningDbError | LexiconError]`.
+  - It opens the lexicon per call with `open_lexicon`, as the lookup use
+    cases do (§12.9), then runs one `transact` on `learning.db` with
+    `known = lambda word: known_words(lex, word)`.
+  - It re-exports the `MeaningCheck` types for the TUI, as it does
+    `StammformenCheck`. `AnswerArticle` goes; `Grade` stays for German →
+    English and phrase cards.
+  - `learning/` imports only `lexicon.model` (for `KnownWord`), as
+    `content.py` already does. It never sees a `Lexicon`.
+- **The lexicon-present check before Study** (F10, issue 023):
+  `StudyScreen.on_mount` runs `QueryLexiconInfo(config)` before the first
+  `NextCard`. On `Err` it shows `Checking answers needs lexicon.db: <error>`
+  and returns to Home. The startup preflight already refuses a missing or
+  mismatched lexicon; this one catches a file that Syncthing replaced or
+  removed while the TUI stayed open, or a desktop rebuild with a new
+  `SCHEMA_VERSION`.
+
+**Issue 023 versus 024.** In 023, `check_meaning` has no `known` parameter
+and implements rules 1–3 and the article (§5.1), so a capitalisation error
+or a typo is Again. `AnswerMeaning` does not open the lexicon, and its error
+type is `LearningDbError` alone; only the Study preflight needs the lexicon.
+Issue 024 adds `known_words`, the `known` parameter, the lexicon open in
+`AnswerMeaning`, and rules 4–8.
+
+**Study screen** (`tui/study.py`)
+- `_CHECKED_MEANING = ("meaning_en_de", "meaning_de_de")`. Together with
+  `_TYPED` it makes the checked set that `check_action` and `_show` test.
+  The meaning types don't join `_TYPED`: that path draws left-aligned field
+  rows and no back, while the meaning faces are centred and end on the back.
+- **Front.** `_card_faces` gives English → German `[labels] gloss`, the part
+  of speech, the note (026) and the example's translation, and German →
+  German the definition, the part of speech (D37) and the note. The field is
+  labelled `Art. + noun` on a noun with a gender and `Word` on every other
+  checked meaning card, proper nouns included, since their article is
+  optional. The digraph row shows, as on `_TYPED` cards. A new
+  `#check` button, `Check (enter)`, takes Show answer's place (D17); Enter
+  in the field does the same.
+- **After `AnswerMeaning`:**
+  - `NoArticleStored`: the digraph row reads `No article stored - type the
+    word alone`. At 39 cells it wraps to two rows at 40 columns. The field
+    keeps its text and focus, and nothing is counted.
+  - `TryAgain`: `_first_try` holds the first answer, the field is cleared
+    and keeps focus, and the digraph row shows the cue, `Another noun. Try:
+    H _ _ _`. When the underscores don't fit the row, it reads `Another
+    noun. Try: A... (22 letters)`.
+  - `MeaningGraded`: one feedback line, the divider, `you: <answer>` (the
+    last try), and the back. Next, Enter or space continues, as after any
+    checked answer. The back under `you:` is how "the correct spelling is
+    shown".
+- **Feedback lines**, each one row at 40 columns. The first that applies:
+
+  | Outcome | Line |
+  |---|---|
+  | empty | `No answer - graded Again` |
+  | wrong article twice running (D12) | `Wrong article twice - graded Again` |
+  | right on the second try | `RIGHT on the second try - graded Hard` |
+  | slip, and a wrong or missing article | `RIGHT, typo and article - graded Hard` |
+  | wrong article / missing article | `RIGHT, wrong article - graded Hard` / `RIGHT, no article - graded Hard` |
+  | slip | `RIGHT, typo - graded Good` |
+  | right | `RIGHT - graded Good` |
+  | capitalisation makes another word (D23) | `WRONG, capitalisation - graded Again` |
+  | anything else | `WRONG - graded Again` |
+
+- **Tap guard.** Every study button ignores presses for 300 ms after the
+  state that shows it appears, `Show answer` and `Check (enter)` included.
+  Today Show answer is exempt, so a double tap on Next can land on the next
+  card's Show answer and grade an empty attempt Again. On a checked card the
+  same tap would send an empty answer, and on a retry an empty second try.
+  The guard's clock (`_grades_at`, renamed `_shown_at`) restarts on each new
+  card, retry and feedback.
+- **Keys.** The digit bindings shrink to `1` and `2`; `3` is unbound. The
+  article buttons, `action_answer_article`, and the article branches of
+  `check_action`, `_show`, `on_button_pressed` and `_card_faces` go, with
+  their three `-narrow` tcss selectors. `#check` joins the `-narrow` `1fr`
+  rule.
+- **State.** `_first_try` lives on the screen only and `_next()` resets it.
+  Esc during a retry ends the session with the card ungraded, as Esc after a
+  self-graded reveal does. `duration_ms` runs from the front to the final
+  answer, across the retry.
+
+**Add word** (`tui/addword.py`, issue 026)
+- `h`, a screen binding that `check_action` allows on the `en` and `de`
+  steps only, opens `NoteScreen`. It is a `ModalScreen[str | None]` like
+  `PickEntryScreen`: a bordered `Input(max_length=36)` titled `Note for this
+  sense`, filled with the row's note, and below it `Shown before you answer,
+  both sides` on both steps (D43). On every change the line becomes
+  `Contains the word - Enter keeps it` when `fold(note)` contains
+  `fold(lemma)` (D31; the only warning, D41). Enter dismisses with the text,
+  and an empty text clears the note. Esc dismisses with `None`.
+- On a row marked `(has cards)`, `h` is refused with the toast `This sense
+  has cards - notes come with card editing` (D34). Otherwise the note goes
+  into `_en_notes[i]` or `_de_notes[(e, i)]`, the row is ticked (D28), and
+  the step's options are rebuilt with `  + note` after the label, the way
+  `(has cards)` is added. An unticked row keeps its note in the dict, but
+  only ticked senses pass theirs to the plan.
+- **Footer.** From the code's bindings it reads `n Next  h Note  b Back  esc
+  Cancel` (34 cells) on the picker steps. `SelectionList` binds space with
+  `show=False`, so the `space Toggle` in the §12.8 frames is not in the real
+  footer, and `b Back` shows on step 1 too. D28's fallback (dropping `esc
+  Cancel`) should not be needed; the pilot confirms.
+- `PlanWordCards.execute(..., en_notes, de_notes)` and `plan_word_cards(...,
+  en_notes: Mapping[int, str] = {}, de_notes: Mapping[tuple[int, int], str]
+  = {})`. A non-empty note goes into the English sense's dict before it is
+  copied into `meaning_de_en` and `meaning_en_de`, and into the de_de dict.
+  `_mark_existing` plans without notes.
+- `cards._key` drops `note` before canonicalising, so a noted card still
+  matches its sense's plan.
+
+**Content** (`learning/content.py`)
+- The article card and its `missing: gender` refusal go. The Stammformen
+  hint is computed for verbs only.
+- de_de content gains `labels`, and its `gender` comes from its own German
+  entry's label (§7.2).
+- de_de cards made before 025 no longer match a later plan of their sense,
+  because the content gains keys. Only the dev `learning.db` could hold such
+  cards (D9), and 023 recreates it (D13).
+
+**The audit** (issue 027): what makes it possible, and no more.
+- Nothing new is stored. A checked review is a `review` row of a
+  `meaning_en_de` or `meaning_de_de` card. That holds because 023 recreates
+  the dev `learning.db` and the phone has none (D9), so no self-graded review
+  of these types exists.
+- Each row carries what the audit lists: `reviewed_at`, `rating`, `answer`
+  (both tries after a retry), and through `card_id` the card's content
+  (lemma, gender, gloss or definition, note). Deleted cards keep their
+  reviews (§7.5).
+- The verdict can be recomputed with `check_meaning` and `known_words`
+  against the lexicon the phone used, which tells slips, retries and other
+  words apart. The previous answer for D12 comes from the same log, in
+  order. A rebuild can change the guard, so the audit records the lexicon's
+  sha256.
+- `dev/audit/checked_answers.py`, beside `dev/bench/`: a stdlib `sqlite3`
+  script that opens a copy of the newest phone backup (§10) with
+  `mode=ro`, never the live file. It prints the reviews it covers, their
+  count and date range, and whether the trigger (200 checked reviews, or 14
+  days since the first) is met. It writes nothing to `learning.db`.
+- Not auditable: a D19 refusal and a retry's first try write no row of their
+  own. The first try survives inside the final answer; a refusal leaves
+  nothing (§16).
+- **It is interactive and stores nothing** (the user's decision,
+  2026-11-01). It shows each failed checked answer, the typed answer (both
+  tries after a retry) beside the expected article and lemma, and the user
+  presses `y` if they were right; any other key means it failed rightly. An
+  empty answer is counted but not asked, since nothing typed can have been
+  right. It then prints the share of the checked reviews covered that were
+  marked `y`, and, above 5%, that a way to claim a right answer should be
+  reconsidered (spec). The marks live only for the run; the script stays
+  read-only.
+
+**Slices and commits** (D32; several logical commits per slice):
+- 023: (1) remove the article card everywhere: types, 0001, scope, content,
+  dedupe, checker, use case, TUI, tests and docs, and recreate the dev
+  `learning.db`; (2) `_answer_checked` takes `Option[Rating]`, with no
+  behaviour change; (3) `check_meaning` rules 1–3 with the article and its
+  escalation, `answer_meaning` and `AnswerMeaning`, with unit and component
+  tests; (4) the English → German face, labels on the front, the field
+  labels, `Check (enter)`, the feedback, the tap guard and the Study
+  preflight, with pilots at 40×30, 40×12 and 100×30.
+- 024: (1) `known_words` and its plan test; (2) rules 4–8 and the retry in
+  `check_meaning`, with fixture additions; (3) the retry state and cue in
+  the TUI, with pilots.
+- 025: German → German checked: the part of speech on the front, `labels`
+  stored, the per-card gender, pilots.
+- 026: content and dedupe; `h` and the note box; the faces; D42's
+  measurement.
+- 027: the interactive audit script.
+
+**Fixtures.** The fixture lexicon holds Hund, Band, laufen, anrufen,
+schnell, Berlin, Aufenthaltsgenehmigung (22 letters, so two edits) and the
+German-only Fernweh. Issue 024 needs a case pair whose other-case form is a
+lemma (essen/Essen or arm/Arm) and a noun to retry on (Katze, or Bar beside
+Bär) in the fixture sources; cards can be synthesised in tests, lexicon rows
+cannot.
+
+**By category**: §14.1–§14.10 carry change 3's decisions under their
+headings.
 
 ---
 
@@ -2698,11 +3133,14 @@ Per-card status against the resolved entry:
 
 | Card type | Status rule |
 |---|---|
-| meaning (`de_en`, `en_de`) | changed unless the gloss is still present |
-| `meaning_de_de` | resolved by the German group `(lemma, pos)` instead; changed unless the definition is present; disappeared if the group is gone |
-| article | changed unless the gender and plural are equal |
+| meaning (`de_en`, `en_de`) | changed unless the gloss is still present and, for nouns, the gender is equal |
+| `meaning_de_de` | resolved by the German group `(lemma, pos)` instead; changed unless the definition is present and, for nouns, the gender equals that of the German entry whose senses hold it (from its label, §7.2); disappeared if the group is gone |
 | Stammformen | changed unless the principal parts, auxiliaries and `separable_prefix` are equal |
 | phrase | never checked (Tatoeba pairs are copies; there is nothing upstream to repair them from) |
+
+The gender comparison on meaning cards comes with change 3. The article
+card used to carry it; without it, an upstream gender correction would never
+be listed, although it changes the checked answer (§5.1).
 
 **Flag kinds.**
 - **changed:** resolved, but the card's copy differs from upstream.
@@ -2764,24 +3202,32 @@ cards of Leiter").
   confirmation. Upstream content is never taken over silently.
 - **What changes:** the card's content fields are overwritten from upstream
   for its type:
-  - meaning: `gloss`, `labels`, `example`;
-  - `meaning_de_de`: `definition`;
-  - article: `gender`, `plural`, `hint`;
+  - meaning: `gloss`, `labels`, `example`, and `gender` for nouns;
+  - `meaning_de_de`: `definition`, `labels`, and `gender` for nouns;
   - Stammformen: `pres3sg`, `preterite`, `participle`, `auxiliaries`,
     `separable_prefix`, `hint`.
 
+  `note` is the learner's own and is never overwritten. A field the card
+  lacks, such as `labels` on a German → German card made before issue 025,
+  is added. That is this design's reading of issue 021's "keeps a card's
+  `note` and labels" (P59): neither is lost. Whether labels should instead
+  stay as the card has them is 021's design step to settle (F14, §16).
+
   `check_ack` is cleared, and `link_state` stays `linked`.
 - **Scheduling: recommended defaults, overridable per repair.**
-  - **Checked cards (article, Stammformen) where the expected answer
-    changed: reset to new by default.** The interval was earned against an
-    answer that is now wrong, so keeping it schedules certain failures.
+  - **Checked cards (Stammformen, conjugation, English → German, German →
+    German) where the expected answer changed: reset to new by default.**
+    The interval was earned against an answer that is now wrong, so keeping
+    it schedules certain failures. For the two meaning types the expected
+    answer is the lemma with its article, so only a gender change counts; a
+    new gloss or definition keeps the schedule.
     - Reset means `fsrs_state`, `step`, `stability`, `difficulty` and
       `last_review` are cleared, and `due` becomes now.
     - The card then queues as new. It does not consume the daily new-card
       cap, because the cap counts cards whose first review is today, and
       this card's first review is in the past.
     - The confirmation offers `[r] keep schedule` as the override.
-  - **Self-graded cards (meaning, `meaning_de_de`): keep the schedule by
+  - **Self-graded cards (German → English): keep the schedule by
     default.** A reworded gloss rarely changes what the learner recalls. The
     confirmation offers `[r] reset schedule` as the override.
   - **Review history is never touched.** The reset's before-state is in the
@@ -2869,6 +3315,11 @@ whichever of issues 017 and 020 lands first creates it.
 - **Phrase template**: `English:`, `German:`, `Note:`. The search query is
   included as a comment for reference. It is not put into a field, because
   the query's language is unknown.
+- **Card template** (issue 017): a meaning card's fields include an optional
+  `Note:`, with the phrase note's name and look (D33). An empty value removes
+  the note, a card without one can gain one there (D34), and validation
+  holds it to the 36-character cap (D30). Duplicate detection ignores it
+  (§7.3).
 - **Editor command**: `$VISUAL`, then `$EDITOR`, then `vi`, split with
   `shlex.split`, like git. The temp file is `<tmp>/harald/EDIT.txt`, where
   `<tmp>` is `$XDG_RUNTIME_DIR` if set, else `tempfile.gettempdir()` (which
@@ -3285,8 +3736,8 @@ call `harald.lexicon` or `harald.learning` directly.
 | Home | `l` lookup, `e` English → German, `p` phrases, `s` study, `c` cards, `d` decks, `k` check, `i` info, `q` quit |
 | Lookup | one screen, DE/EN modes toggled by `^t`; Input; search runs **on Enter**, not on every keystroke; result list; Enter opens Entry |
 | Entry | scrollable `render_headword`; `c` full conjugation; `a` add word (Pick-entry modal first when the headword has several English entries) |
-| Add word | three-step wizard: 1 English-sense `SelectionList`, 2 German-sense `SelectionList`, 3 automatic-card status (created / refused with missing forms), decks, Create |
-| Study | pick "all due" or a deck; self-graded: type an attempt in the Answer field, then Enter or the Show button reveals it beside the answer, and `1` Again / `2` Good or buttons grade; an empty attempt is graded Again (§7.13); article: `1`/`2`/`3` or buttons; Stammformen: three compact Inputs and Enter; feedback, then Enter, space or Next; Esc ends; summary screen |
+| Add word | three-step wizard: 1 English-sense `SelectionList`, 2 German-sense `SelectionList`, 3 automatic-card status (created / refused with missing forms), decks, Create; `h` adds a note to a sense (§7.14) |
+| Study | pick "all due" or a deck; self-graded: type an attempt in the Answer field, then Enter or the Show button reveals it beside the answer, and `1` Again / `2` Good or buttons grade; an empty attempt is graded Again (§7.13); English → German and German → German: type the word (a noun with its article), then Enter or `Check (enter)` checks it, with one retry on another word of the same part of speech (§7.14); Stammformen: three compact Inputs and Enter; feedback, then Enter, space or Next; Esc ends; summary screen |
 | Phrases | Input, results; Enter saves the pair after confirmation; `^n` writes your own pair in `$EDITOR` |
 | Cards | table of live cards; `/` filter; `e` edit (`$EDITOR`), `s` suspend toggle, `x` delete (confirm), `d` decks |
 | Decks | list, create, delete |
@@ -3568,6 +4019,8 @@ German-edition-only headwords go straight to wizard step 2.
   and Cancel are therefore free.
 - A step with nothing to pick is skipped.
 - The buttons docked at the bottom of the body mirror the keys.
+- `h` on an English or German sense row opens the note box, and the row then
+  reads `+ note` (§7.14; frames in §12.8).
 - Every picker step carries a second header line, `space ticks a row, n goes
   on`, because nothing else in the body says a row must be ticked. When
   Confirm is reached with no sense and no tense picked, it adds `Nothing was
@@ -3601,7 +4054,6 @@ Step 1, English senses:
 +-------------------------------------+ +-------------------------------------+
 
 
-
 space Toggle   n Next   esc Cancel
 ```
 
@@ -3632,7 +4084,6 @@ Step 2, German definitions, grouped by German-edition entry. Headings
 +-------------------------------------+ +-------------------------------------+
 
 
-
 space Toggle   n Next   b Back   esc Cancel
 ```
 
@@ -3645,7 +4096,6 @@ Step 3: automatic cards, refusals, decks, and the total.
  Cards to create
    2 x German -> English, 2 x English -> German   senses 1, 3
    1 x German -> German                           [2] (das Band)
-   1 x Article                                    das
  Refused
    none            (e.g. for a verb: Stammformen - missing: Präteritum, aux)
  Decks
@@ -3656,8 +4106,9 @@ Step 3: automatic cards, refusals, decks, and the total.
 
 
 
+
 +-------------------------------------+ +-------------------------------------+
-|                < Back               | |            Create 6 cards           |
+|                < Back               | |            Create 5 cards           |
 +-------------------------------------+ +-------------------------------------+
 
 
@@ -3763,7 +4214,10 @@ and moves to the next card. There is no undo (spec).
 esc End
 ```
 
-**English → German, revealed.** The front is the top block, down to `noun`.
+**English → German, checked** (§5.1, §7.14). The front is the top block,
+down to the example's translation. Band has a gender, so the field reads
+`Art. + noun`; Enter or `Check (enter)` checks, and the digraph row shows as
+on Stammformen cards.
 
 ```
 ========================== Study - 11 due, 8 new left ==========================
@@ -3774,38 +4228,104 @@ esc End
                                   tape, ribbon
                                       noun
 
-                    ----------------------------------------
-                                 you: das Band
-                                    das Band
-                        Die Frau trug ein Band im Haar.
                       The woman wore a ribbon in her hair.
+        Art. + noun [ der Band_                         ]
+                      ae/oe/ue/ss are accepted for ä/ö/ü/ß
 
 
 
 
 
 
-+-------------------------------------+ +-------------------------------------+
-|               1 Again               | |                2 Good               |
-+-------------------------------------+ +-------------------------------------+
 
+
+
++-----------------------------------------------------------------------------+
+|                                Check (enter)                                |
++-----------------------------------------------------------------------------+
 esc End
 ```
 
-**German → German, revealed.**
+**English → German, after the check.** One verdict line, then `you:` and the
+back, which shows the right spelling. The article was wrong, so the word
+passes with Hard. Next, Enter or space continues.
 
 ```
 ========================== Study - 10 due, 8 new left ==========================
 
-                              German -> German
+                               English -> German
+
+
+                                  tape, ribbon
+                                      noun
+
+                      The woman wore a ribbon in her hair.
+
+                       RIGHT, wrong article - graded Hard
+                    ----------------------------------------
+                                 you: der Band
+                                    das Band
+                        Die Frau trug ein Band im Haar.
+
+
+
+
+
++-----------------------------------------------------------------------------+
+|                                Next  (enter)                                |
++-----------------------------------------------------------------------------+
+space Next   enter Next   esc End
+```
+
+**English → German, retry.** The first answer, `das Seil`, was another
+noun, so nothing was graded yet: the field is cleared and the digraph row
+gives the first letter and the length. A right answer now is graded Hard.
+
+```
+========================== Study - 11 due, 8 new left ==========================
+
+                               English -> German
+
+
+                                  tape, ribbon
+                                      noun
+
+                      The woman wore a ribbon in her hair.
+        Art. + noun [ _                                 ]
+                           Another noun. Try: B _ _ _
+
+
+
+
+
+
+
+
+
++-----------------------------------------------------------------------------+
+|                                Check (enter)                                |
++-----------------------------------------------------------------------------+
+esc End
+```
+
+**German → German, after the check.** The part of speech sits under the
+definition (D37). `Bnad` is not a German word and one swap from `Band`, so it
+is a slip.
+
+```
+========================== Study - 9 due, 8 new left ===========================
+
+                                German -> German
 
 
    zumeist aus einem bestimmten Gewebe/Stoff bestehendes längeres, schmales,
-   streifenartiges Stück, das verwendet wird als Schmuck/Zierde, zur
-   Verstärkung, zum Zusammenhalten und dergleichen Zwecke
+ streifenartiges Stück, das verwendet wird als Schmuck/Zierde, zur Verstärkung,
+                   zum Zusammenhalten und dergleichen Zwecke
+                                      noun
 
+                           RIGHT, typo - graded Good
                     ----------------------------------------
-                                   you: Band
+                                 you: das Bnad
                                     das Band
 
 
@@ -3813,16 +4333,15 @@ esc End
 
 
 
-
-+-------------------------------------+ +-------------------------------------+
-|               1 Again               | |                2 Good               |
-+-------------------------------------+ +-------------------------------------+
-
-esc End
++-----------------------------------------------------------------------------+
+|                                Next  (enter)                                |
++-----------------------------------------------------------------------------+
+space Next   enter Next   esc End
 ```
 
 **Phrase card, revealed.** The attempt adds an article that the saved
-German leaves out. Whether that counts is the learner's call (§7.13).
+German leaves out. Whether that counts is the learner's call (§7.13). The
+note is one dim row in parentheses, the look word notes share (D33).
 
 ```
 ========================== Study - 9 due, 8 new left ===========================
@@ -3831,7 +4350,7 @@ German leaves out. Whether that counts is the learner's call (§7.13).
 
 
                             History repeats itself.
-                      note: said about recurring patterns
+                        (said about recurring patterns)
 
                     ----------------------------------------
                       you: Die Geschichte wiederholt sich.
@@ -3853,7 +4372,7 @@ esc End
 
 **Self-graded, empty attempt.** Enter on an empty Answer field grades the
 card Again in one step and shows the back. Enter, space or Next continues,
-as after an article answer.
+as after a checked answer.
 
 ```
 ========================== Study - 11 due, 8 new left ==========================
@@ -3880,69 +4399,6 @@ as after an article answer.
 +-----------------------------------------------------------------------------+
 
 space Next   enter Next   esc End
-```
-
-**Article card.**
-- `1`/`2`/`3` or a tap answers, and the check grades it (§7.4).
-- The front shows the plural and the copied hint gloss, because homographs
-  (Band n/m/f, See, Leiter) would otherwise share a front while expecting
-  different answers. That is a content change: `article` gains `plural` and
-  `hint` (§7.2).
-
-```
-========================== Study - 8 due, 8 new left ===========================
-
-                                    Article
-
-
-                              Band   (pl. Bänder)
-                                  tape, ribbon
-
-
-
-
-
-
-
-
-
-
-
-
-+-----------------------+ +-----------------------+ +-----------------------+
-|         1 der         | |         2 die         | |         3 das         |
-+-----------------------+ +-----------------------+ +-----------------------+
-
-1 der   2 die   3 das   esc End
-```
-
-**Article feedback.** Any of `enter`/`space`/the button continues.
-
-```
-========================== Study - 7 due, 8 new left ===========================
-
-                                    Article
-
-
-                              Band   (pl. Bänder)
-                                  tape, ribbon
-
-                     WRONG   das Band      (you chose: der)
-
-
-
-
-
-
-
-
-
-
-+-----------------------------------------------------------------------------+
-|                                Next  (enter)                                |
-+-----------------------------------------------------------------------------+
-
-enter Next   esc End
 ```
 
 **Stammformen card.**
@@ -4100,10 +4556,10 @@ exist.
  > de->en  das Band                            2026-10-21
    en->de  tape, ribbon                        2026-10-19
    de->de  zumeist aus einem bestimmten Gew... today
-   article Band (pl. Bänder)                   today
    stamm.  laufen                              new
    phrase  History repeats itself.             2026-11-02    suspended
    ...
+
 
 
 
@@ -4206,7 +4662,7 @@ Inputs are docked to the top.
 | **Stammformen** | yes. The answer is typed | Title, infinitive and hint merge onto one row; three compact Inputs, 3 rows. Feedback replaces the input cells **in place**, adding no rows. Bordered three-row Inputs would need 9 rows, which is why Inputs are compact everywhere |
 | **Add word** | yes. It opens straight from a lookup, often with the keyboard still up | The wizard gives each step's single list the whole body. The step line carries compact `Back`/`Next` buttons on the top row. Step 3's summary collapses to two lines, and the deck list scrolls |
 | **Phrases** | yes. Typing | As Lookup. Each result takes 2 rows, so about 4 are visible |
-| **Study** (self-graded, article) | yes. Self-graded cards take a typed attempt, so the keyboard is up for every one of them (§7.13); article cards are answered with buttons, keyboard down (§12.5) | Prompt from the top, with the Answer row right under it; compact Show answer, then compact grade buttons, on one row above the footer. The body keeps 10 of 12 rows, which an empty attempt overflows (§12.8, 40×12) |
+| **Study** | yes. Every card now takes typed input: an attempt on self-graded cards (§7.13) and the word on checked ones (§7.14), so the keyboard is up for all of them | Prompt from the top, blank lines dropped, the field right under it; one compact button row above the footer (Show answer or Check, then the grade buttons or Next). The body keeps 10 of 12 rows (§12.8, 40×12) |
 | **Cards filter**, **New deck** modal | yes | Filter Input docked at the top, table scrolls; the modal is 3 rows plus a button row |
 | Entry, Info, Home, Study start, Summary, Decks | scrolling is enough | no special rules |
 
@@ -4264,8 +4720,8 @@ space Toggle   n Next   esc Cancel
 Add word step 3 at 80×12:
 
 ```
- 3/3 Confirm                               [ < Back ]  [ Create 6 cards ]
- Create: 2 de->en, 2 en->de (senses 1, 3); 1 de->de; 1 article (das)
+ 3/3 Confirm                               [ < Back ]  [ Create 5 cards ]
+ Create: 2 de->en, 2 en->de (senses 1, 3); 1 de->de (das Band)
  Refused: none
  Decks:
  [ ] Haushalt
@@ -4300,6 +4756,24 @@ designed short layout. The code doesn't merge them yet: it keeps them on
 separate centred rows at every height, which costs three rows (§12.8,
 40×12; §16).
 
+English → German after the check at 80×12, as the code renders it: the
+rows stay separate and the blank lines are dropped (§12.8).
+
+```
+                               English -> German
+                                  tape, ribbon
+                                      noun
+                      The woman wore a ribbon in her hair.
+                       RIGHT, wrong article - graded Hard
+                    ----------------------------------------
+                                 you: der Band
+                                    das Band
+                        Die Frau trug ein Band im Haar.
+
+[                                Next  (enter)                                ]
+space Next   enter Next   esc End
+```
+
 **Test hook.** Use `App.run_test(size=(80, 24))` and `run_test(size=(80, 12))`.
 For each screen and study state, assert that the key widgets (the focused
 Input, the highlighted list row, every Button, the Footer) have non-empty
@@ -4312,7 +4786,9 @@ the tdd step's call.
 in portrait (§12.8):
 - **Show answer** before the reveal, then **1 Again / 2 Good** (four grades
   until 2026-10-28, §7.13);
-- **der / die / das** on article cards;
+- **Check (enter)** on English → German and German → German fronts, in Show
+  answer's place, and again on the retry (D17, §7.14). The der / die / das
+  buttons went with the article card;
 - **Next** on feedback, **Home** on the summary.
 
 Elsewhere, buttons appear only in the Add-word wizard (Back/Next/Create) and
@@ -4320,7 +4796,8 @@ in modals (Save/Cancel/Delete). The rest relies on widgets that are already
 tappable (`OptionList`, `SelectionList` and `DataTable` rows), on the tappable
 footer keys, and on swipe-to-scroll. Keys stay primary everywhere. A button
 calls the same action method as its key (`action_reveal`, `action_grade(n)`,
-`action_answer_article(g)`), so there is exactly one code path.
+and the meaning check that Enter in the field runs), so there is exactly one
+code path.
 
 **Rationale:**
 1. Studying is the most frequent thing done on the phone, in spare moments,
@@ -4339,22 +4816,28 @@ calls the same action method as its key (`action_reveal`, `action_grade(n)`,
 assumed self-graded cards never need text, so the keyboard could stay down
 for a whole session. Those cards now take a typed attempt, because grading
 after seeing the answer is unreliable ("I knew that"), so each of them
-raises the keyboard, phrase cards most. Points 1 and 2 still hold for
-article cards. The buttons stay: they are still bigger targets than a
-footer hint or a soft-keyboard digit (point 3), and the guard below still
-applies.
+raises the keyboard, phrase cards most. Points 1 and 2 held for article
+cards until change 3 removed them, so no study card leaves the keyboard down
+now. The buttons stay: they are still bigger targets than a footer hint or a
+soft-keyboard digit (point 3), and the guard below still applies.
 
 **Not added:**
 - Stammformen buttons: the answer must be typed, so the keyboard is up
-  anyway and Enter is on every soft keyboard.
+  anyway and Enter is on every soft keyboard. D17 gave `Check (enter)` to
+  the checked meaning fronts only, where Show answer stood before; giving
+  Stammformen and conjugation the same button was offered and not decided.
 - Lookup and Phrases buttons: typing again.
 - Cards action buttons: footer taps are enough for infrequent actions.
 
 **Accidental taps.** A grade is final (no undo, spec), and "Show answer"
 spans the zone where the grade buttons then appear, so a double tap on Show
-could land on a grade. Grade and article buttons therefore **ignore presses
-for 300 ms after they appear**, and so does Next, which an empty attempt
-brings up in the same place (§7.13). Keys are not debounced.
+could land on a grade. Every study button therefore **ignores presses for
+300 ms after it appears**: the grade buttons; Next, which an empty attempt
+brings up in the same place (§7.13); and since change 3 Show answer and
+Check (enter) as well. A double tap on Next lands on the next card's front,
+where an empty answer is graded Again, and on a retry Check comes back with
+the field just cleared (§7.14). Before change 3 Show answer was exempt. Keys
+are not debounced.
 
 **Dependency to verify.** Termux must deliver taps as mouse clicks and swipes
 as wheel events while Textual's mouse tracking is on (Textual's default).
@@ -4377,7 +4860,12 @@ inert rather than harmful.
 | Cards filter behind `/` | Keeps the table focused so letter actions work (focus rule, §12.1) | an always-focused filter Input |
 | Grade buttons with a 300 ms guard | §12.5 | keys only |
 | A typed attempt before the reveal on self-graded cards; Again and Good only | Grading after seeing the answer is unreliable, so the learner commits first. Easy inflates intervals, and Hard is not a reliable self-judgement (§7.13) | reveal, then four self-grades (the 010 design); machine-checked meanings and phrases |
-| Article and Stammformen fronts show a hint (and the plural for article) | Homographs would otherwise show identical fronts with different answers. `article` gains `plural`, `hint`; `stammformen` gains `hint` (§7.2) | relying on the lemma alone |
+| Stammformen fronts show a hint | Homograph verbs would otherwise show identical fronts with different answers (umfahren). `stammformen` gains `hint` (§7.2). The article card, which had one too, is gone | relying on the lemma alone |
+| Checked meaning fronts: `Check (enter)` and the field label `Art. + noun` or `Word` (D17) | The learner must know before typing that Enter checks and that a noun takes its article. The button and the label replace ones already there, so no row is added | a "checked" heading (read last); a footer hint (overflows 40 columns) |
+| After a check: one verdict line, the divider, `you:` and the back | The back under `you:` shows the right spelling. The Hund card fits 40×12 with a note in exactly 10 rows | a separate `article: der (you: die)` line, a row more |
+| The retry cue and D19's message in the digraph row | The row exists and is free once the digraphs have been read; nothing moves | a toast, which can vanish before it is read |
+| The note: one dim row in parentheses under the part of speech, above the example, on the front of English → German, German → English and German → German (D27, D30, D36) | 36 characters plus the parentheses fill the 38-cell body at 40 columns, so it never wraps. The front stays on screen, so the note shows on both sides. Phrase notes take the same look (D33) | a `note:` prefix (6 cells off the cap); the note on the back only for German → English (P52, declined) |
+| German → English after the reveal at 40×12: about a row of scrolling is accepted, and the front's example is dropped under `-short` only if issue 026's measurement shows worse (D42) | Which number "about a row" means, the note's own row or the screen's total overflow, is read off measured rows (P64; §12.8) | deciding it now |
 
 ### 12.7 Layout questions: answered by the user
 
@@ -4409,7 +4897,7 @@ in portrait with the keyboard up (§12.7 q4).
 
 | Screen | Narrow? | Changes from the wide layout |
 |---|---|---|
-| Study (all card types, feedback, summary) | **yes, the priority** | same single column; two grade buttons of about 19 columns each (thumb width, below; four of 9 until 2026-10-28); article buttons 12 columns each; Stammformen labels, and the self-graded `Answer` label, sit left of compact Inputs (`er/sie/es  [ … ]`) |
+| Study (all card types, feedback, summary) | **yes, the priority** | same single column; two grade buttons of about 19 columns each (thumb width, below; four of 9 until 2026-10-28); Stammformen labels and the `Answer`, `Art. + noun` and `Word` labels sit left of compact Inputs (`er/sie/es  [ … ]`) |
 | Lookup (DE / EN) | yes | result rows shortened to lemma, pos and match (`form: band`, `~1`, `proper noun`); English → German words indented under their sense |
 | Entry | yes | glosses wrap; tenses stack one per block (§6); TRENNBAR badge under the headword |
 | Add word wizard | yes | already one list per step; definitions wrap under the checkbox; Back/Next buttons 19 columns each |
@@ -4429,10 +4917,9 @@ every binding of the screen, so nothing becomes undiscoverable.
   about a quarter of the screen width each, roughly 15–17 mm on a typical
   phone, and three rows tall. The width was chosen for four buttons
   (`1 Again`, `2 Hard`, `3 Good`, `4 Easy`). Since 2026-10-28 there are
-  two, `1 Again` and `2 Good` (§7.13), and `harald.tcss` gives them `1fr`
-  like the article buttons, about 19 columns each;
-- the article buttons are 12 columns each;
-- Show answer and Next span the full width.
+  two, `1 Again` and `2 Good` (§7.13), and `harald.tcss` gives them `1fr`,
+  about 19 columns each;
+- Show answer, Check (enter) and Next span the full width.
 
 They stay in the same bottom zone, and keep the 300 ms guard (§12.5). With
 the keyboard up (`-short`) they collapse to one row.
@@ -4661,7 +5148,6 @@ space Toggle  n Next  b Back
  Cards to create
   2 de->en + 2 en->de (senses 1, 3)
   1 de->de  [2] (das Band)
-  1 article  das
  Refused
   none
   (a verb could show: Stammformen -
@@ -4673,12 +5159,79 @@ space Toggle  n Next  b Back
 
 
 
+
 +-----------------+ +-----------------+
-|      < Back     | |     Create 6    |
+|      < Back     | |     Create 5    |
 +-----------------+ +-----------------+
 
 
 space Toggle  c Create  b Back
+```
+
+Add word with a note (issue 026). `h` on the highlighted row opens the note
+box; Enter stores the note, ticks the row and marks it `+ note`, and a row
+that has cards refuses `h`. The footer is what the code's bindings give
+(§7.14). The box is drawn at 40×12, keyboard up, without the dimmed picker
+behind it:
+
+```
+======= Add - das Band (Bänder) ========
+ 1/3 English senses
+ (each: de->en and en->de card)
+ --------------------------------------
+ [X] 1. tape, ribbon  + note
+ [ ] 2. A ligament
+ [X] 3. band or tie holding items
+        together
+ [ ] 4. belt (conveyor belt, fan
+        belt, etc.)
+ [ ] 5. band of the spectrum
+ [ ] 6. [figuratively] intimate
+        bond to a person  (has cards)
+ [ ] 7. [figuratively] dependence,
+        social bond
+ [ ] 8. [poetic] shackle
+
+ 2 selected
+
+
++-----------------+ +-----------------+
+|      Cancel     | |      Next >     |
++-----------------+ +-----------------+
+n Next  h Note  b Back  esc Cancel
+```
+
+```
++- Note for this sense ---------------+
+| [the ribbon, not the music group_  ]|
++-------------------------------------+
+  Shown before you answer, both sides
+
+
+
+
+
+
+
+esc Cancel
+```
+
+When the note contains the word, the line under the box changes (D31, D43).
+Enter still keeps the note:
+
+```
++- Note for this sense ---------------+
+| [a Band, as in Haarband_           ]|
++-------------------------------------+
+  Contains the word - Enter keeps it
+
+
+
+
+
+
+
+esc Cancel
 ```
 
 Study start:
@@ -4767,61 +5320,183 @@ esc End
 esc End
 ```
 
-English → German, German → German, phrase (revealed):
+German → English front with a note (issue 026). The note sits under the
+part of speech and above the example, as on English → German, and stays on
+screen after the reveal (D36):
+
+```
+======== Study - 12 due, 8 new =========
+
+           German -> English
+
+
+                das Band
+                  noun
+   (the ribbon, not the music group)
+
+    Die Frau trug ein Band im Haar.
+ Answer      [ ribbon_                ]
+
+
+
+
+
+
+
+
+
++-------------------------------------+
+|             Show answer             |
++-------------------------------------+
+esc End
+```
+
+English → German, checked (§7.14): the front with a note (issue 026), after
+the check, and the retry:
 
 ```
 ======== Study - 11 due, 8 new =========
 
            English -> German
 
-
               tape, ribbon
                   noun
+   (the ribbon, not the music group)
 
-        ------------------------
-             you: das Band
-                das Band
-    Die Frau trug ein Band im Haar.
-       The woman wore a ribbon in
-               her hair.
+  The woman wore a ribbon in her hair.
+ Art. + noun [ das Band_              ]
+  ae/oe/ue/ss are accepted for ä/ö/ü/ß
 
 
 
 
 
 
-+-------+ +-------+
-|1 Again| | 2 Good|
-+-------+ +-------+
+
+
+
++-------------------------------------+
+|            Check (enter)            |
++-------------------------------------+
 esc End
 ```
 
 ```
 ======== Study - 10 due, 8 new =========
 
-          German -> German
+           English -> German
 
- zumeist aus einem bestimmten
- Gewebe/Stoff bestehendes längeres,
- schmales, streifenartiges Stück, das
- verwendet wird als Schmuck/Zierde,
- zur Verstärkung, zum Zusammenhalten
- und dergleichen Zwecke
+              tape, ribbon
+                  noun
+   (the ribbon, not the music group)
 
+  The woman wore a ribbon in her hair.
+
+    RIGHT, no article - graded Hard
         ------------------------
                you: Band
+                das Band
+    Die Frau trug ein Band im Haar.
+
+
+
+
+
++-------------------------------------+
+|            Next  (enter)            |
++-------------------------------------+
+space Next  enter Next  esc End
+```
+
+```
+======== Study - 11 due, 8 new =========
+
+           English -> German
+
+              tape, ribbon
+                  noun
+   (the ribbon, not the music group)
+
+  The woman wore a ribbon in her hair.
+ Art. + noun [ _                      ]
+       Another noun. Try: B _ _ _
+
+
+
+
+
+
+
+
+
++-------------------------------------+
+|            Check (enter)            |
++-------------------------------------+
+esc End
+```
+
+The refusal (D19). `Leute` is plural-only and stored with gender `""`, so the
+field reads `Word` and an article is refused without a grade. The message is
+39 cells, so it wraps at 40 columns:
+
+```
+======== Study - 11 due, 8 new =========
+
+           English -> German
+
+                 people
+                  noun
+
+ Word        [ die Leute_             ]
+   No article stored - type the word
+                 alone
+
+
+
+
+
+
+
+
+
+
++-------------------------------------+
+|            Check (enter)            |
++-------------------------------------+
+esc End
+```
+
+German → German, after the check. The part of speech sits under the
+definition (D37):
+
+```
+========= Study - 9 due, 8 new =========
+
+            German -> German
+
+      zumeist aus einem bestimmten
+   Gewebe/Stoff bestehendes längeres,
+  schmales, streifenartiges Stück, das
+ verwendet wird als Schmuck/Zierde, zur
+  Verstärkung, zum Zusammenhalten und
+           dergleichen Zwecke
+                  noun
+
+       RIGHT, typo - graded Good
+        ------------------------
+             you: das Bnad
                 das Band
 
 
 
 
-
-
-+-------+ +-------+
-|1 Again| | 2 Good|
-+-------+ +-------+
-esc End
++-------------------------------------+
+|            Next  (enter)            |
++-------------------------------------+
+space Next  enter Next  esc End
 ```
+
+Phrase card, revealed:
 
 ```
 ========= Study - 9 due, 8 new =========
@@ -4830,7 +5505,7 @@ esc End
 
 
         History repeats itself.
-     note: about recurring patterns
+       (about recurring patterns)
 
         ------------------------
   you: Die Geschichte wiederholt sich.
@@ -4877,62 +5552,6 @@ Self-graded, empty attempt:
 |            Next  (enter)            |
 +-------------------------------------+
 space Next  enter Next  esc End
-```
-
-Article card and feedback:
-
-```
-========= Study - 8 due, 8 new =========
-
-                Article
-
-
-          Band   (pl. Bänder)
-              tape, ribbon
-
-
-
-
-
-
-
-
-
-
-
-
-
-+----------+ +----------+ +----------+
-|  1 der   | |  2 die   | |  3 das   |
-+----------+ +----------+ +----------+
-1/2/3 Answer  esc End
-```
-
-```
-========= Study - 7 due, 8 new =========
-
-                Article
-
-
-          Band   (pl. Bänder)
-              tape, ribbon
-
-            WRONG   das Band
-            (you chose: der)
-
-
-
-
-
-
-
-
-
-
-+-------------------------------------+
-|            Next  (enter)            |
-+-------------------------------------+
-enter Next  esc End
 ```
 
 Stammformen card for a separable verb, and feedback. The front carries no
@@ -5292,8 +5911,8 @@ space Toggle  n Next  esc Cancel
 ```
 
 ```
- 3/3 Confirm     [< Back][Create 6]
- 2 de>en, 2 en>de; 1 de>de; article
+ 3/3 Confirm     [< Back][Create 5]
+ 2 de>en, 2 en>de; 1 de>de
  Refused: none
  Decks:
  [ ] Haushalt
@@ -5307,8 +5926,10 @@ space Toggle  c Create  b Back
 ```
 
 Study, self-graded: front, revealed, and an empty attempt. These three are
-a render of the card that the 40×12 pilot test studies (the Hund fixture),
-not illustrations, because here the row count is the point:
+renders of the card that the 40×12 pilot test studies (the Hund fixture),
+measured on 2026-11-01, not illustrations, because here the row count is the
+point. The front is a session's first card, which keeps its blank lines
+(below):
 
 ```
            German -> English
@@ -5317,7 +5938,7 @@ not illustrations, because here the row count is the point:
                   noun
 
             Der Hund bellt.
- Answer     [ dog_                  ]
+ Answer      [ dog_                   ]
 
 
 
@@ -5327,51 +5948,49 @@ esc End
 
 ```
            German -> English
-
                 der Hund
                   noun
-
             Der Hund bellt.
           --------------------
                 you: dog
          dog (Canis familiaris)
              The dog barks.
-[1 Again] [2 Good ]
+
+
+[     1 Again     ] [      2 Good     ]
 esc End
 ```
 
 ```
            German -> English
-
                 der Hund
                   noun
-
             Der Hund bellt.
-
         No answer - graded Again
           --------------------
             you: (no answer)
+         dog (Canis familiaris)
+             The dog barks.
+
 [            Next  (enter)            ]
 space Next  enter Next  esc End
 ```
 
-- **Row budget.** Below 16 rows the header is hidden and the buttons are
-  one row, so the body gets `rows − 2`: 10 rows at 40×12.
-  - The front takes 7, the Answer row included.
-  - The revealed card takes exactly 10. A longer gloss, example or
-    translation pushes the end of the back below the fold. Band's
-    translation wraps to two lines at 40 columns, so Band's card needs 11.
-  - The empty attempt needs 12. The back (`dog (Canis familiaris)` and
-    `The dog barks.`) starts below the fold, so the learner has to scroll
-    to see the answer.
+- **Row budget**, measured on 2026-11-01 with a headless pilot at 40×12 and
+  40×30. Below 16 rows the header is hidden and the buttons are one row, so
+  the body gets `rows − 2`: 10 rows at 40×12.
+  - Under `-short` the card drops its blank lines (13fc268). The exception
+    is a session's first card: its front is drawn before the screen has the
+    `-short` class, so it keeps two blank lines until the next redraw (§16).
+  - Hund, German → English: the first front takes 7 rows with the field (5
+    on a later card), the revealed card 8, the empty attempt 9. Band's
+    translation wraps to two lines, one row more.
 - **What the tests show.** `test_study_reveal_grade_and_summary` runs the
-  whole flow at 40×12. It asserts that every displayed widget lies inside
-  the 40-column width, that every card line fits in 40 columns, and that
-  each state shows the right controls: the field and Show answer on the
-  front, the grade buttons after the reveal, Next after an empty attempt.
-  It doesn't check height. `assert_inside` compares x coordinates only, and
-  `static_lines` renders the whole card rather than its visible part, so
-  the overflow above passes.
+  whole flow at 40×12 and checks each state's controls. `assert_inside`
+  checks the 40-column width and, since 13fc268, that `#body` needs no
+  scrolling (`max_scroll_y == 0`), so a pilot fails when a state overflows
+  its size. The D42 measurement below reads `max_scroll_y` instead of
+  asserting it.
 - **From 16 rows** the header returns and the buttons grow to three rows,
   so the body gets `rows − 5`. At 16 and 17 rows that is 11 and 12, less
   than the 12 and 13 at 14 and 15. A render at 40×16 cuts off the empty
@@ -5382,8 +6001,101 @@ space Next  enter Next  esc End
   card raises the keyboard.
 - **The designed short layout** puts heading, word and part of speech on
   one row (`de->en      das Band (noun)`, as in §12.4's 80×12 frame). The
-  code never merged them. Doing it under `-short` would free three rows,
-  enough for the empty attempt at 40×12. Open (§16).
+  code never merged them. Dropping the blank lines (13fc268) made the empty
+  attempt fit without it; the merge stays the lever if issue 026's
+  measurement asks for rows (D42).
+
+English → German, checked, at 40×12 (§7.14): the front, after the check,
+and the retry. They are drawn from the measured layout above, not rendered,
+because the face isn't built yet. After the check the card takes 9 of the 10
+rows; a note makes it 10:
+
+```
+           English -> German
+         dog (Canis familiaris)
+                  noun
+             The dog barks.
+ Art. + noun [ der Hund_              ]
+  ae/oe/ue/ss are accepted for ä/ö/ü/ß
+
+
+
+
+[            Check (enter)            ]
+esc End
+```
+
+```
+           English -> German
+         dog (Canis familiaris)
+                  noun
+             The dog barks.
+   RIGHT, wrong article - graded Hard
+          --------------------
+             you: die Hund
+                der Hund
+            Der Hund bellt.
+
+[            Next  (enter)            ]
+space Next  enter Next  esc End
+```
+
+```
+           English -> German
+         dog (Canis familiaris)
+                  noun
+             The dog barks.
+ Art. + noun [ _                      ]
+       Another noun. Try: H _ _ _
+
+
+
+
+[            Check (enter)            ]
+esc End
+```
+
+German → English after the reveal at 40×12, with a note (D42, P64). With the
+fixture's one-row example the card takes 9 of the 10 rows:
+
+```
+           German -> English
+                der Hund
+                  noun
+      (the animal, not the slang)
+            Der Hund bellt.
+          --------------------
+                you: dog
+         dog (Canis familiaris)
+             The dog barks.
+
+[     1 Again     ] [      2 Good     ]
+esc End
+```
+
+By the same arithmetic a three-row example takes 13 rows with a note and 12
+without, an overflow of 3 and 2. The note always adds exactly one row; the
+total overflow comes mostly from the example, note or not. That is an
+inference from the measured rows, not a render.
+
+**The measurement** (issue 026; D42 decides by it, P64 is read off it).
+`test_note_on_german_english_after_reveal_at_40x12` studies one German →
+English card four times: with and without a note, at the fixture's short
+example and at a three-row example written into the content, the way 012's
+tests synthesise gappy entries. For each it reveals and records
+`#body.max_scroll_y`, the overflow in rows, and the four numbers go into
+issue 026. It asserts only that the note adds one row (with minus without
+is 1 at each example length), so it stays green under either reading:
+- if "about a row" means what the note adds, that is always 1, and the
+  example stays;
+- if it means the total overflow, a three-row example is worse than about a
+  row, and the front's example is dropped under `-short` once revealed.
+
+If the drop is adopted, it is one condition in `_show` (German → English,
+`-short`, revealed: leave the example out of the front) with its own pilot
+test; the back keeps the translation. Fronts are measured on a session's
+second card, or after the first-card quirk is fixed, so that its two blank
+lines don't count.
 
 **Tests and benchmarks.**
 - **The §12.4 test hook runs at four sizes:** 40×24, 40×12, 80×24 and 80×12.
@@ -5391,6 +6103,9 @@ space Next  enter Next  esc End
   `Static` content may overflow its width.
 - **`cold.tui_start`** in the harness (§14.9) runs headless at 40×24, the
   phone's real shape. The desktop run also records 80×24.
+- **The pilots as built** run at `SIZES`, which is 40×30, 40×12 and 100×30,
+  rather than the four sizes above; issues 023–026 name the same three. The
+  portrait frames here stay at 40×24, to compare with the rest of §12.8.
 
 **Spec and doc wording that must change** (user-owned; this design doesn't
 edit them):
@@ -5485,6 +6200,8 @@ replace happens within a single directory's filesystem.
 | No-op rebuild | Fingerprint fast path, then byte compare | Spec: identical inputs leave the file untouched (same mtime and hash) |
 | Fetch, per file | `.part` file, then replace data, then replace sidecar | The previous download survives a failed fetch. A crash between the two replaces leaves a sha mismatch, which the build detects and turns into `unknown` |
 | Grade | One transaction: card update plus review insert | Spec: a kill loses at most the card on screen |
+| Checked meaning answer (§7.14) | One transaction: read the card and its previous answer, check, then at most one review plus the card update. A refusal or a retry's first try writes nothing; the first try lives on the screen and is joined into the final answer (`first \| second`) | Spec: a kill loses at most the card on screen, and a retry is the card on screen. One row per answer keeps FSRS, the summary and a future optimiser honest |
+| Change 3's schema edit | `CARD_TYPES` and 0001's CHECK edited together; the dev `learning.db` deleted and recreated | D9, D13: no phone data exists, and dev data is disposable |
 | Add word | One transaction: word upsert, cards, deck memberships | Half a word's cards would leave orphan siblings and break dedupe |
 | Save or write a phrase | One transaction: phrase plus card | Same reasoning |
 | Edit, suspend, delete | One statement each | Nothing to compose |
@@ -5502,6 +6219,12 @@ Every `learning.db` write, grades and `check` repairs included, also leaves
 one `OperationGroup` with its operations' old values (§7.8). That is enough
 to undo it later, although v1 delivers no undo (spec), so no row is ever
 updated or deleted.
+
+The meaning check adds no verdict column. A checked review's verdict can be
+recomputed from its `answer`, the card's content and the lexicon, and D12's
+escalation from the previous review in the same log. So replaying
+`check_meaning` over the log in order reproduces each grade, given the same
+lexicon, and the audit records which lexicon it used (§7.14).
 
 **Reversible.** Suspend is reversible. Delete is a soft delete, but v1 offers
 no undelete (not requested). Card edits overwrite content without keeping
@@ -5555,13 +6278,15 @@ with a family base class only where some caller handles the whole family:
 | `BuildLexicon.execute` (use case, §11.2) | `Result[BuildDone, BuildError \| LexiconError]` |
 | each build job, inside its worker (§3.7) | `Result[JobOutput, TaskFailed]` |
 | every `learning.db` use case (`CreateWordCards`, `SavePhrase`, `Grade`, `NextCard`, `SessionSummary`, `EditCard`, `SetSuspended`, `DeleteCard`, deck use cases) | `Result[…, LearningDbError]` through `UnitOfWork._run` → `DbTransaction.execute` (§7.7) |
+| `AnswerMeaning` (§7.14) | `Result[MeaningCheck, LearningDbError \| LexiconError]`: the lexicon open, then the `learning.db` transaction |
 | `DbTransactionContext.run(op)`, inside services | `Result[T, InfrastructureError]`, mapped to `LearningDbError` by the service with `map_err` |
 | `edit_fields` | `Result[Option[dict[str, str]], EditorFailed]`. `Option.none()` means the user cancelled, an outcome rather than an error (§14.10) |
 | validators passed to `edit_fields` | `Result[T, InvalidInput]` |
 | `backup` | `Result[Path, BackupError]` |
 
 **Functions and use cases with no failure mode return plain values:**
-- `lookup_de`, `lookup_en`, `search_phrases`, `load_headword`;
+- `lookup_de`, `lookup_en`, `search_phrases`, `load_headword`,
+  `known_words`;
 - `execute` on the lexicon use cases (`LookUpGerman`, `QueryLexiconInfo`,
   and later `LookUpEnglish`, `LoadHeadword` and `FindPhrases`), which
   return what their services return;
@@ -5640,6 +6365,15 @@ AGENTS.md):
   whatever Alembic raised, caught at the seam, into
   `MigrationFailed("upgrade", …)`; the orchestrator wraps a `TaskFailed` in
   `BuildFailed(stage=task, …)` so the message names the stage.
+- **The meaning check's seams** (§7.14). `AnswerMeaning` returns a
+  `LexiconError` when the lexicon won't open, before anything is read, and a
+  `LearningDbError` from the transaction: a union, as `BuildLexicon`
+  returns one. `learning/` never sees a `LexiconError`, because it gets the
+  `known` callable. A query failing on an opened lexicon is not expected
+  (the file is immutable and version-checked) and gets no handling of its
+  own; if it happens, it surfaces through `DbTransaction.execute`'s seam as
+  an `Err`, and nothing is written. The refusal and the retry are
+  `MeaningCheck` values, not errors.
 - **Use cases pass their services' errors through unchanged.**
   - They add no error family and no broad catch. The six seams stay six,
     and AGENTS.md's Override is unchanged.
@@ -5686,6 +6420,10 @@ def exit_code(err: Exception) -> int:
 - **Specific reactions.** Screens match on an error class only where the
   reaction differs: `DeckNameTaken` keeps the New-deck modal open with the
   message.
+- **Study and the lexicon.** An `Err` from Study's preflight shows the
+  message and returns to Home (§7.14). An `Err` from `AnswerMeaning` during
+  the session shows a toast and leaves the card, the typed text and any
+  retry as they were.
 - **Startup errors never reach Textual.** `cli` opens config, lexicon and
   `learning.db` first.
 
@@ -5732,6 +6470,11 @@ def exit_code(err: Exception) -> int:
     - No front-end keeps a use case between actions, so nothing mutable
       outlives a call.
     - click's `Context` lives for one invocation.
+- **Change 3** (§7.14) adds no thread. The study screen owns the retry's
+  first answer, and Add word owns the notes until Create. The lexicon is
+  opened per check and per Study start, like the lookups (§12.9), so no
+  session is shared, and a lexicon Syncthing replaced between two answers is
+  simply the one the next check opens.
 - **Across processes on the phone**:
   - A second TUI or `harald backup` alongside the TUI: WAL plus
     `busy_timeout` serialise them. Two TUIs studying at once is not
@@ -5805,6 +6548,17 @@ shared pieces once inside it.
   plus a use case in its area's module, and the TUI screen for the same
   action calls the same use case.
 
+**Change 3 reuses** rather than rebuilds (§7.14): `fold`, `answer_matches`'
+normalisation (as `normalise_answer`), `osa_within` with its early exit, the
+`search_key` / `key_headword` index, `ARTICLES`, `_answer_checked`,
+`grade_card`, `Option`, the field rows, the digraph row (for the cue and the
+refusal), the feedback-then-Next path, the 300 ms guard, `PickEntryScreen`'s
+modal pattern for the note box, `_show`'s `(has cards)` suffix for
+`+ note`, `QueryLexiconInfo` as the Study preflight, and §4.3's
+caller-supplied lookup (`lemma_of`) as the shape of `known`. It factors out
+`known_words` and `normalise_answer`, which the audit script reuses, and
+the `MeaningCheck` values, which the TUI and the audit both read.
+
 ### 14.5 Extension points
 
 | Point | Contract | Intended client |
@@ -5820,6 +6574,12 @@ shared pieces once inside it.
 interface, no repository or ORM layer. The global "no unnecessary
 abstractions" rule applies, and the spec explicitly rejects the first three.
 
+**Change 3 adds none.** The grading rules are rows of one function, and the
+next rule is another row, not a plug-in. If the audit finds more than 5%
+failed wrongly (D26), a way to claim a right answer is reconsidered; the
+brief's Round 5 holds the design to start from (one grade, written when the
+learner leaves the feedback screen). Nothing is prepared for it now.
+
 ### 14.6 Build vs. buy
 
 | Component | Decision | Evaluated | Why |
@@ -5831,6 +6591,10 @@ abstractions" rule applies, and the spec explicitly rejects the first three.
 | Rendering | **buy**: Rich (already a Textual dependency) | hand-formatted print | one width-adaptive rendering for both front-ends, from 40 columns up, with Rich doing the wrapping |
 | Fuzzy candidates | **build**: prefix-7 symmetric-delete table | FTS5 trigram, trigram table, full delete-1, rapidfuzz in memory | measured (§0): trigram 45–1,553 ms; full delete-1 313 MB; in memory 790 ms load. Prefix-7: 130 MB, ≤15 ms, and catches tail typos |
 | Fuzzy distance | **build**: ~30-line banded OSA | rapidfuzz | rapidfuzz has no Termux-installable wheel, so it would need a C++ build on the phone; pure-Python OSA measured at ≤52 ms worst case |
+| Slip distance in the meaning check | **reuse**: `osa_within` | rapidfuzz | as above; and it is the edit model lookup already uses, transpositions included |
+| Known-word guard | **reuse**: the lexicon's `search_key`, one exact query | pyspellchecker (pure Python, frequency word lists); hunspell, through pyhunspell (compiled) or spylls (pure Python) | a second word list would disagree with the lexicon the cards come from, on forms, proper nouns and capitalisation. pyhunspell has no Termux wheel, and spylls would still need a German dictionary shipped to the phone. The lexicon already holds 1.2M German keys, lemmas and forms |
+| Note entry | **buy**: Textual `ModalScreen` with `Input(max_length=36)` | an inline row in the `SelectionList`; the `$EDITOR` template | the modal leaves the list alone and raises the keyboard for the note only (D28); `$EDITOR` is the edit path of issue 017 |
+| Audit | **build**: a stdlib `sqlite3` script in `dev/audit/` | Datasette; a notebook | read-only and one-off, on the desktop; no new dependency |
 | Phrase search | **buy**: SQLite FTS5 (porter for English) | Whoosh, tantivy-py | FTS5 is present on both machines (Termux libsqlite has `--enable-fts5`); no dependency; whoosh is unmaintained; tantivy is compiled |
 | German phrase normalisation | **build**: lemmatise via the form index | snowballstemmer (pure), PyStemmer (C) | stemming can't relate `lief` to `laufen`; the form index already exists |
 | Downloads | **buy**: stdlib urllib | requests, httpx | GET with conditional headers and streaming is all it needs |
@@ -5960,6 +6724,22 @@ abstractions" rule applies, and the spec explicitly rejects the first three.
     addition that has callers (`from_optional`). Confirmed by the user
     2026-10-24.
 
+23. **`KnownWord` and `known_words`** (§7.14). Forcing problem: the slip
+    guard, the case rule and the retry need each matching word's lemma,
+    part of speech and kind, and `learning/` may not touch the lexicon's
+    session. One frozen dataclass and one query function; no wrapper class.
+24. **The `MeaningCheck` values** (`NoArticleStored`, `TryAgain`,
+    `MeaningGraded`). Forcing problem: an answer ends in one of three
+    states the screen draws differently, and only one of them writes a
+    review. One record with optional fields would let a refusal carry a
+    rating.
+25. **`Option[Rating]` in `_answer_checked`'s callback.** Forcing problem: a
+    meaning answer can end without a grade, and the card read and grade
+    write must stay in one place for all checked types.
+26. **`normalise_answer`**, lifted out of `answer_matches`. Forcing
+    problem: the case rule and the slip distance compare in exactly the form
+    `answer_matches` compares in.
+
 Nothing else: no service classes, no use-case base class or interface
 beyond kohle's `UnitOfWork`, no repository interfaces, no event bus, and no
 dependency-injection container.
@@ -5982,15 +6762,20 @@ dependency-injection container.
 | Snowball stemming for German phrase search | Misses strong verbs. The form index already lemmatises |
 | Full Tatoeba exports (sentences.tar.bz2 + links.tar.bz2, 370 MB) | The per-language files carry the same pairs in 40 MB |
 | Indirect Tatoeba translations through a third language | Lower quality. Direct `deu-eng` links give 585k pairs |
-| Using German-edition gender or forms as a fallback | The spec scopes the German edition to definitions and examples. One grammar source keeps refusals predictable |
+| Using German-edition gender or forms as a fallback | Forms: the spec scopes the German edition to definitions and examples, and one grammar source keeps refusals predictable. Gender was reversed for German → German cards (D20, widened by the user on 2026-11-01): each takes its own German entry's gender |
+| One gender per word for all its cards: the chosen English entry's (the code), or the German entry's only when no English sense is picked (D20 as first worded) | A German sense from a German entry of another gender (Band: das, der, die) would expect the English entry's article for its own definition. Per card, from the entry its sense came from (2026-11-01) |
+| Requiring, or refusing, an article on proper nouns | Names are used with an article and without (`die Schweiz`, `Deutschland`), so neither rule fits all of them. The article is optional and never changes the grade (2026-11-01) |
+| Recognising only `der`, `die` and `das` as articles | `ein Hund` or `den Hund` would be graded as a wrong word, a lapse, for what is an article error. All twelve forms are recognised, and any but the right definite article is a wrong article (2026-11-01) |
+| Burying per FSRS scope | A noun's three meaning cards would bury each other, one a day, which D11 set out to avoid (2026-11-01: per `card_type` value) |
+| Storing the audit's marks, in `learning.db` or a file (issue 027) | The audit is a one-off judgement; an interactive run that prints the share needs no storage and keeps the script read-only (2026-11-01) |
 | Stored "buried" flags | Computed from the review log: nothing to clean up, survives kills |
 | In-memory session counters for the summary | `session_id` in the review log makes the summary exact and durable |
 | Hard delete keeping orphan review rows | Breaks foreign keys. Soft delete keeps history intact (spec) |
-| Hard/Easy choice after a correct checked answer | Breaks the single-keypress article card. Correct is Good, wrong is Again |
+| A Hard/Easy choice by the learner after a correct checked answer | On checked cards the app chooses the rating: Good, or Hard only from the article or the second try (§5.1). A learner's own Hard is not a reliable self-judgement (§7.13). Its first reason, the single-keypress article card, went with that card |
 | Machine-checking glosses and phrase answers | Glosses have synonyms and phrases free word order, so a string check would mark right answers wrong. It is also a spec non-goal. Self-graded cards take a typed attempt that is shown, not checked (§7.13) |
 | Four self-grades (Again, Hard, Good, Easy) on the study screen | Easy inflates intervals, and Hard is not a reliable self-judgement. Again and Good only since 2026-10-28 (§7.13) |
 | Revealing an empty attempt without grading it | It reopens the "I knew that" path the typed attempt closes. An empty attempt is Again (§7.13) |
-| Case-insensitive typed checking | The spec says exact, except for umlaut transliteration |
+| Case-insensitive typed checking | Stammformen and conjugation answers are exact, except for umlaut transliteration (spec). Meaning answers treat a capitalisation-only error as a slip, unless the other case is another word (§5.1, D23); that is narrower than case-insensitive |
 | Inline TUI inputs for card editing | Long German definitions in a one-line Input at 80 columns are unusable on a phone. The `$EDITOR` template is reused |
 | Search as you type in the TUI | Would force worker threads and cross-thread connections. Search on Enter is enough until issue 009 shows otherwise |
 | Textual worker threads in v1 | Measured lookup cost doesn't need them (§14.3) |
@@ -6056,6 +6841,32 @@ dependency-injection container.
 | Threads instead of processes for parsing | `json.loads` holds the GIL |
 | The `fork` start method | Reader threads are already running when the pool starts. Forking a threaded process can deadlock |
 | Moving the block scan into its own process | Deferred. It would copy 2 GB of chunks across one more process boundary. Revisit only if issue 004b's timings show main-process GIL contention on the critical path |
+| An "I was right" override after a checked Again (the brief's Round 5) | D18: no self-judgement anywhere in the check. Slips (D22), case slips (D23) and the retry (D24) cover what it was for. It comes back for consideration only if the audit finds more than 5% failed wrongly (D26) |
+| Writing an override as a second review row, or by updating the first (Round 5, options a and b) | A second row makes FSRS apply a lapse and then a Hard, and the summary count the miss. An update breaks the append-only log (§7.8) and is an undo of the last grade in all but name |
+| Deferring the write until the learner leaves the feedback screen (Round 5, option c) | It existed for the override. With none, the grade is final as soon as the verdict is |
+| Keeping the article card, with the article optional in the typed answer (option B, Rounds 1–2) | D25. A noun takes one new-card slot fewer, and `der Hund` is learned as one unit, the way nouns are spoken. The cost, gender without a schedule of its own, is met by D12's escalation |
+| An opt-in article card (V5), one off by default (V1), no English → German card for nouns (V3), or the article code kept with nothing creating it (C) (Round 3) | V5 asks at Add word about a weakness that only shows in study; V1 leaves nouns without a gender drill; V3 removes noun production, the point of the check; C leaves dead code |
+| A strict article (a wrong article is Again), or a soft one with no escalation | Strict lapses a known meaning on every article slip. Soft never brings a persistent wrong article back to a short interval. D12: Hard, then Again when it repeats |
+| Migration `0002` for the CHECK, or `article` left in the CHECK (Round 4) | D9 and D13: there is nothing on the phone to migrate, and leaving it would keep a dead value in the schema until v0.9 |
+| Accepting an article typed on a no-gender card, or grading it Again (Round 6) | Accepting hides the data gap D16 wants shown; Again punishes the learner for the lexicon's hole. D19 refuses without a grade |
+| Marking plural-only nouns in the importer so that `die Leute` counts (P39) | A build change and a rebuild for a handful of nouns. D21 and D38: they are typed without `die` |
+| No near-miss matching (Round 1), or near misses without the known-word guard | Without slips, every phone typo lapses a card. Without the guard, Bar/Bär, Miete/Mitte and legen/liegen would pass. D22 |
+| Capitalisation always Again (D14), or always Hard (Round 1) | Always Again fails `hund`, a keyboard slip; Hard raises difficulty on a slip. D23: a slip, unless the other case is another word |
+| Accepting a synonym, or storing it on the card as another right answer (Rounds 1 and 6) | The card exists to make the learner produce the word they chose. Storing `schauen` would mean never practising `gucken`, and it changes content from a study action. D24's retry with a cue instead |
+| Mapping glosses to `en_translation` to accept synonyms (Round 1, option c) | Cards hold a German entry's sense gloss, while `en_translation` is keyed by English headwords from the other edition. The mapping is fuzzy, and `bank` would accept Ufer |
+| A standing first-letter hint, or a cloze of the example sentence (Round 6) | A standing hint turns every first attempt into cued recall. A cloze would have to blank inflected and split forms, a missed one shows the answer, and cloze cards are a spec non-goal. The cue is shown on the retry only |
+| Easy for a fast answer, or any duration rule (Round 1) | `duration_ms` mixes reading, soft-keyboard typing and interruptions, and fsrs 6.3.2 only logs it. Easy is the rating that inflates intervals most |
+| A shadow mode before the checker grades, or a period of self-grading first (P7; Round 5) | Showing the verdict anchors the self-grade; storing it adds nothing the answer can't recompute; waiting spends the first weeks, when stabilities are set, on the mode judged unreliable. D26: grade from the first review, audit after 200 reviews or two weeks |
+| Fuzzy candidates (`fuzzy_delete`) for the guard | The guard asks about one exact key; candidates would only be filtered out again |
+| A "checked" heading, or a footer hint, as the check cue (Round 5) | The heading is read last and says what the button says; the footer overflows 40 columns. D17: the button and the field label |
+| Recording refusals, as a row or a counter | A review row needs a rating (CHECK 1–4), and a counter is new schema for a figure nobody has asked to keep. Refusals stay unrecorded (§16) |
+| The note only through issue 017's editor (Round 7) | The user decided otherwise (D27): at Add word the learner sees the near-synonyms and knows which card needs a note |
+| A note step for every word, a note field per card on Confirm, or a note pre-filled from the gloss or example (Round 7) | A step costs every word a keypress, Confirm becomes a crowded form at 40×12, and a pre-fill repeats what the front shows |
+| The note on the back only, for German → English (P52) | Declined (D36). The leak on that front is accepted, and one rendering on the front keeps the note in view through every state |
+| A warning when a note overlaps the English gloss (P60) | Declined (D41). On German → English a useful note states the meaning by design, so it would fire on nearly every note. D31's lemma warning is the only one |
+| Refusing a note that contains the word (Round 7) | The note is the learner's own; D31 warns and keeps it |
+| Writing a note into existing cards from Add word (Round 8) | That is a content edit, issue 017's, with its own use case and audit. D34 refuses `h` on rows that have cards |
+| `Check (enter)` as a relabelled Show answer button | A separate `#check` keeps `on_button_pressed` routing by id, and gives the guard and the `-narrow` rule a name of their own |
 
 ### 14.9 Performance: benchmark harness, budgets, and the Core fallback
 
@@ -6113,6 +6924,7 @@ baseline.
 | `warm.read_3000_columns` | a 3,000-row column select through the session (the shape of the worst fuzzy candidate set) |
 | `warm.read_3000_entities` | 3,000 ORM entities (the Cards-screen shape once the deck has grown) |
 | `warm.lookup_e2e` | `lookup_de` including rerank. Informational: it catches algorithmic regressions |
+| `warm.answer_meaning` | the `AnswerMeaning` use case end to end: the lexicon open, the known-word query and the audited grade, on the temporary `learning.db` copy. From issue 024 |
 
 **Each result file also records** the Harald version, git commit, Python
 version, SQLAlchemy version and whether its C extensions are active, the
@@ -6143,6 +6955,12 @@ lexicon's sha256.
 | `warm.grade` | ≤ 15 ms | > 100 ms | ≤ 50 ms | > 300 ms |
 | `warm.read_3000_columns` | ≤ 15 ms | > 60 ms | ≤ 60 ms | > 250 ms |
 | `warm.read_3000_entities` | ≤ 50 ms | > 200 ms | ≤ 200 ms | > 800 ms |
+| `warm.answer_meaning` (proposed) | ≤ 25 ms | > 100 ms | ≤ 100 ms | > 300 ms |
+
+The `warm.answer_meaning` row is proposed by change 3, not part of the
+budgets the user confirmed. Its abysmal values follow the keypress rule
+below; its target is `warm.grade`'s plus a per-call lexicon open, which has
+not been measured.
 
 For reference, measured on the desktop (§0): the cold lookup-shaped flow
 took 0.83 s in the slower machine state (an estimated ~0.35 s in the faster
@@ -6395,6 +7213,12 @@ from it.
 - **`truthy-bool`** runs in the normal mypy pass over `src` and `tests`.
 - **Later issues:** 010 and 017/020 assert `Option.none()` for "no card
   left" and for "cancelled" in their own tests.
+- **Change 3** (§7.14): `_answer_checked`'s callback returns
+  `Option[Rating]`, because "no grade" is an expected outcome.
+  `known_words` returns a tuple, empty when the word is unknown, like the
+  lookup results. `check_meaning` takes `first_try: str | None` and
+  `previous: str | None`, a parameter with a `None` default and a nullable
+  column (rule 4).
 
 ---
 
@@ -6416,6 +7240,11 @@ and 004b (the parallel task graph, with the four criteria in its row).
   click, the use-case layer (§11.1–§11.3) and `Option` (§14.10). 005 landed before 006,
   reversing the table's order. 006 comes next, and it extends lookup below
   the new use case.
+- **Change 3 (023–027) follows 013 and 014, before studying starts on the
+  phone** (D32), in the order 023, 024, 025, 026, then 027 once 200 checked
+  reviews or two weeks have passed. **011 is retired**: superseded by 023
+  (D25), kept as the record of what was built. 015 is independent of change
+  3 and can land before or after it.
 
 | # | Issue | Design sections it implements | Notes |
 |---|---|---|---|
@@ -6431,10 +7260,10 @@ and 004b (the parallel task graph, with the four criteria in its row).
 | 9 | 007 German-edition block | §3.3 German edition, §3.7 `de.read`/`de.parse`, §4.1 blocks, §4.4 German block load | Band is the fixture. Bench step: re-run `warm.headword_load` |
 | 10 | 008 English → German | §3.3 English → German, §3.7 `en_translation_stage`, §4.2, §4.4 | fuzzy for English confirmed (formerly open question 7). Bench step: `use` in `warm.lookup_e2e` |
 | 11 | 010 add word + meaning cards + study | §7.1 whole schema as models, §7.2, §7.3, §7.4, §7.6 Alembic `0001` + `migrate.py`, §7.7 kohle's infrastructure (`harald/core`, `harald/db`, `harald/infrastructure`), §7.8 audit trail, §8.2 hint capture plus `link_state`/`check_ack` columns, §14.2 `Result` in the TUI | the first slice to touch `learning.db`. Bench step: `warm.grade`, `warm.read_3000_entities`, `cold.tui_start` with `learning.db` |
-| 12 | 011 article cards | §7.2, §7.4 checked grading | |
+| 12 | 011 article cards (**retired**) | §7.10 | built, then superseded by 023 on 2026-11-01 (D25): the article is part of the typed answer |
 | 13 | 012 Stammformen | §5 `answer_matches`, §7.2 (`separable_prefix`, TRENNBAR badge), §12.8 | separable verbs: split forms plus the highlight (open question 5 part 2, resolved). The user dropped the badge on 2026-10-27; the 013 slice removes it (§7.12, decision 6) |
-| 14 | 015 new cap + sibling burying | §7.4 | cap 20 confirmed |
-| 15 | 014 German → German cards | §7.3 German picker | |
+| 14 | 015 new cap + sibling burying | §7.4 | cap 20 confirmed; burying per (word, card type) (D11, D40) |
+| 15 | 014 German → German cards | §7.3 German picker | checked by 025 (D17–D24) |
 | 16 | 016 decks | §7.1, §7.5 | |
 | 17 | 017 edit, suspend, delete | §7.5, §9 | creates `editor.py` if 020 hasn't |
 | 18 | 018 Tatoeba search | §3.3 Tatoeba, §3.7 `tatoeba.parse` / `tatoeba.lemmas` / `tatoeba.merge`, §4.3, §4.4 FTS5 through `text()` | bench step: `warm.phrase_search` |
@@ -6443,6 +7272,11 @@ and 004b (the parallel task graph, with the four criteria in its row).
 | 21 | 022 backup | §10 | trigger points and retention confirmed |
 | 22 | 021 `harald check` | §8 entire, §7.8 audited repairs, §12.8 Check screen, §11 CLI | depends on 004a and 010. Acceptance-criteria changes are listed in §8.4 |
 | – | 013 per-(tense, person) cards | §7.12, §7.2; §12.3, §12.4, §12.8 for the Stammformen front without its badge | **unblocked 2026-10-27**: open question 5 part 1 is resolved in §7.12. One slice after 012, before or after 015, in five commits; the first drops the Stammformen badge. Decision 7 (per-card refusal) confirmed by the user 2026-10-27 |
+| 3.1 | 023 check English → German answers | §5.1 rules 1–3 and the article, §7.1 and §7.6 (0001 in place), §7.2, §7.3, §7.4, §7.14, §8.1 gender, §12 checked frames, §12.5 tap guard | depends on 010, 013 and 014; removes the article card and recreates the dev `learning.db`; the Study preflight (F10); records the share of English senses with labels (F4). Four commits (§7.14) |
+| 3.2 | 024 slips and the retry | §4.4 known-word query, §5.1 rules 4–8, §7.14 retry | records the guard's hit rate (F4). Bench step: `warm.answer_meaning` (§14.9), once the harness exists |
+| 3.3 | 025 check German → German answers | §5.1, §7.2 `labels` and the per-card gender, §7.14 | records how many German definitions contain their lemma (F4) |
+| 3.4 | 026 notes on senses | §7.2, §7.3, §7.14 Add word, §9 card template, §12.6, §12.8 note frames and the D42 measurement | records the measured overflow in the issue (P64); adds its Termux checks to 009 |
+| 3.5 | 027 audit of checked answers | §7.14 audit, §14.1 | after 200 checked reviews or two weeks; interactive, read-only, stores nothing |
 
 ---
 
@@ -6464,11 +7298,55 @@ and 004b (the parallel task graph, with the four criteria in its row).
   `cold.lookup` ever breaches its budget, the options are a Core-only table
   module for that path, or stdlib `sqlite3` for it. Each undoes one of your
   decisions, so that call stays yours.
-- **Typed checking of `meaning_en_de` and `meaning_de_de` answers** (raised
-  with §7.13 on 2026-10-28, and not part of it). Both cards ask for a German
-  word, so a check is conceivable there, unlike glosses and phrases. The
-  spec's non-goal "No typed checking of meaning or phrase answers" rules it
-  out, so it needs a spec revision, which is yours. Before it is designed:
+- **The spec wording for your 2026-11-01 decisions needs a revision** (you
+  will unfreeze it; the wording is drafted in
+  `dev/inbox/spec-revision-typed-check-gaps.md`). The design and issues 023,
+  025 and 027 already follow them:
+  1. each card's gender comes from the entry its own sense came from,
+     replacing "A noun's gender comes from the chosen English-edition entry
+     or, when only German-edition senses are chosen, from the German entry"
+     (§7.2);
+  2. on proper nouns the article is optional and never changes the grade
+     (§5.1);
+  3. "card type" in the burying bullet is the `card_type` value, not the
+     FSRS scope (§7.4);
+  4. the recognised article words are der, die, das, ein, eine, einen,
+     einem, einer, eines, den, dem and des, in any case; only the stored
+     gender's article (or one of the word's other genders) is right, and
+     any other is a wrong article (§5.1).
+- **D42's "about a row" (P64)** is settled by issue 026's measurement, not
+  here. §12.8 designs the four-way test and predicts, by inference, that the
+  note adds one row and that a three-row example overflows by three with a
+  note. Which number the reading takes is read off the recorded rows.
+- **Readings change 3 takes provisionally**, each cheap to flip:
+  - "the previous answer also had a wrong article" includes a missing one;
+  - `sich` is accepted on verbs only, as the spec says, narrowing D2's "any
+    lemma";
+  - `Word` labels every checked meaning card that isn't a noun with a
+    gender, verbs and adjectives included (D16 names the no-gender noun);
+  - rule 4's other-case test sees lemmas only, so `fliege` for `Fliege`
+    passes as a slip;
+  - a form of the card's own lemma is not "another word": `Hunde` for
+    `Hund` is Again, with no retry;
+  - D19 refusals leave no record, so the audit can't count them, although
+    the brief's Round 10 expected it to.
+- **Spec points change 3 does not cover:** none left. Your decisions of
+  2026-11-01 closed the four that were listed (gender per card, articles on
+  proper nouns, "card type" in burying, the recognised article words);
+  only their spec wording is outstanding (above).
+- **Measurements the brief names** (F4, F5): the share of English senses
+  with labels (issue 023), the guard's hit rate on single-edit typos (024),
+  German definitions containing their own lemma (025), and the Termux
+  checks in 009: autocorrect and autocapitalisation, the keyboard through
+  check, retry and Next, taps on `Check (enter)` and `h Note`, and the note
+  box with the keyboard up.
+- ~~**Typed checking of `meaning_en_de` and `meaning_de_de` answers**~~
+  **Resolved 2026-11-01** by the spec revision (change 3; §5.1, §7.14). It
+  was raised with §7.13 on 2026-10-28. What stays from the findings below:
+  D2 (a leading `sich`, now on verbs only), D3 (the conjugation check's
+  reflexive pronoun: decided, not built, a separate `change`) and D4 (the
+  suspect auxiliaries are accepted). The findings, as recorded before the
+  revision:
   - (checked 2026-10-30 against the real `lexicon.db`: simple reflexive verbs
     are stored with a bare lemma. `freuen` and `beeilen` are in the lexicon,
     and `sich freuen` and `sich beeilen` match nothing. Reflexivity is a
@@ -6525,14 +7403,23 @@ and 004b (the parallel task graph, with the four criteria in its row).
     showing the word on the front and the definition on the back; it now
     shows the definition and asks for the word, as §7.2 says;)
   - the attempts stored since §7.13 would let a checker be tried against
-    real answers before it grades anything.
+    real answers before it grades anything. (Not used: D26 grades from the
+    first review, and no self-graded English → German or German → German
+    review exists, D9.)
 - **Small follow-ups to §7.13**, code changes for the `change` door:
   - (done in 13fc268: at 40×12 the empty attempt pushed the back below the
     fold. Dropping the blank lines under `-short` fitted it, so heading,
     word and part of speech stay on separate rows, unlike the frames, and
     `assert_inside` now catches a body that needs scrolling;)
   - (done with §7.13: the two grade buttons take `1fr`, and the space
-    binding reads "Next").
+    binding reads "Next");
+  - (new, measured 2026-11-01: a session's first card renders its front with
+    its blank lines at 40×12, because `_show()` runs before the screen has
+    `-short`; every later redraw drops them. It costs two rows on the first
+    front. A fix for 023's face work or the `change` door;)
+  - (new: Show answer is exempt from the 300 ms tap guard, so a double tap
+    on Next can grade the next card's empty attempt Again. 023 extends the
+    guard to every study button, §12.5.)
 
 **Spec and doc wording that must change** (user-owned):
 - **80 columns → portrait 40:** spec lines 36, 137 and 257; AGENTS.md line
@@ -6543,8 +7430,12 @@ and 004b (the parallel task graph, with the four criteria in its row).
   `user.db`), 229–230 and 241. Generic "the dictionary" wording: lines 9, 16
   and 30. "Dictionary mode" (line 39) names a mode and can stay. The issues
   and AGENTS.md are already renamed.
-- **Proper nouns:** the spec is silent on them, so nothing needs to change.
+- **Proper nouns:** the spec is silent on them, so nothing needs to change,
+  apart from the optional article on names decided on 2026-11-01 (its
+  wording is under "Still open").
 - **Issue 021's acceptance criteria** need the six changes listed in §8.4.
+  Its "keeps a card's `note` and labels" is read in §8.3 as "loses
+  neither".
 - **Issue 013:** done. Line 3 points at §7.12 and the acceptance criteria
   carry the clarifications. The spec now marks open question 5 resolved.
 
@@ -6585,7 +7476,8 @@ and 004b (the parallel task graph, with the four criteria in its row).
 - **All 14 finite tenses are offered, none pre-selected** (§7.12,
   decision 3).
 - **Sibling burying slows conjugation cards** to one a day per verb once
-  015 lands (§7.12).
+  015 lands (§7.12). Burying per (word, card type) doesn't change that,
+  because they all share the type `conjugation`.
 - **Where `T | None` stays** (§14.10, rule 4). Data-record fields, mapped
   columns, parameters with a `None` default, private helpers and hot paths
   keep `T | None`, and `Option` is required only at public and use-case
@@ -6596,9 +7488,14 @@ and 004b (the parallel task graph, with the four criteria in its row).
 - **Context on German → English cards.** Each meaning card copies the
   sense's first translated example as context, so several cards of one word
   don't show identical fronts.
-- **Homograph hints.** Article and Stammformen cards copy a hint gloss (and
-  the plural, for article cards), so Band n/m/f or the two umfahren verbs
-  don't share identical fronts (§7.2, §12.6).
+- **Homograph hints.** Stammformen and conjugation cards copy a hint gloss,
+  so the two umfahren verbs don't share identical fronts (§7.2, §12.6). The
+  article card did the same for Band n/m/f until it was retired; the
+  English → German front tells Band's entries apart by their gloss.
+- **Gender comes back into `check`** (§8.1). With the article card gone,
+  meaning cards of nouns are flagged when the gender changes upstream,
+  because it changes their checked answer, and accepting it resets their
+  schedule by default.
 - **Touch buttons in Study**, with a 300 ms guard against double taps (§12.5,
   §12.8).
 - **Extra CLI commands.** The design adds `phrase`, `info` and `backup`, and
@@ -6646,8 +7543,20 @@ and 004b (the parallel task graph, with the four criteria in its row).
   its badge;
 - backups after each session and on exit, plus `harald backup`, keeping 10;
 - a daily cap of 20; fuzzy matching for German and English → German but
-  not phrases;
-- correct → Good, wrong → Again;
+  not phrases (D10, D39);
+- sibling burying per (word, card type) (D11, D40);
+- correct → Good, wrong → Again, for Stammformen and conjugation cards.
+  **Amended for checked meaning cards on 2026-10-30 (D8):** the meaning
+  check grades Again, Hard or Good (§5.1), with Hard only from the article
+  and the second try;
+- typed checking of English → German and German → German answers, the
+  article in the noun's answer with the article card retired, and a note
+  per sense: the spec revision of 2026-11-01 (D6–D44, change 3);
+- on 2026-11-01, after the design step: gender per card from its own
+  sense's entry; an optional article on proper nouns; "card type" in
+  burying as the `card_type` value; the twelve recognised article words,
+  any but the right definite article being a wrong article; and an
+  interactive audit that stores nothing (§5.1, §7.2, §7.4, §7.14);
 - the 04:00 day boundary;
 - a missing `lexicon.db` refused at startup;
 - the budgets; the `Result` path; the shared package as user-owned and
