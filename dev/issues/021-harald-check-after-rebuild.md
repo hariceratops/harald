@@ -12,7 +12,7 @@ Spec: `dev/specs/harald-v1.md`
 - Upstream content is never taken over silently; changes apply only through a repair action the user chooses in `check`.
 - `check` is reachable from the CLI and from the TUI (Home → Check); nothing is shown at startup.
 - Each flagged card offers the actions its flag allows: relink, accept upstream, keep own copy.
-- Accept shows a per-field diff and requires confirmation. By default, cards with a typed or keypress answer reset their schedule when that answer changes, and self-graded cards keep theirs; both are overridable. Review history is never modified. Accepting upstream changes keeps a card.s `note` and labels.
+- Accept shows a per-field diff and requires confirmation. By default, cards with a typed or keypress answer reset their schedule when that answer changes, and self-graded cards keep theirs; both are overridable. Review history is never modified. Accepting upstream changes keeps a card's `note` and labels.
 - Keep on an ambiguous or disappeared card marks it unlinked. Unlinked cards are re-listed only when their candidate set changes; kept changed cards are re-listed only when upstream changes again.
 - Every repair is recorded in the audit trail as one operation group.
 - The CLI has a listing mode (exit 1 when anything is flagged), an interactive mode and per-card subcommands. All output fits 40 columns.
