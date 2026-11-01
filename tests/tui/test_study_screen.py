@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import sqlite3
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from harald.tui.home import HomeScreen
 from harald.tui.study import StudyScreen, SummaryScreen
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 from harald.use_cases.lexicon import LoadHeadword
+from harald.use_cases.study import Grade, NextCard
 from tests.conftest import Workspace
 from tests.tui.helpers import assert_inside, static_lines
 from tests.tui.test_navigation import SIZES, _drive
@@ -101,10 +103,10 @@ def test_a_grade_key_before_the_reveal_is_typed_not_graded(built: Workspace) -> 
     _drive(built, (40, 30), script)
 
 
-def test_grade_buttons_ignore_a_tap_right_after_they_appear(
+def test_every_study_button_ignores_a_tap_right_after_it_appears(
     built: Workspace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _seed(built)
+    _seed(built, ("meaning_de_en",))
     monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 60.0)
 
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
@@ -113,6 +115,14 @@ def test_grade_buttons_ignore_a_tap_right_after_they_appear(
         app.screen.query_one("#sf0", Input).value = "dog"
         await pilot.click("#reveal")
         await pilot.pause()
+        assert app.screen.query_one("#fields").display
+        assert _reviews(built) == []
+        monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 0.0)
+        await asyncio.sleep(0.3)
+        await pilot.click("#reveal")
+        await pilot.pause()
+        assert not app.screen.query_one("#fields").display
+        monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 60.0)
         await pilot.click("#grade2")
         await pilot.pause()
         assert _reviews(built) == []
@@ -516,5 +526,240 @@ def test_a_meaning_card_does_not_mention_the_digraphs(built: Workspace) -> None:
         await pilot.press("s")
         await pilot.pause()
         assert not app.screen.query_one("#digraphs").display
+
+    _drive(built, (40, 30), script)
+
+
+def _edit_card(ws: Workspace, **changes: object) -> None:
+    with sqlite3.connect(ws.config.learning_db) as db:
+        for card_id, raw in db.execute("SELECT id, content FROM card").fetchall():
+            content = json.loads(raw)
+            for key, value in changes.items():
+                if value is _GONE:
+                    content.pop(key, None)
+                else:
+                    content[key] = value
+            db.execute("UPDATE card SET content = ? WHERE id = ?", (json.dumps(content), card_id))
+
+
+_GONE = object()
+
+
+def _seed_en_de(ws: Workspace, **changes: object) -> None:
+    _seed(ws, ("meaning_en_de",))
+    _edit_card(ws, **changes)
+
+
+async def _check(pilot: Pilot[None], typed: str) -> None:
+    for ch in typed:
+        await pilot.press("space" if ch == " " else ch)
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_checked_english_german_front_shows_gloss_pos_and_the_check_button(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_en_de(built, labels=["derogatory"])
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        assert any("English -> German" in line for line in lines)
+        assert any("[derogatory] dog (Canis familiaris)" in line.strip() for line in lines)
+        assert any(line.strip() == "noun" for line in lines)
+        assert any("The dog barks." in line for line in lines)
+        assert not any("Hund" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert str(app.screen.query_one("#lbl0").render()).strip() == "Art. + noun"
+        check = app.screen.query_one("#check", Button)
+        assert check.display and str(check.label) == "Check (enter)"
+        assert not app.screen.query_one("#reveal", Button).display
+        assert app.screen.query_one("#digraphs").display
+        hint = static_lines(app.screen, "#digraphs")
+        assert any("ae/oe/ue/ss are accepted for ä/ö/ü/ß" in line for line in hint)
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+def test_a_card_without_labels_or_pos_still_renders(built: Workspace) -> None:
+    _seed_en_de(built, labels=_GONE, pos=_GONE)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        assert any("dog (Canis familiaris)" in line for line in lines)
+        assert not any("[" in line for line in lines)
+        assert_inside(app.screen, (40, 30))
+
+    _drive(built, (40, 30), script)
+
+
+@pytest.mark.parametrize(
+    ("changes", "label"),
+    [
+        ({}, "Art. + noun"),
+        ({"gender": ""}, "Word"),
+        ({"pos": "name"}, "Word"),
+        ({"pos": "verb", "gender": ""}, "Word"),
+    ],
+)
+def test_the_field_is_labelled_for_what_is_typed(
+    built: Workspace, changes: dict[str, object], label: str
+) -> None:
+    _seed_en_de(built, **changes)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        assert str(app.screen.query_one("#lbl0").render()).strip() == label
+
+    _drive(built, (40, 30), script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_a_right_checked_answer_is_graded_good_and_shows_the_expected_word(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_en_de(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "der Hund")
+        assert _answers(built) == [(3, "der Hund")]
+        lines = static_lines(app.screen, "#card")
+        assert any("RIGHT - graded Good" in line for line in lines)
+        you = next(i for i, line in enumerate(lines) if "you: der Hund" in line)
+        assert lines[you + 1].strip() == "der Hund"
+        assert any("Der Hund bellt." in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert app.screen.query_one("#cont", Button).display
+        assert not app.screen.query_one("#check", Button).display
+        assert not app.screen.query_one("#fields").display
+        assert not app.screen.query_one("#digraphs").display
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+@pytest.mark.parametrize(
+    ("typed", "rating", "verdict"),
+    [
+        ("die Hund", 2, "RIGHT, wrong article - graded Hard"),
+        ("Hund", 2, "RIGHT, no article - graded Hard"),
+        ("Katze", 1, "WRONG - graded Again"),
+        ("", 1, "No answer - graded Again"),
+    ],
+)
+def test_hard_and_again_are_shown_with_the_expected_word(
+    built: Workspace, size: tuple[int, int], typed: str, rating: int, verdict: str
+) -> None:
+    _seed_en_de(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        if typed:
+            await _check(pilot, typed)
+        else:
+            await pilot.press("enter")
+            await pilot.pause()
+        assert [r for r, _ in _answers(built)] == [rating]
+        lines = static_lines(app.screen, "#card")
+        assert any(verdict in line for line in lines)
+        you = next(i for i, line in enumerate(lines) if "you:" in line)
+        assert lines[you + 1].strip() == "der Hund"
+        assert all(len(line) <= size[0] for line in lines)
+        assert_inside(app.screen, size)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not isinstance(app.screen, SummaryScreen) or rating
+
+    _drive(built, size, script)
+
+
+def test_a_second_wrong_article_is_graded_again(built: Workspace) -> None:
+    _seed_en_de(built)
+    card = NextCard(built.config).execute(datetime(2026, 1, 1, tzinfo=UTC)).unwrap().unwrap()
+    Grade(built.config).execute(card.id, 1, datetime.now(UTC), "s0", None, "die Hund").unwrap()
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "das Hund")
+        assert _answers(built)[-1][0] == 1
+        lines = static_lines(app.screen, "#card")
+        assert any("Wrong article twice - graded Again" in line for line in lines)
+
+    _drive(built, (40, 30), script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_an_article_on_a_noun_with_no_gender_is_refused_without_a_grade(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_en_de(built, gender="")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "die Hund")
+        assert _reviews(built) == []
+        assert app.screen.query_one("#sf0", Input).value == "die Hund"
+        assert app.screen.focused is app.screen.query_one("#sf0", Input)
+        hint = static_lines(app.screen, "#digraphs")
+        assert " ".join(line.strip() for line in hint) == (
+            "No article stored - type the word alone"
+        )
+        assert app.screen.query_one("#check", Button).display
+        assert not any("you:" in line for line in static_lines(app.screen, "#card"))
+        assert_inside(app.screen, size)
+
+        app.screen.query_one("#sf0", Input).value = "Hund"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert _answers(built) == [(3, "Hund")]
+
+    _drive(built, size, script)
+
+
+def test_check_button_checks_and_ignores_a_tap_right_after_it_appears(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_en_de(built)
+    monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 60.0)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        app.screen.query_one("#sf0", Input).value = "der Hund"
+        await pilot.click("#check")
+        await pilot.pause()
+        assert _reviews(built) == []
+        monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 0.0)
+        await asyncio.sleep(0.3)
+        await pilot.click("#check")
+        await pilot.pause()
+        assert _answers(built) == [(3, "der Hund")]
+
+    _drive(built, (40, 30), script)
+
+
+def test_study_returns_home_with_a_message_when_the_lexicon_has_gone(built: Workspace) -> None:
+    _seed_en_de(built)
+    built.config.lexicon.unlink()
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        assert isinstance(app.screen, HomeScreen)
+        assert any("Checking answers needs lexicon.db:" in n.message for n in app._notifications)
+        assert _reviews(built) == []
 
     _drive(built, (40, 30), script)

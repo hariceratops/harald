@@ -51,11 +51,25 @@ German to German card), then confirm with `c`. Senses that already have cards
 are marked. `n` and `b` move between steps, `space` toggles a sense; each step says so
 under its title. Confirming with nothing ticked says that nothing was ticked.
 
-Studying shows the next due card. On a meaning card, type your answer first
-and press `enter`: the card then shows what you typed above the real answer,
-and `1` Again or `2` Good grades it; each grade is saved at once. Pressing
-`enter` with nothing typed counts as not knowing and is graded Again. On
-a touch screen the same actions are buttons. Adding a verb also adds a
+Studying shows the next due card. On a German to English or German to German
+card, type your answer first and press `enter`: the card then shows what you
+typed above the real answer, and `1` Again or `2` Good grades it; each grade
+is saved at once. Pressing `enter` with nothing typed counts as not knowing
+and is graded Again. An English to German card is checked for you: it shows
+the English gloss, its labels and the part of speech, and you type the German
+word, then press `enter` (or tap `Check (enter)`). A noun with a known gender
+is typed with its article, as in `der Hund`; the field reads `Art. + noun`,
+and any of the word's genders counts. Other words, proper nouns and
+nouns with no stored gender included, are typed alone and the field reads
+`Word`; an article typed there is refused with a message, ungraded, and you
+type again. The right word is graded Good. A wrong or missing article still
+passes but is graded Hard, and a second wrong article in a row on the same
+card is graded Again. Any other answer, or none, is graded Again. The card
+then shows the verdict, what you typed and the right word, and `enter` moves
+on. `ae`, `oe`, `ue` and `ss` are accepted for `ä`, `ö`, `ü` and `ß`, and a
+verb may be typed with a leading `sich`. Checking needs `lexicon.db`; study
+returns to Home with a message if it has gone. On a touch screen the same
+actions are buttons. Adding a verb also adds a
 Stammformen card: type the 3rd person singular present, the Präteritum and the Perfekt (`hat` or `ist`
 plus the Partizip II), moving between the three fields with `enter`; `ae`,
 `oe`, `ue` and `ss` are accepted for `ä`, `ö`, `ü` and `ß`, and the card

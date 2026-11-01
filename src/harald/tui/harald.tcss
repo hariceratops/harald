@@ -84,6 +84,7 @@ Screen.-narrow #buttons Button {
 }
 
 Screen.-narrow #buttons #reveal,
+Screen.-narrow #buttons #check,
 Screen.-narrow #buttons #home,
 Screen.-narrow #buttons #back,
 Screen.-narrow #buttons #next,
