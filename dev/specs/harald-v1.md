@@ -33,8 +33,8 @@ still stands.
   - one-shot `lookup`;
   - the desktop `build` (with `--fetch`), which must stay scriptable;
   - `check`.
-- Everything, TUI included, works at 80 columns minimum. That includes
-  conjugation displays.
+- Everything, TUI included, works at 40 columns minimum (portrait phone);
+  desktop and SSH use 80 or more. That includes conjugation displays.
 
 **Dictionary mode**
 - German lookup.
@@ -63,20 +63,87 @@ still stands.
 - This applies to every part of speech, nouns and adjectives included.
 - The user picks senses from either edition, or both. The two pickers are
   separate because the editions number their senses differently.
-- Each chosen English-edition sense yields two self-graded meaning cards:
-  - German → English;
-  - English → German, prompted with that sense's gloss.
-- Each chosen German-edition sense yields a self-graded German → German
-  card. It shows the German definition and asks for the German word. There
-  is no word → definition direction, since that would mostly duplicate the
-  German → English card.
-- Nouns also get an article card, answered with a single keypress.
+- Each chosen English-edition sense yields two meaning cards:
+  - German → English, self-graded;
+  - English → German, prompted with that sense's gloss and labels. The
+    user types the German word and Harald checks it.
+- Each chosen German-edition sense yields a German → German card. It shows
+  the German definition and the part of speech; the user types the German
+  word and Harald checks it. There is no word → definition direction, since
+  that would mostly duplicate the German → English card.
+- A noun's gender comes from the chosen English-edition entry or, when only
+  German-edition senses are chosen, from the German entry.
+- Nouns get no separate article card. The article is part of the typed
+  answer.
+- When picking senses, the user can add a one-line note to a sense: a hint
+  or mnemonic of their own, for example "to call someone on the phone". It
+  is stored with that sense's cards. On English → German and German →
+  English cards it is shown on both sides, so it is visible before
+  answering. A note on a German definition is shown on its German → German
+  card. Harald warns, but keeps the note, if it contains the word itself.
+- A note can only be added when the sense's cards are created. Editing
+  notes comes with card editing.
+- Stammformen and conjugation cards take no note. Phrase notes are
+  unchanged.
 - Verbs also get one Stammformen card: 3rd person singular present,
   Präteritum, and Partizip II with its auxiliary.
 - On request, per verb, Harald also creates per-(tense, person) cards for
   tenses the user chooses.
 - Conjugation answers are typed and checked exactly, except that ae/oe/ue/ss
   are always accepted for ä/ö/ü/ß.
+- On English → German and German → German cards, Enter checks the typed
+  answer. German → English and phrase cards stay self-graded: Enter shows
+  the answer and the user grades it.
+- A checked meaning answer is graded as follows:
+  - An empty answer is graded Again.
+  - The right word passes, graded Good. ae/oe/ue/ss are always accepted for
+    ä/ö/ü/ß, and a verb may be typed with a leading `sich`.
+  - A noun whose gender is known is typed with its article (`der Hund`).
+    Any of the word's genders counts. A wrong or missing article still
+    passes, graded Hard; if the previous answer on that card also had a
+    wrong article, it is graded Again.
+  - A noun without gender data is typed without an article. This includes
+    plural-only nouns (`Leute`). If an article is typed, Harald says that
+    none is stored and asks again, without grading.
+  - A slip that is not itself a German word or word form passes, graded
+    Good, and the correct spelling is shown. A slip is one wrong, missing,
+    extra or swapped letter in words of 5 to 9 letters, and up to two in
+    longer words. Words of up to 4 letters allow none.
+  - Wrong capitalisation alone counts as such a slip, unless the other-case
+    form is itself a German word (essen and Essen, arm and Arm, laut and
+    Laut); then it is graded Again.
+  - If the answer is another German word of the same part of speech, Harald
+    shows the first letter and the length of the expected word and allows
+    one more try. A right answer on that try passes, graded Hard. Anything
+    else is graded Again.
+  - Any other answer is graded Again.
+- Checked meaning answers are graded Again, Hard or Good. Hard comes only
+  from the article and from the second try. Easy is never given.
+- Checking needs `lexicon.db` while studying, to tell a slip from another
+  real word.
+- Checked grading applies from the first review. After 200 checked reviews
+  or two weeks, the checked answers are audited against the user's own
+  judgement. If more than 5% were failed wrongly, a way to claim a right
+  answer is reconsidered.
+- Per-(tense, person) cards: the user picks tenses per verb, and each
+  picked tense makes one card per person: ich, du, er/sie/es, wir, ihr and
+  sie/Sie. The formal Sie is not a separate person, because sie/Sie shares
+  the 3rd person plural form. There are 14 tenses: the indicative Präsens,
+  Präteritum, Perfekt, Plusquamperfekt, Futur I and Futur II; Konjunktiv I
+  in the present, Perfekt, Futur I and Futur II; and Konjunktiv II in the
+  preterite, Plusquamperfekt, Futur I and Futur II. There is no imperative.
+  The card shows `infinitive - hint`, the tense and one person. The user
+  types the form without the pronoun, and any form the data lists for that
+  slot is accepted.
+- Separable verbs use the form the language uses: split in simple tenses
+  (`rufe an`) and joined in compound tenses (`habe angerufen`). Stammformen
+  cards use the same forms (`ruft an`, `rief an`, `hat angerufen`). Neither
+  card type shows a "trennbar" badge or hint, because knowing that the verb
+  is separable is part of what the user must recall. Typing the form
+  without the prefix counts as wrong.
+- If the data lacks a form for a (tense, person), only that card is
+  refused, and the confirm step names it (for example `Präsens (ich, du,
+  wir, ihr)`). The other cards are still created.
 - If the forms a card type needs are missing from the data, Harald refuses
   that card type and says which forms are missing.
 
@@ -96,7 +163,8 @@ still stands.
 
 **Study and card management**
 - By default study covers everything that is due; a deck filter narrows it.
-- Sibling cards (from the same word or phrase) are buried for the day.
+- Sibling cards (from the same word or phrase, and of the same card type)
+  are buried for the day.
 - There is a configurable daily cap on new cards.
 - Each session ends with a short summary: how many cards were reviewed and
   how many were answered correctly.
@@ -109,7 +177,7 @@ still stands.
 
 **Scheduling**
 - FSRS through the `fsrs` PyPI package, with default parameters.
-- Parameters are scoped per card type: meaning, article, conjugation, phrase.
+- Parameters are scoped per card type: meaning, conjugation, phrase.
   - German → German cards count as meaning cards, like German → English and
     English → German. One scope for all meaning-recall directions keeps the
     split consistent, and leaves each scope with more reviews to optimise
@@ -118,7 +186,7 @@ still stands.
 - The full review log is kept, so the parameters can be optimised later.
 
 **Data build (desktop)**
-- Builds `dictionary.db` from locally kept source files.
+- Builds `lexicon.db` from locally kept source files.
 - Downloads new sources only on explicit request (`--fetch`). The most recent
   download is kept.
 - Records the source dates it was built from.
@@ -134,9 +202,9 @@ still stands.
 
 **Testable criteria**
 - `lookup lief` shows laufen, including läuft / lief / ist gelaufen. All
-  lookup output, CLI and TUI, fits within 80 columns.
+  lookup output, CLI and TUI, fits the terminal width down to 40 columns.
 - Rebuilding twice from the same local files leaves the existing
-  `dictionary.db` byte-for-byte untouched, so Syncthing has nothing to resend.
+  `lexicon.db` byte-for-byte untouched, so Syncthing has nothing to resend.
 - Suppose an entry that cards were built from disappears or splits in a
   rebuild. Those cards still study correctly from their own content, and
   `harald check` lists them.
@@ -156,8 +224,9 @@ still stands.
 - No cloze cards.
 - No noun-declension tables, no adjective-declension drills and no
   comparative/superlative drills. Nouns and adjectives get meaning cards
-  (and nouns an article card) like any word.
-- No typed checking of meaning or phrase answers.
+  like any word.
+- No typed checking of German → English or phrase answers. They have too
+  many right answers.
 - No linking between phrases and words. A word lookup does not show saved
   phrases that contain it.
 - No matching of German-edition examples or definitions to English-edition
@@ -187,14 +256,14 @@ still stands.
 - Storage is SQLite.
 
 **Two databases, two machines.**
-- `dictionary.db`
+- `lexicon.db`
   - Read-only at runtime.
   - Built on the desktop.
   - Pushed one way to the phone by Syncthing, which is send-only on the
     desktop.
-  - A rebuild replaces it and never touches `user.db`.
+  - A rebuild replaces it and never touches `learning.db`.
   - About 1 GB is acceptable.
-- `user.db`
+- `learning.db`
   - Holds decks, cards, phrases and the review log.
   - Lives on the phone, which is its only writer.
   - Is never synced two ways.
@@ -226,8 +295,8 @@ architect's decision.
 - A build is deterministic. A rebuild with nothing new leaves the existing
   file untouched.
 - An interrupted build (Ctrl-C, crash, disk full) leaves the previous
-  `dictionary.db` intact, and a partial file never reaches the phone.
-- If the Harald version and the schema of `dictionary.db` don't match,
+  `lexicon.db` intact, and a partial file never reaches the phone.
+- If the Harald version and the schema of `lexicon.db` don't match,
   Harald refuses to start and names both versions.
 
 **No stable upstream identity.** kaikki has no stable entry ids or sense ids,
@@ -238,7 +307,7 @@ umfahren and übersetzen all have more than one entry. Positional numbering
 - Each card keeps its own copy of what it teaches: lemma, gender, the chosen
   gloss or German definition, and the forms. Each saved Tatoeba pair keeps
   its own copy too. Both stay studyable whatever happens upstream.
-- The link from a card to `dictionary.db` is re-resolved after a rebuild.
+- The link from a card to `lexicon.db` is re-resolved after a rebuild.
   - One input to consider is a hint key of (lemma, pos, discriminator), where
     the discriminator is gender plus plural for nouns and the participle for
     verbs.
@@ -254,8 +323,8 @@ Termux at any time.
 **Early risks.** Verify these on the phone before building on them; they
 are not assumptions.
 - Textual suspending for `$EDITOR` and resuming cleanly inside Termux.
-- Textual's startup time and rendering at 80 columns in Termux. One-shot
-  `lookup` from the shell stays available partly for speed.
+- Textual's startup time and rendering at 40 columns (portrait) in
+  Termux. One-shot `lookup` from the shell stays available partly for speed.
 
 ## Open Questions
 
@@ -269,16 +338,13 @@ are not assumptions.
    (Stammformen, gender, translated examples). The result is informational
    and does not gate the design. If coverage turns out poor, scope may need
    revisiting.
-4. **`harald check` repair actions are underspecified.** Likely options are:
-   relink to one of several candidates, accept the upstream changes, or keep
-   the card's own copy and clear the flag. Is `check` CLI-only, or also
-   reachable from the TUI?
-5. **Per-(tense, person) cards.** Which persons count (e.g. is the formal
-   Sie separate from 3rd person plural, and which persons does the
-   imperative have)? How do separable verbs appear on Stammformen and
-   conjugation cards (ruft an / rief an / hat angerufen)?
-6. **Backup details.** How often the phone writes the backup (e.g. at the end
-   of each session) and how many copies are kept.
-7. **Defaults.** The default daily cap on new cards. Whether fuzzy ranking
-   also applies to English → German lookup and phrase search, or only to
-   German lookup.
+4. ~~`harald check` repair actions.~~ Resolved: `check` is in the CLI and
+   the TUI, with three repair actions (relink, accept upstream, keep own
+   copy); see design §8.
+5. ~~Per-(tense, person) cards.~~ Resolved; see the requirements on
+   per-(tense, person) cards and separable verbs above.
+6. ~~Backup details.~~ Resolved: after each session and on exit, plus
+   `harald backup`, keeping 10 copies; see design §10.
+7. ~~Defaults.~~ Resolved: the daily cap on new cards is 20. Fuzzy ranking
+   applies to German lookup and to English → German lookup, not to phrase
+   search.
