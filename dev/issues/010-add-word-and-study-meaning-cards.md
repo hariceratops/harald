@@ -8,7 +8,7 @@ Spec: `dev/specs/harald-v1.md`
 
 - From a lookup, the user picks English-edition senses of any part of speech. Each picked sense yields a German → English and an English → German meaning card.
 - Each card stores its own copy of what it teaches (lemma, gender, chosen gloss) in `learning.db`, independent of `lexicon.db` row ids.
-- The TUI study screen shows due cards and accepts a 1–4 self-grade. Scheduling uses the `fsrs` package with default parameters scoped per card type.
+- The TUI study screen shows due cards and accepts an Again or Good self-grade, given after the learner has typed an attempt and seen it beside the answer; an empty attempt is graded Again. Scheduling uses the `fsrs` package with default parameters scoped per card type.
 - Every review is appended to the review log. Each grade is stored immediately: killing the process mid-session loses at most the card on screen.
 - The session ends with a summary of cards reviewed and answered correctly.
 - `learning.db` is created and upgraded through Alembic, with a backup written before any upgrade.

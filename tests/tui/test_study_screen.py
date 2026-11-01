@@ -1,4 +1,5 @@
 import asyncio
+import re
 import sqlite3
 from datetime import UTC, datetime
 
@@ -6,7 +7,9 @@ import pytest
 from textual.pilot import Pilot
 from textual.widgets import Button, Input
 
+from harald.core.result import Result
 from harald.learning.content import CardPlan
+from harald.learning.errors import StorageError
 from harald.tui.app import HaraldApp
 from harald.tui.home import HomeScreen
 from harald.tui.study import StudyScreen, SummaryScreen
@@ -41,24 +44,38 @@ def test_study_reveal_grade_and_summary(built: Workspace, size: tuple[int, int])
         assert isinstance(app.screen, StudyScreen)
         assert any("der Hund" in line for line in static_lines(app.screen, "#card"))
         assert app.screen.query_one("#reveal", Button).display
-        assert not app.screen.query_one("#grade4", Button).display
+        assert app.screen.query_one("#fields").display
+        assert not app.screen.query_one("#grade2", Button).display
         assert_inside(app.screen, size)
 
-        await pilot.press("space")
+        await pilot.press(*"dog", "enter")
         await pilot.pause()
-        assert app.screen.query_one("#grade4", Button).display
+        assert app.screen.query_one("#grade2", Button).display
+        assert not app.screen.query_one("#fields").display
+        assert any("you: dog" in line for line in static_lines(app.screen, "#card"))
         assert_inside(app.screen, size)
-        await pilot.press("4")
+        await pilot.press("2")
         await pilot.pause()
-        assert len(_reviews(built)) == 1
+        assert [r for r, _ in _reviews(built)] == [3]
+        assert _answers(built) == [(3, "dog")]
 
-        await pilot.press("space")
-        await pilot.press("4")
+        await pilot.press("enter")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        assert any("No answer - graded Again" in line for line in lines)
+        assert any("you: (no answer)" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert app.screen.query_one("#cont", Button).display
+        assert [r for r, _ in _reviews(built)] == [3, 1]
+        assert _answers(built)[1] == (1, "")
+        assert_inside(app.screen, size)
+        # the lapsed card is inside the learn-ahead window, so it would come straight back
+        await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, SummaryScreen)
         lines = static_lines(app.screen, "#summary")
         assert any("2 cards reviewed" in line for line in lines)
-        assert any("2 answered correctly" in line for line in lines)
+        assert any("1 answered correctly" in line for line in lines)
         assert all(len(line) <= size[0] for line in lines)
         assert_inside(app.screen, size)
         sessions = {s for _, s in _reviews(built)}
@@ -71,33 +88,39 @@ def test_study_reveal_grade_and_summary(built: Workspace, size: tuple[int, int])
     _drive(built, size, script)
 
 
-def test_a_grade_before_the_reveal_is_ignored(built: Workspace) -> None:
+def test_a_grade_key_before_the_reveal_is_typed_not_graded(built: Workspace) -> None:
     _seed(built)
 
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await pilot.press("s")
-        await pilot.press("3")
+        await pilot.press("2")
         await pilot.pause()
         assert _reviews(built) == []
+        assert app.screen.query_one("#sf0", Input).value == "2"
 
     _drive(built, (40, 30), script)
 
 
-def test_grade_buttons_ignore_a_tap_right_after_they_appear(built: Workspace) -> None:
+def test_grade_buttons_ignore_a_tap_right_after_they_appear(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _seed(built)
+    monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 60.0)
 
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await pilot.press("s")
         await pilot.pause()
+        app.screen.query_one("#sf0", Input).value = "dog"
         await pilot.click("#reveal")
         await pilot.pause()
-        await pilot.click("#grade4")
+        await pilot.click("#grade2")
         await pilot.pause()
         assert _reviews(built) == []
-        await asyncio.sleep(0.35)
-        await pilot.click("#grade4")
+        monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 0.0)
+        await asyncio.sleep(0.3)
+        await pilot.click("#grade2")
         await pilot.pause()
-        assert [r for r, _ in _reviews(built)] == [4]
+        assert [r for r, _ in _reviews(built)] == [3]
 
     _drive(built, (40, 30), script)
 
@@ -422,5 +445,151 @@ def test_a_conjugation_digraph_is_accepted(built: Workspace) -> None:
         await pilot.pause()
         await _type_fields(app, pilot, "laeufst")
         assert [r for r, _ in _answers(built)] == [3]
+
+    _drive(built, (40, 30), script)
+
+
+def _seed_de_de(ws: Workspace, lemma: str = "Fernweh", entry: int | None = None) -> str:
+    word = LoadHeadword(ws.config).execute(lemma, "noun").unwrap().unwrap()
+    plan = PlanWordCards(ws.config).execute(word, entry, [], [(0, 0)]).unwrap()
+    plan = CardPlan(
+        plan.word_hint,
+        tuple(c for c in plan.cards if c.card_type == "meaning_de_de"),
+        plan.refusals,
+    )
+    CreateWordCards(ws.config).execute(plan, datetime(2026, 1, 1, tzinfo=UTC)).unwrap()
+    return str(plan.cards[0].content["definition"])
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_german_german_card_asks_for_the_word_from_the_definition(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    definition = _seed_de_de(built)
+    first = definition.split()[0]
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        assert isinstance(app.screen, StudyScreen)
+        lines = static_lines(app.screen, "#card")
+        assert any(first in line for line in lines)
+        assert not any("Fernweh" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert app.screen.query_one("#fields").display
+        assert app.screen.query_one("#sf0", Input).display
+        assert_inside(app.screen, size)
+
+        await pilot.press(*"Fernweh", "enter")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        you = next(i for i, line in enumerate(lines) if "you: Fernweh" in line)
+        assert any("Fernweh" in line for line in lines[you + 1 :])
+        assert all(len(line) <= size[0] for line in lines)
+        assert_inside(app.screen, size)
+        await pilot.press("2")
+        await pilot.pause()
+        assert _answers(built) == [(3, "Fernweh")]
+
+    _drive(built, size, script)
+
+
+def test_german_german_card_with_an_empty_attempt_is_graded_again(built: Workspace) -> None:
+    _seed_de_de(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert _answers(built) == [(1, "")]
+
+    _drive(built, (40, 30), script)
+
+
+def test_german_german_card_shows_the_article_on_the_back(built: Workspace) -> None:
+    _seed_de_de(built, "Band", entry=0)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        lines = [line.strip() for line in static_lines(app.screen, "#card")]
+        assert any(re.fullmatch(r"(der|die|das)(/(der|die|das))* Band", line) for line in lines)
+
+    _drive(built, (40, 30), script)
+
+
+def test_a_failed_write_on_an_empty_attempt_leaves_the_front_showing(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(built)
+
+    class Failing:
+        def __init__(self, config: object) -> None: ...
+
+        def execute(self, *args: object, **kwargs: object) -> Result[None, StorageError]:
+            return Result.err(StorageError("disk full"))
+
+    monkeypatch.setattr("harald.tui.study.Grade", Failing)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not any("you:" in line for line in static_lines(app.screen, "#card"))
+        assert app.screen.query_one("#fields").display
+        assert app.screen.query_one("#reveal", Button).display
+        assert app.screen.check_action("reveal", ())
+
+    _drive(built, (40, 30), script)
+
+
+def test_a_graded_card_refits_when_the_terminal_gets_shorter(built: Workspace) -> None:
+    _seed_verb(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _type_fields(app, pilot, "ruft an", "rief", "")
+        await pilot.resize_terminal(40, 12)
+        await pilot.pause()
+        assert_inside(app.screen, (40, 12))
+
+    _drive(built, (40, 30), script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_typed_cards_hint_at_the_digraphs_until_they_are_checked(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_verb(built)
+    _seed_conjugation(built, "anrufen", "ind.pres.1sg")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        for answers in (("ruft an", "rief an", "hat angerufen"), ("rufe an",)):
+            hint = static_lines(app.screen, "#digraphs")
+            assert any("ae/oe/ue/ss are accepted for ä/ö/ü/ß" in line for line in hint)
+            assert all(len(line) <= size[0] for line in hint)
+            assert_inside(app.screen, size)
+            await _type_fields(app, pilot, *answers)
+            assert not app.screen.query_one("#digraphs").display
+            await pilot.press("enter")
+            await pilot.pause()
+
+    _drive(built, size, script)
+
+
+def test_a_meaning_card_does_not_mention_the_digraphs(built: Workspace) -> None:
+    _seed(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        assert not app.screen.query_one("#digraphs").display
 
     _drive(built, (40, 30), script)

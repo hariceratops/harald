@@ -19,6 +19,11 @@ as far as the Add word steps; the conjugation study card and typing on the
 Termux soft keyboard are not yet checked by hand. Decisions and
 departures are in design §7.12.
 
+After review: the study card now redraws on resize, both typed cards show
+the digraph hint under the fields, and the footers in the wireframes match
+the built screens (see issue 014). Accepted 2026-10-30 and not built yet:
+the conjugation check will accept the reflexive pronoun (design §16).
+
 ## Review 2026-10-27
 - `learning/content.py`: `_conjugation_cards` returned `Refusal | None`;
   AGENTS.md wants `Option` for an expected no-value. Fixed by returning a

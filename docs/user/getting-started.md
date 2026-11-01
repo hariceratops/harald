@@ -51,27 +51,30 @@ German to German card), then confirm with `c`. Senses that already have cards
 are marked. `n` and `b` move between steps, `space` toggles a sense; each step says so
 under its title. Confirming with nothing ticked says that nothing was ticked.
 
-Studying shows the next due card. `space` reveals the answer, then `1` Again,
-`2` Hard, `3` Good or `4` Easy grades it; each grade is saved at once. On
-a touch screen the same actions are buttons. Adding a noun also adds an article
-card: press `1` der, `2` die or `3` das, read the result, then `enter` or
-`space` continues; a right answer counts as Good, a wrong one as Again. A noun
-with no gender in the data is refused an article card, and the confirm step
-says so. Adding a verb also adds a Stammformen card: type the 3rd person
-singular present, the Präteritum and the Perfekt (`hat` or `ist` plus the
-Partizip II), moving between the three fields with `enter`; `ae`, `oe`, `ue`
-and `ss` are accepted for `ä`, `ö`, `ü` and `ß`. A verb whose data lacks a form
-is refused the card and the confirm step names the missing forms. Neither card
-hints that a verb is separable; typing the form without the prefix counts as
-wrong. Adding a verb also offers a tense step, with no tense ticked: each
-ticked tense makes six conjugation cards, one per person (ich, du, er/sie/es,
-wir, ihr, sie/Sie). Tenses that already have cards are marked, and a later add
-can request more tenses without picking a sense again. A conjugation card shows
-the verb, the tense and one person; type the form without the pronoun, such as
-`rufe an`. A missing form refuses only its own person and tense, and the
-confirm step names it. A summary of cards reviewed and
-answered correctly ends the session. Cards live in `learning.db`, created on
-first use; Harald refuses one written by a newer version.
+Studying shows the next due card. On a meaning card, type your answer first
+and press `enter`: the card then shows what you typed above the real answer,
+and `1` Again or `2` Good grades it; each grade is saved at once. Pressing
+`enter` with nothing typed counts as not knowing and is graded Again. On
+a touch screen the same actions are buttons. Adding a noun also adds an
+article card: press `1` der, `2` die or `3` das, read the result, then
+`enter` or `space` continues; a right answer counts as Good, a wrong one as
+Again. A noun with no gender in the data is refused an article card, and the
+confirm step says so. Adding a verb also adds a Stammformen card: type the
+3rd person singular present, the Präteritum and the Perfekt (`hat` or `ist`
+plus the Partizip II), moving between the three fields with `enter`; `ae`,
+`oe`, `ue` and `ss` are accepted for `ä`, `ö`, `ü` and `ß`, and the card
+says so under the fields. A verb whose data lacks a form is refused the card
+and the confirm step names the missing forms. Neither card hints that a verb
+is separable; typing the form without the prefix counts as wrong. Adding
+a verb also offers a tense step, with no tense ticked: each ticked tense
+makes six conjugation cards, one per person (ich, du, er/sie/es, wir, ihr,
+sie/Sie). Tenses that already have cards are marked, and a later add can
+request more tenses without picking a sense again.  A conjugation card shows
+the verb, the tense and one person; type the form without the pronoun, such
+as `rufe an`. A missing form refuses only its own person and tense, and the
+confirm step names it. A summary of cards reviewed and answered correctly
+ends the session. Cards live in `learning.db`, created on first use; Harald
+refuses one written by a newer version.
 
 ## See what you built from
 

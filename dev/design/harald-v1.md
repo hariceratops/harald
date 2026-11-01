@@ -1433,7 +1433,7 @@ CREATE INDEX card_phrase ON card(phrase_id);
 CREATE TABLE review (id INTEGER PRIMARY KEY, card_id INTEGER NOT NULL REFERENCES card(id),
   session_id TEXT NOT NULL, reviewed_at TEXT NOT NULL,
   rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 4), scope TEXT NOT NULL,
-  duration_ms INTEGER, answer TEXT,      -- typed answer, for checked cards
+  duration_ms INTEGER, answer TEXT,      -- typed answer or attempt (§7.4, §7.13)
   state_before TEXT NOT NULL, state_after TEXT NOT NULL);   -- fsrs Card.to_dict() JSON
 CREATE INDEX review_card ON review(card_id, reviewed_at);
 CREATE INDEX review_time ON review(reviewed_at);
@@ -1487,14 +1487,20 @@ CREATE TABLE operations (id INTEGER PRIMARY KEY AUTOINCREMENT,      -- kohle's c
 
 | card_type | content JSON | FSRS scope | answer |
 |---|---|---|---|
-| `meaning_de_en` | `lemma, pos, gender, gloss, labels, example?` | meaning | self-graded; front: article + lemma (+ German example as context), back: gloss (+ translation) |
-| `meaning_en_de` | same | meaning | self-graded; front: gloss, labels, pos; back: article + lemma (+ example) |
-| `meaning_de_de` | `lemma, pos, gender, definition` | meaning | self-graded; front: German definition; back: article + lemma |
+| `meaning_de_en` | `lemma, pos, gender, gloss, labels, example?` | meaning | typed attempt, then self-graded (below); front: article + lemma (+ German example as context) and an Answer field, back: gloss (+ translation) |
+| `meaning_en_de` | same | meaning | typed attempt, then self-graded; front: gloss, labels, pos and an Answer field; back: article + lemma (+ example) |
+| `meaning_de_de` | `lemma, pos, gender, definition` | meaning | typed attempt, then self-graded; front: German definition and an Answer field; back: article + lemma |
 | `article` | `lemma, gender` (one or more of m/f/n), `plural`, `hint` | article | front: lemma, plural, hint; one keypress: `1` der, `2` die, `3` das; any listed gender is correct |
 | `stammformen` | `infinitive, hint, pres3sg, preterite, participle, auxiliaries, separable_prefix` | conjugation | front: infinitive and hint; three typed fields: er/sie/es Präsens, Präteritum, Perfekt (`ruft an` / `rief an` / `hat angerufen`); all must match |
 | `conjugation` | `infinitive, hint, separable_prefix, slot, forms` (§7.12) | conjugation | front: infinitive, hint, tense; one typed field labelled with the person; any of `forms` matches |
-| `phrase_en_de` | `{}`: the `phrase` row is the copy | phrase | self-graded; front: English (+ note), back: German |
+| `phrase_en_de` | `{}`: the `phrase` row is the copy | phrase | typed attempt, then self-graded; front: English (+ note) and an Answer field, back: German |
 
+- **Self-graded**, since 2026-10-28 (§7.13): the front carries one Answer
+  field, the reveal shows the attempt as `you: …` above the back, and the
+  learner grades `1` Again or `2` Good. An empty attempt is graded Again
+  at once. The attempt is stored as the review's `answer` but never
+  compared, as the spec's "no typed checking of meaning or phrase answers"
+  requires.
 - `CARD_SCOPE` is a single dict from card type to scope. Moving
   `meaning_de_de` to its own scope is the one-line change the spec promises.
 - `example` is the sense's first translated `kind == 'example'` example,
@@ -1584,10 +1590,18 @@ sibling-buried**.
   the `review` row with both state snapshots. On commit, the grade is
   durable. On `Err` nothing was written: the TUI shows the error and keeps
   the card on screen, so "loses at most the card on screen" still holds.
+  `answer` is what the learner gave: a checked card's answer, or a
+  self-graded card's attempt (`''` when empty, §7.13). Self-graded reviews
+  from before 2026-10-28 have `NULL`, because no attempt was asked for.
 - **Checked cards grade themselves**: correct → `Rating.Good`, wrong →
   `Rating.Again`. The article card stays a single keypress, and a failed
-  conjugation check is a lapse. Hard and Easy are reserved for self-graded
-  cards.
+  conjugation check is a lapse.
+- **Self-graded cards are graded Again or Good** (since 2026-10-28,
+  §7.13). The learner types an attempt before the reveal, and an empty
+  attempt is graded Again without a further keypress. The study screen no
+  longer offers Hard or Easy on any card. `Grade` and FSRS still accept
+  all four ratings, the `rating` CHECK is unchanged, and earlier reviews
+  keep the Hard and Easy grades they were given.
 - **Session summary** = `SessionSummary(session).execute(session_id)`, computed from the
   review log. "Reviewed" counts distinct cards. "Answered correctly" counts
   cards whose first grade in the session was not Again. Because it comes from
@@ -2036,7 +2050,8 @@ one batch.
   in the study header or on Home (the sub-title reads "N done"), no "Backup
   written" line on the summary. Only the three meaning card types have
   faces. Grade keys `1`-`4` are hidden from the footer because four more
-  hints overflow 40 columns; the buttons carry the key labels.
+  hints overflow 40 columns; the buttons carry the key labels. (Since
+  2026-10-28 there are two, `1` Again and `2` Good, still hidden, §7.13.)
 - **Still unverified, by hand in Termux:** whether 9-column grade buttons
   are comfortable for a thumb, the 300 ms guard on a real double tap, and
   the same tap and row-count checks as 009.
@@ -2059,9 +2074,13 @@ one batch.
   review's `answer`; the `AnswerArticle` use case wraps it.
 - **Space key.** Textual stops at the first binding for a key even when its
   `check_action` refuses, so the article feedback screen uses one `advance`
-  action for space: it reveals on a self-graded card and continues on
-  feedback. The footer still reads "space Show" during feedback, unlike the
-  §12.8 wireframe (`enter Next   esc End`); enter carries the right hint.
+  action for space. As built in 011 it revealed a self-graded card and
+  continued on feedback. Since 2026-10-28 (§7.13) a self-graded card
+  reveals from Enter in its Answer field or from the Show answer button,
+  and space on its front types into that field, so `advance` only
+  continues, after any feedback. Its footer label was "Show", which
+  became wrong once the hint appeared only during feedback; it is now
+  "Next" (`space Next  enter Next  esc End`).
 - **A lapsed card returns at once.** A wrong answer is Again and falls inside
   the 20-minute learn-ahead window, so the card comes straight back and the
   session does not end after one wrong answer. This is the 010 behaviour.
@@ -2376,8 +2395,9 @@ n Next  b Back  esc Cancel
                 Präsens
  ich        [ rufe an_              ]
 
+ ae/oe/ue/ss are accepted for ä/ö/ü/ß
 
-enter Check  esc End
+esc End
 ```
 
 ```
@@ -2507,7 +2527,7 @@ logical commits:
 
 **Acceptance-criteria clarifications for issue 013.** The wording is the
 user's to change:
-- Line 3 ("Blocked on spec open question 5 …") can go.
+- (done: line 3 of the issue now points at §7.12.)
 - **AC 1:**
   - the persons are ich, du, er/sie/es, wir, ihr and sie/Sie, with formal
     Sie not separate;
@@ -2525,7 +2545,127 @@ user's to change:
   are still created, and the refusal names each affected tense with its
   missing persons.
 
-The frozen spec still lists open question 5 as open.
+The spec records the resolution: open question 5 is marked resolved and the
+requirements carry the persons, tenses, separable forms and refusal rule.
+
+### 7.13 Self-graded cards: a typed attempt, then Again or Good (2026-10-28)
+
+Implemented in `tui/study.py` and its pilot tests. It changes the four
+self-graded card types: `meaning_de_en`, `meaning_en_de`, `meaning_de_de` and
+`phrase_en_de`. Article, Stammformen and conjugation cards are unchanged.
+
+**Behaviour**
+- **Front.** One Input labelled "Answer" sits under the front text and has
+  focus. It is row 0 of the field rows that Stammformen and conjugation
+  cards use, relabelled.
+- **Reveal.** Enter in the field, or the Show answer button, reveals. Space
+  no longer reveals: on the front it types into the field, like the digits.
+- **A non-empty attempt** is trimmed, the field disappears, and
+  `you: <attempt>` appears between the divider and the back. The screen
+  then offers only `1 Again` and `2 Good`, as keys `1` and `2` or as
+  buttons. They store FSRS ratings 1 and 3, with the attempt as the
+  review's `answer`. Enter and space do nothing until a grade is given.
+- **An empty attempt** is graded Again at once, through the same `Grade`
+  call, with `answer = ''`. The screen shows "No answer - graded Again",
+  `you: (no answer)` and the back. Enter, space or Next continues, as after
+  an article answer.
+- **Hard and Easy are gone from the study screen.** The `Grade` use case and
+  FSRS still accept all four ratings, the `rating` CHECK stays
+  `BETWEEN 1 AND 4`, and earlier reviews keep the grades they were given.
+  Nothing is migrated.
+- **Nothing is checked.** The attempt is shown and stored but never
+  compared with the card, so the spec's non-goal "No typed checking of
+  meaning or phrase answers" holds.
+- **The session summary is unchanged.** An empty attempt is an Again, so
+  that card does not count as answered correctly (§7.4).
+
+**Why**
+- **Grading after seeing the answer is unreliable.** With the back in view,
+  "I knew that" is easy to believe. Typing first makes the learner commit,
+  and the reveal puts the attempt beside the answer.
+- **Two grades the learner can give honestly.** Easy inflates intervals.
+  Hard is not a judgement a learner makes reliably about themselves. With
+  the attempt on screen, "did I have it?" is a question they can answer.
+- **An empty attempt is a miss.** Revealing without committing is the path
+  this change closes, so it costs a lapse rather than buying a free look.
+- **Keys `1` and `2`** sit side by side and match the two buttons. The
+  stored rating stays FSRS's own value (Good is 3), so the review log means
+  what it meant before.
+
+**Cost.** This reverses §12.5's rationale for self-graded cards, which was
+to keep the soft keyboard down. Every self-graded card now raises it, and
+phrase cards cost most, because their attempt is a sentence.
+- With the keyboard up the phone is estimated at 18–22 rows, and the design
+  floor is 12 (§12.8). The short layout becomes the usual study layout
+  rather than an edge case, so issue 009's measurement of the real rows
+  matters more.
+- At 40×12 the empty attempt's back used to fall below the fold. Under
+  `-short` the study card now drops its blank lines, and `assert_inside`
+  fails when the body needs scrolling (13fc268). The measured row budget
+  is in §12.8, "Keyboard up, portrait, 40×12".
+- Textual cannot show or hide the Android keyboard. Whether it stays up
+  across the grade and across article cards is up to Termux, and
+  unverified (009).
+
+**`review.answer` on a self-graded card** now holds:
+- the attempt;
+- `''` for an empty attempt;
+- `NULL` for a review given before this change, when no attempt was asked
+  for.
+
+Checked cards store their answer as before (§7.10–§7.12).
+
+**Code shape.** Only `tui/study.py` changes: no use case, model or
+migration.
+- `_GRADES` lists the two grade buttons, and `_RATING` maps keys `1` and
+  `2` to ratings 1 and 3.
+- `_grade(rating, feedback=None)` calls `Grade` with the attempt. Without
+  `feedback` it moves to the next card; with it, it shows that feedback.
+- The digit bindings stay `1`–`3`, hidden from the footer. `check_action`
+  allows `1` and `2` on a revealed self-graded card that has no feedback
+  yet, and `1`–`3` on an unanswered article card.
+- `_focus_fields` now runs for every card type except article. It shows one
+  row unless the card is Stammformen, and labels it with the person on a
+  conjugation card and "Answer" otherwise.
+
+**By category**
+- **State and data lifecycle.** Unchanged in shape: each grade is one
+  `Grade` transaction (§7.4). The attempt lives only in the screen until
+  that grade commits.
+  - A kill between the reveal and the grade loses the attempt with the
+    grade. That is the card on screen, which the spec allows to be lost.
+  - An empty attempt's grade commits before its feedback appears, so a kill
+    during the feedback loses nothing.
+- **Error propagation.** Unchanged. An `Err` from `Grade` shows a toast and
+  keeps the card on screen. After a failed empty-attempt grade the front
+  stays, and Enter tries again.
+- **Concurrency and ownership.** Nothing new. The TUI is single-threaded,
+  the screen owns the attempt, and the TUI is still the only writer of
+  `learning.db`.
+- **Reuse.** The field rows of 012 and 013; `Grade`'s `answer` parameter,
+  which the TUI did not fill before; the feedback text and Next button of
+  the checked cards; and the 300 ms tap guard (§12.5), which now also
+  covers Next after an empty attempt. No new widget.
+- **Extension points.** None new. A typed check of some self-graded types
+  (§16) would replace the self-grade for those types, not plug into it.
+- **Build vs. buy.** Nothing to buy.
+- **Abstractions introduced.** None. `_RATING` exists because keys 1 and 2
+  are not FSRS's values 1 and 3. `_grade` exists because the grade keys and
+  the empty attempt grade the same way. Both are private.
+- **Alternatives rejected:**
+  - **Machine-checking glosses and phrases.** Glosses have synonyms and
+    phrases have free word order, so a string check would mark right
+    answers wrong. It is also a spec non-goal.
+  - **Keeping four grades.** Easy inflates intervals, and Hard is not a
+    reliable self-judgement.
+  - **Revealing an empty attempt without grading it**, as a peek. It would
+    reopen the "I knew that" path.
+
+**Not part of this change: typed checking of `meaning_en_de` and
+`meaning_de_de`.** Both ask for a German word, so a check is conceivable
+there, unlike glosses and phrases. It contradicts the spec's non-goal, so it
+needs a spec revision, and that is the user's call. It is recorded as open
+in §16.
 
 ---
 
@@ -3146,7 +3286,7 @@ call `harald.lexicon` or `harald.learning` directly.
 | Lookup | one screen, DE/EN modes toggled by `^t`; Input; search runs **on Enter**, not on every keystroke; result list; Enter opens Entry |
 | Entry | scrollable `render_headword`; `c` full conjugation; `a` add word (Pick-entry modal first when the headword has several English entries) |
 | Add word | three-step wizard: 1 English-sense `SelectionList`, 2 German-sense `SelectionList`, 3 automatic-card status (created / refused with missing forms), decks, Create |
-| Study | pick "all due" or a deck; self-graded: space or the Show button reveals, `1`–`4` or buttons grade; article: `1`/`2`/`3` or buttons; Stammformen: three compact Inputs and Enter; feedback, then Enter, space or Next; Esc ends; summary screen |
+| Study | pick "all due" or a deck; self-graded: type an attempt in the Answer field, then Enter or the Show button reveals it beside the answer, and `1` Again / `2` Good or buttons grade; an empty attempt is graded Again (§7.13); article: `1`/`2`/`3` or buttons; Stammformen: three compact Inputs and Enter; feedback, then Enter, space or Next; Esc ends; summary screen |
 | Phrases | Input, results; Enter saves the pair after confirmation; `^n` writes your own pair in `$EDITOR` |
 | Cards | table of live cards; `/` filter; `e` edit (`$EDITOR`), `s` suspend toggle, `x` delete (confirm), `d` decks |
 | Decks | list, create, delete |
@@ -3169,9 +3309,12 @@ reduced-height rules, and the touch decision.
 - **Footer.** `Footer(compact=True)` lists the bindings active in the current
   state, primary action first and `esc` last: at most about six at 80
   columns, three or four at 40, with `?` opening the full list (§12.8). Keys appear the way Textual prints them (`enter`, `esc`,
-  `^t`). The footer changes with state: study shows `space Show` before the
-  reveal and `1 Again … 4 Easy` after it. Bindings already shown elsewhere on
-  the screen (the Home menu letters) are `show=False`.
+  `^t`). The footer changes with state. On a self-graded card it shows only
+  `esc End` until feedback: the grade buttons name their keys, and on the
+  front Enter belongs to the Answer field (§7.9, §7.13). Feedback adds
+  `enter Next` and `space Next`. Bindings already
+  shown elsewhere on the screen (the Home menu letters, the grade keys) are
+  `show=False`.
 - **Footer keys are tappable.** Textual's `FooterKey.on_mouse_down` simulates
   the key, so every footer hint is also a touch target. This is checked in
   the Textual 8.2.8 source.
@@ -3552,6 +3695,11 @@ enter Start   esc Back
 ```
 
 **Study, self-graded front (German → English).**
+- The learner types an attempt in the Answer field before the reveal
+  (§7.13). The field is row 0 of the rows Stammformen and conjugation cards
+  use, so it sits right under the front.
+- Enter in the field, or Show answer, reveals. An empty field is graded
+  Again at once (the last frame of this group).
 - The answer button and, after the reveal, the grade buttons sit in the same
   bottom zone, so a thumb never moves (§12.5).
 - The example line is the copied sense example (§7.2).
@@ -3566,7 +3714,7 @@ enter Start   esc Back
                                       noun
 
                         Die Frau trug ein Band im Haar.
-
+        Answer      [ ribbon_                           ]
 
 
 
@@ -3577,14 +3725,16 @@ enter Start   esc Back
 
 
 +-----------------------------------------------------------------------------+
-|                             Show answer  (space)                            |
+|                                 Show answer                                 |
 +-----------------------------------------------------------------------------+
 
-space Show   esc End
+esc End
 ```
 
-**Study, self-graded after the reveal.** Grading stores at once (§7.4) and
-moves to the next card. There is no undo (spec).
+**Study, self-graded after the reveal.** `you:` shows the attempt above the
+back. Only Again and Good are offered (§7.13), and the grade keys are named
+on the buttons, not in the footer (§7.9). Grading stores at once (§7.4)
+and moves to the next card. There is no undo (spec).
 
 ```
 ========================== Study - 12 due, 8 new left ==========================
@@ -3597,6 +3747,7 @@ moves to the next card. There is no undo (spec).
 
                         Die Frau trug ein Band im Haar.
                     ----------------------------------------
+                                  you: ribbon
                                   tape, ribbon
                       The woman wore a ribbon in her hair.
 
@@ -3605,12 +3756,11 @@ moves to the next card. There is no undo (spec).
 
 
 
++-------------------------------------+ +-------------------------------------+
+|               1 Again               | |                2 Good               |
++-------------------------------------+ +-------------------------------------+
 
-+-----------------+ +-----------------+ +-----------------+ +-----------------+
-|     1 Again     | |      2 Hard     | |      3 Good     | |      4 Easy     |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+
-
-1 Again   2 Hard   3 Good   4 Easy   esc End
+esc End
 ```
 
 **English → German, revealed.** The front is the top block, down to `noun`.
@@ -3625,6 +3775,7 @@ moves to the next card. There is no undo (spec).
                                       noun
 
                     ----------------------------------------
+                                 you: das Band
                                     das Band
                         Die Frau trug ein Band im Haar.
                       The woman wore a ribbon in her hair.
@@ -3634,12 +3785,11 @@ moves to the next card. There is no undo (spec).
 
 
 
++-------------------------------------+ +-------------------------------------+
+|               1 Again               | |                2 Good               |
++-------------------------------------+ +-------------------------------------+
 
-+-----------------+ +-----------------+ +-----------------+ +-----------------+
-|     1 Again     | |      2 Hard     | |      3 Good     | |      4 Easy     |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+
-
-1 Again   2 Hard   3 Good   4 Easy   esc End
+esc End
 ```
 
 **German → German, revealed.**
@@ -3647,7 +3797,7 @@ moves to the next card. There is no undo (spec).
 ```
 ========================== Study - 10 due, 8 new left ==========================
 
-                               Deutsch -> Deutsch
+                              German -> German
 
 
    zumeist aus einem bestimmten Gewebe/Stoff bestehendes längeres, schmales,
@@ -3655,6 +3805,7 @@ moves to the next card. There is no undo (spec).
    Verstärkung, zum Zusammenhalten und dergleichen Zwecke
 
                     ----------------------------------------
+                                   you: Band
                                     das Band
 
 
@@ -3663,15 +3814,15 @@ moves to the next card. There is no undo (spec).
 
 
 
++-------------------------------------+ +-------------------------------------+
+|               1 Again               | |                2 Good               |
++-------------------------------------+ +-------------------------------------+
 
-+-----------------+ +-----------------+ +-----------------+ +-----------------+
-|     1 Again     | |      2 Hard     | |      3 Good     | |      4 Easy     |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+
-
-1 Again   2 Hard   3 Good   4 Easy   esc End
+esc End
 ```
 
-**Phrase card, revealed.**
+**Phrase card, revealed.** The attempt adds an article that the saved
+German leaves out. Whether that counts is the learner's call (§7.13).
 
 ```
 ========================== Study - 9 due, 8 new left ===========================
@@ -3683,6 +3834,7 @@ moves to the next card. There is no undo (spec).
                       note: said about recurring patterns
 
                     ----------------------------------------
+                      you: Die Geschichte wiederholt sich.
                           Geschichte wiederholt sich.
 
 
@@ -3692,12 +3844,42 @@ moves to the next card. There is no undo (spec).
 
 
 
++-------------------------------------+ +-------------------------------------+
+|               1 Again               | |                2 Good               |
++-------------------------------------+ +-------------------------------------+
 
-+-----------------+ +-----------------+ +-----------------+ +-----------------+
-|     1 Again     | |      2 Hard     | |      3 Good     | |      4 Easy     |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+
+esc End
+```
 
-1 Again   2 Hard   3 Good   4 Easy   esc End
+**Self-graded, empty attempt.** Enter on an empty Answer field grades the
+card Again in one step and shows the back. Enter, space or Next continues,
+as after an article answer.
+
+```
+========================== Study - 11 due, 8 new left ==========================
+
+                               German -> English
+
+
+                                    das Band
+                                      noun
+
+                        Die Frau trug ein Band im Haar.
+
+                            No answer - graded Again
+                    ----------------------------------------
+                                you: (no answer)
+                                  tape, ribbon
+                      The woman wore a ribbon in her hair.
+
+
+
+
++-----------------------------------------------------------------------------+
+|                                Next  (enter)                                |
++-----------------------------------------------------------------------------+
+
+space Next   enter Next   esc End
 ```
 
 **Article card.**
@@ -3795,7 +3977,7 @@ enter Next   esc End
 
 
 
-enter Next field / Check   tab Field   esc End
+esc End
 ```
 
 **Stammformen feedback**, shown in place on the same rows (§12.4).
@@ -3824,7 +4006,7 @@ enter Next field / Check   tab Field   esc End
 |                                Next  (enter)                                |
 +-----------------------------------------------------------------------------+
 
-enter Next   esc End
+space Next   enter Next   esc End
 ```
 
 **Session summary.** Computed from the review log (§7.4). The backup line
@@ -4024,7 +4206,7 @@ Inputs are docked to the top.
 | **Stammformen** | yes. The answer is typed | Title, infinitive and hint merge onto one row; three compact Inputs, 3 rows. Feedback replaces the input cells **in place**, adding no rows. Bordered three-row Inputs would need 9 rows, which is why Inputs are compact everywhere |
 | **Add word** | yes. It opens straight from a lookup, often with the keyboard still up | The wizard gives each step's single list the whole body. The step line carries compact `Back`/`Next` buttons on the top row. Step 3's summary collapses to two lines, and the deck list scrolls |
 | **Phrases** | yes. Typing | As Lookup. Each result takes 2 rows, so about 4 are visible |
-| **Study** (self-graded, article) | yes, although the keyboard is normally hidden (buttons, §12.5) | Prompt from the top; compact answer and grade buttons on one row |
+| **Study** (self-graded, article) | yes. Self-graded cards take a typed attempt, so the keyboard is up for every one of them (§7.13); article cards are answered with buttons, keyboard down (§12.5) | Prompt from the top, with the Answer row right under it; compact Show answer, then compact grade buttons, on one row above the footer. The body keeps 10 of 12 rows, which an empty attempt overflows (§12.8, 40×12) |
 | **Cards filter**, **New deck** modal | yes | Filter Input docked at the top, table scrolls; the modal is 3 rows plus a button row |
 | Entry, Info, Home, Study start, Summary, Decks | scrolling is enough | no special rules |
 
@@ -4059,7 +4241,7 @@ Stammformen at 80×12:
 
 
 
-enter Next field / Check   tab Field   esc End
+esc End
 ```
 
 Add word step 1 at 80×12:
@@ -4102,16 +4284,21 @@ Study, revealed, at 80×12:
  German -> English                 das Band  (noun)
  Die Frau trug ein Band im Haar.
  ----------------------------------------
+ you: ribbon
  tape, ribbon
  The woman wore a ribbon in her hair.
 
 
 
 
- [   1 Again    ]   [    2 Hard    ]   [    3 Good    ]   [    4 Easy    ]
-
-1 Again   2 Hard   3 Good   4 Easy   esc End
+[               1 Again               ] [                2 Good               ]
+esc End
 ```
+
+The first row merges heading, word and part of speech, which is the
+designed short layout. The code doesn't merge them yet: it keeps them on
+separate centred rows at every height, which costs three rows (§12.8,
+40×12; §16).
 
 **Test hook.** Use `App.run_test(size=(80, 24))` and `run_test(size=(80, 12))`.
 For each screen and study state, assert that the key widgets (the focused
@@ -4123,8 +4310,8 @@ the tdd step's call.
 
 **Decision.** Study shows tappable buttons, sized for thumbs at 40 columns
 in portrait (§12.8):
-- **Show answer** before the reveal, then **1 Again / 2 Hard / 3 Good /
-  4 Easy**;
+- **Show answer** before the reveal, then **1 Again / 2 Good** (four grades
+  until 2026-10-28, §7.13);
 - **der / die / das** on article cards;
 - **Next** on feedback, **Home** on the summary.
 
@@ -4148,6 +4335,15 @@ calls the same action method as its key (`action_reveal`, `action_grade(n)`,
    of the screen wide is not.
 4. The cost is a handful of widgets and some CSS.
 
+**Reversed for self-graded cards on 2026-10-28 (§7.13).** Points 1 and 2
+assumed self-graded cards never need text, so the keyboard could stay down
+for a whole session. Those cards now take a typed attempt, because grading
+after seeing the answer is unreliable ("I knew that"), so each of them
+raises the keyboard, phrase cards most. Points 1 and 2 still hold for
+article cards. The buttons stay: they are still bigger targets than a
+footer hint or a soft-keyboard digit (point 3), and the guard below still
+applies.
+
 **Not added:**
 - Stammformen buttons: the answer must be typed, so the keyboard is up
   anyway and Enter is on every soft keyboard.
@@ -4157,7 +4353,8 @@ calls the same action method as its key (`action_reveal`, `action_grade(n)`,
 **Accidental taps.** A grade is final (no undo, spec), and "Show answer"
 spans the zone where the grade buttons then appear, so a double tap on Show
 could land on a grade. Grade and article buttons therefore **ignore presses
-for 300 ms after they appear**. Keys are not debounced.
+for 300 ms after they appear**, and so does Next, which an empty attempt
+brings up in the same place (§7.13). Keys are not debounced.
 
 **Dependency to verify.** Termux must deliver taps as mouse clicks and swipes
 as wheel events while Textual's mouse tracking is on (Textual's default).
@@ -4179,6 +4376,7 @@ inert rather than harmful.
 | Stammformen feedback in place | Fits 80×12 with no extra rows, and each field's verdict sits next to what was typed | a separate feedback block |
 | Cards filter behind `/` | Keeps the table focused so letter actions work (focus rule, §12.1) | an always-focused filter Input |
 | Grade buttons with a 300 ms guard | §12.5 | keys only |
+| A typed attempt before the reveal on self-graded cards; Again and Good only | Grading after seeing the answer is unreliable, so the learner commits first. Easy inflates intervals, and Hard is not a reliable self-judgement (§7.13) | reveal, then four self-grades (the 010 design); machine-checked meanings and phrases |
 | Article and Stammformen fronts show a hint (and the plural for article) | Homographs would otherwise show identical fronts with different answers. `article` gains `plural`, `hint`; `stammformen` gains `hint` (§7.2) | relying on the lemma alone |
 
 ### 12.7 Layout questions: answered by the user
@@ -4211,7 +4409,7 @@ in portrait with the keyboard up (§12.7 q4).
 
 | Screen | Narrow? | Changes from the wide layout |
 |---|---|---|
-| Study (all card types, feedback, summary) | **yes, the priority** | same single column; four grade buttons of 9 columns each (thumb width, below); article buttons 12 columns each; Stammformen labels sit left of compact Inputs (`er/sie/es  [ … ]`) |
+| Study (all card types, feedback, summary) | **yes, the priority** | same single column; two grade buttons of about 19 columns each (thumb width, below; four of 9 until 2026-10-28); article buttons 12 columns each; Stammformen labels, and the self-graded `Answer` label, sit left of compact Inputs (`er/sie/es  [ … ]`) |
 | Lookup (DE / EN) | yes | result rows shortened to lemma, pos and match (`form: band`, `~1`, `proper noun`); English → German words indented under their sense |
 | Entry | yes | glosses wrap; tenses stack one per block (§6); TRENNBAR badge under the headword |
 | Add word wizard | yes | already one list per step; definitions wrap under the checkbox; Back/Next buttons 19 columns each |
@@ -4227,14 +4425,17 @@ Textual's `HelpPanel` (`action_show_help_panel`, present in Textual 8) with
 every binding of the screen, so nothing becomes undiscoverable.
 
 **Touch buttons at thumb width.** At 40 columns:
-- four grade buttons are 9 columns each (`1 Again`, `2 Hard`, `3 Good`,
-  `4 Easy`) with one-column gaps. That is about a quarter of the screen
-  width each, roughly 15–17 mm on a typical phone, and three rows tall;
+- the grade buttons are 9 columns each, with a one-column gap. That is
+  about a quarter of the screen width each, roughly 15–17 mm on a typical
+  phone, and three rows tall. The width was chosen for four buttons
+  (`1 Again`, `2 Hard`, `3 Good`, `4 Easy`). Since 2026-10-28 there are
+  two, `1 Again` and `2 Good` (§7.13), and `harald.tcss` gives them `1fr`
+  like the article buttons, about 19 columns each;
 - the article buttons are 12 columns each;
 - Show answer and Next span the full width.
 
 They stay in the same bottom zone, and keep the 300 ms guard (§12.5). With
-the keyboard up (`-short`) they collapse to one row, still 9 columns wide.
+the keyboard up (`-short`) they collapse to one row.
 
 **Portrait wireframes, 40×24.** Generated and checked like §12.3: every line
 is at most 40 columns.
@@ -4509,7 +4710,8 @@ Study start:
 enter Start  esc Back
 ```
 
-Study, self-graded front and revealed:
+Study, self-graded front and revealed. The Answer field takes the attempt
+(§7.13):
 
 ```
 ======== Study - 12 due, 8 new =========
@@ -4521,7 +4723,7 @@ Study, self-graded front and revealed:
                   noun
 
     Die Frau trug ein Band im Haar.
-
+ Answer     [ ribbon_               ]
 
 
 
@@ -4533,9 +4735,9 @@ Study, self-graded front and revealed:
 
 
 +-------------------------------------+
-|         Show answer  (space)        |
+|             Show answer             |
 +-------------------------------------+
-space Show  esc End
+esc End
 ```
 
 ```
@@ -4549,6 +4751,7 @@ space Show  esc End
 
     Die Frau trug ein Band im Haar.
         ------------------------
+              you: ribbon
               tape, ribbon
        The woman wore a ribbon in
                her hair.
@@ -4558,11 +4761,10 @@ space Show  esc End
 
 
 
-
-+-------+ +-------+ +-------+ +-------+
-|1 Again| | 2 Hard| | 3 Good| | 4 Easy|
-+-------+ +-------+ +-------+ +-------+
-1-4 Grade  esc End  ? Keys
++-------+ +-------+
+|1 Again| | 2 Good|
++-------+ +-------+
+esc End
 ```
 
 English → German, German → German, phrase (revealed):
@@ -4577,6 +4779,7 @@ English → German, German → German, phrase (revealed):
                   noun
 
         ------------------------
+             you: das Band
                 das Band
     Die Frau trug ein Band im Haar.
        The woman wore a ribbon in
@@ -4587,17 +4790,16 @@ English → German, German → German, phrase (revealed):
 
 
 
-
-+-------+ +-------+ +-------+ +-------+
-|1 Again| | 2 Hard| | 3 Good| | 4 Easy|
-+-------+ +-------+ +-------+ +-------+
-1-4 Grade  esc End  ? Keys
++-------+ +-------+
+|1 Again| | 2 Good|
++-------+ +-------+
+esc End
 ```
 
 ```
 ======== Study - 10 due, 8 new =========
 
-           Deutsch -> Deutsch
+          German -> German
 
  zumeist aus einem bestimmten
  Gewebe/Stoff bestehendes längeres,
@@ -4607,6 +4809,7 @@ English → German, German → German, phrase (revealed):
  und dergleichen Zwecke
 
         ------------------------
+               you: Band
                 das Band
 
 
@@ -4614,11 +4817,10 @@ English → German, German → German, phrase (revealed):
 
 
 
-
-+-------+ +-------+ +-------+ +-------+
-|1 Again| | 2 Hard| | 3 Good| | 4 Easy|
-+-------+ +-------+ +-------+ +-------+
-1-4 Grade  esc End  ? Keys
++-------+ +-------+
+|1 Again| | 2 Good|
++-------+ +-------+
+esc End
 ```
 
 ```
@@ -4631,6 +4833,7 @@ English → German, German → German, phrase (revealed):
      note: about recurring patterns
 
         ------------------------
+  you: Die Geschichte wiederholt sich.
       Geschichte wiederholt sich.
 
 
@@ -4641,11 +4844,39 @@ English → German, German → German, phrase (revealed):
 
 
 
++-------+ +-------+
+|1 Again| | 2 Good|
++-------+ +-------+
+esc End
+```
 
-+-------+ +-------+ +-------+ +-------+
-|1 Again| | 2 Hard| | 3 Good| | 4 Easy|
-+-------+ +-------+ +-------+ +-------+
-1-4 Grade  esc End  ? Keys
+Self-graded, empty attempt:
+
+```
+======== Study - 11 due, 8 new =========
+
+           German -> English
+
+
+                das Band
+                  noun
+
+    Die Frau trug ein Band im Haar.
+
+        No answer - graded Again
+        ------------------------
+            you: (no answer)
+              tape, ribbon
+       The woman wore a ribbon in
+               her hair.
+
+
+
+
++-------------------------------------+
+|            Next  (enter)            |
++-------------------------------------+
+space Next  enter Next  esc End
 ```
 
 Article card and feedback:
@@ -4719,7 +4950,7 @@ feedback's main-clause note (§7.2):
  Präteritum [ rief an               ]
  Perfekt    [ hat angerufen_        ]
 
- ae/oe/ue/ss accepted for ä/ö/ü/ß
+ ae/oe/ue/ss are accepted for ä/ö/ü/ß
 
 
 
@@ -4732,7 +4963,7 @@ feedback's main-clause note (§7.2):
 
 
 
-enter Next/Check  esc End  ? Keys
+esc End
 ```
 
 ```
@@ -4759,7 +4990,7 @@ enter Next/Check  esc End  ? Keys
 
 
 
-enter Next  esc End
+space Next  enter Next  esc End
 ```
 
 Session summary:
@@ -5040,7 +5271,7 @@ Stammformen (separable):
 
 
 
-enter Next/Check  esc End
+esc End
 ```
 
 Add word, steps 1 and 3:
@@ -5075,22 +5306,84 @@ space Toggle  n Next  esc Cancel
 space Toggle  c Create  b Back
 ```
 
-Study, revealed:
+Study, self-graded: front, revealed, and an empty attempt. These three are
+a render of the card that the 40×12 pilot test studies (the Hund fixture),
+not illustrations, because here the row count is the point:
 
 ```
- de->en      das Band (noun)
- Die Frau trug ein Band im Haar.
- ------------------------
- tape, ribbon
- The woman wore a ribbon in her
- hair.
+           German -> English
+
+                der Hund
+                  noun
+
+            Der Hund bellt.
+ Answer     [ dog_                  ]
 
 
 
-[1 Again] [2 Hard ] [3 Good ] [4 Easy ]
-
-1-4 Grade  esc End
+[             Show answer             ]
+esc End
 ```
+
+```
+           German -> English
+
+                der Hund
+                  noun
+
+            Der Hund bellt.
+          --------------------
+                you: dog
+         dog (Canis familiaris)
+             The dog barks.
+[1 Again] [2 Good ]
+esc End
+```
+
+```
+           German -> English
+
+                der Hund
+                  noun
+
+            Der Hund bellt.
+
+        No answer - graded Again
+          --------------------
+            you: (no answer)
+[            Next  (enter)            ]
+space Next  enter Next  esc End
+```
+
+- **Row budget.** Below 16 rows the header is hidden and the buttons are
+  one row, so the body gets `rows − 2`: 10 rows at 40×12.
+  - The front takes 7, the Answer row included.
+  - The revealed card takes exactly 10. A longer gloss, example or
+    translation pushes the end of the back below the fold. Band's
+    translation wraps to two lines at 40 columns, so Band's card needs 11.
+  - The empty attempt needs 12. The back (`dog (Canis familiaris)` and
+    `The dog barks.`) starts below the fold, so the learner has to scroll
+    to see the answer.
+- **What the tests show.** `test_study_reveal_grade_and_summary` runs the
+  whole flow at 40×12. It asserts that every displayed widget lies inside
+  the 40-column width, that every card line fits in 40 columns, and that
+  each state shows the right controls: the field and Show answer on the
+  front, the grade buttons after the reveal, Next after an empty attempt.
+  It doesn't check height. `assert_inside` compares x coordinates only, and
+  `static_lines` renders the whole card rather than its visible part, so
+  the overflow above passes.
+- **From 16 rows** the header returns and the buttons grow to three rows,
+  so the body gets `rows − 5`. At 16 and 17 rows that is 11 and 12, less
+  than the 12 and 13 at 14 and 15. A render at 40×16 cuts off the empty
+  attempt's last line; one at 40×15 fits it.
+- **On the phone** the keyboard-up height is estimated at 18–22 rows, a
+  body of 13–17, which fits all three states of this card. Issue 009 has
+  still to measure it, and that matters more now that every self-graded
+  card raises the keyboard.
+- **The designed short layout** puts heading, word and part of speech on
+  one row (`de->en      das Band (noun)`, as in §12.4's 80×12 frame). The
+  code never merged them. Doing it under `-short` would free three rows,
+  enough for the empty attempt at 40×12. Open (§16).
 
 **Tests and benchmarks.**
 - **The §12.4 test hook runs at four sizes:** 40×24, 40×12, 80×24 and 80×12.
@@ -5694,6 +5987,9 @@ dependency-injection container.
 | In-memory session counters for the summary | `session_id` in the review log makes the summary exact and durable |
 | Hard delete keeping orphan review rows | Breaks foreign keys. Soft delete keeps history intact (spec) |
 | Hard/Easy choice after a correct checked answer | Breaks the single-keypress article card. Correct is Good, wrong is Again |
+| Machine-checking glosses and phrase answers | Glosses have synonyms and phrases free word order, so a string check would mark right answers wrong. It is also a spec non-goal. Self-graded cards take a typed attempt that is shown, not checked (§7.13) |
+| Four self-grades (Again, Hard, Good, Easy) on the study screen | Easy inflates intervals, and Hard is not a reliable self-judgement. Again and Good only since 2026-10-28 (§7.13) |
+| Revealing an empty attempt without grading it | It reopens the "I knew that" path the typed attempt closes. An empty attempt is Again (§7.13) |
 | Case-insensitive typed checking | The spec says exact, except for umlaut transliteration |
 | Inline TUI inputs for card editing | Long German definitions in a one-line Input at 80 columns are unusable on a phone. The `$EDITOR` template is reused |
 | Search as you type in the TUI | Would force worker threads and cross-thread connections. Search on Enter is enough until issue 009 shows otherwise |
@@ -6168,6 +6464,75 @@ and 004b (the parallel task graph, with the four criteria in its row).
   `cold.lookup` ever breaches its budget, the options are a Core-only table
   module for that path, or stdlib `sqlite3` for it. Each undoes one of your
   decisions, so that call stays yours.
+- **Typed checking of `meaning_en_de` and `meaning_de_de` answers** (raised
+  with §7.13 on 2026-10-28, and not part of it). Both cards ask for a German
+  word, so a check is conceivable there, unlike glosses and phrases. The
+  spec's non-goal "No typed checking of meaning or phrase answers" rules it
+  out, so it needs a spec revision, which is yours. Before it is designed:
+  - (checked 2026-10-30 against the real `lexicon.db`: simple reflexive verbs
+    are stored with a bare lemma. `freuen` and `beeilen` are in the lexicon,
+    and `sich freuen` and `sich beeilen` match nothing. Reflexivity is a
+    `[reflexive]` label on the sense. Of 10,981 verb entries, 1,060 have a
+    reflexive sense and 342 have only reflexive senses. The 49 verb headwords
+    that do start with `sich` are idioms (`sich auf den Weg machen`), and
+    their conjugation forms carry the pronoun (`werde mich auf den Weg
+    machen`). For an English → German check this means:
+    - the stored answer is the bare lemma, so `beeilen` would be marked right
+      and `sich beeilen`, which a learner of a reflexive-only verb would
+      likely type, would be marked wrong unless the checker accepts a leading
+      `sich`;
+    - the only record of whether a sense is reflexive is the free-text label,
+      so a checker that accepts the bare lemma with an optional `sich` needs
+      no new data;)
+  - (checked 2026-10-30, two rough edges in the conjugation cards of
+    reflexive verbs:
+    - the stored forms of simple reflexive verbs have no reflexive pronoun
+      (`freue`, `beeile`), so a learner who types `freue mich` is marked
+      wrong, while the card says to type the form without the pronoun;
+    - the data has a suspect auxiliary for some of them. `beeilen` has
+      `bin beeilt` in the Perfekt, and `verschulden` looks similar. Of the 342
+      reflexive-only verbs, six have `bin`: `ausgehen`, `verkriechen`,
+      `hinknien` and `festlaufen` look right for `sein` and `beeilen` and
+      `verschulden` look wrong, which is a reading, not a check against a
+      dictionary. A card expects what the data says, so a learner who types
+      the correct `habe` form is marked wrong for a wrong entry. Whether to
+      correct this in the build is answered below;)
+  - (decided 2026-10-30: the conjugation check accepts the reflexive
+    pronoun. `check_conjugation` compares the typed text with the stored
+    forms of the slot; it will also accept each stored form with the pronoun
+    for that person put after the first word: 1sg `mich`, 2sg `dich`, 3sg
+    `sich`, 1pl `uns`, 2pl `euch`, 3pl `sich`. That covers `freue mich`,
+    `habe mich gefreut`, `werde mich freuen` and `rufe mich an`. It only
+    widens what is accepted, so no answer that is right today turns wrong.
+    It needs the card to know that the verb is reflexive, or `koche mich`
+    would be accepted for `kochen`. That is a new field in the conjugation
+    card's content, set when the card is made from the sense labels (any
+    reflexive sense counts, so a verb like `freuen`, with reflexive and
+    other senses, accepts both forms). Existing cards lack the field and
+    read as not reflexive, so they keep today's behaviour. It does not touch
+    the suspect auxiliaries in the data. Not built yet: a `change` for 013's
+    code;)
+  - (decided 2026-10-30: the suspect auxiliaries in the data, `bin beeilt`
+    and the like, are accepted as they are, since about two entries of 342
+    reflexive-only verbs are affected;)
+  - (decided 2026-10-30, for the typed meaning check if the spec allows it:
+    accept the lemma with an optional leading `sich`, so `beeilen` and
+    `sich beeilen` are both right. It needs no new data, because the lemma
+    is stored bare. It does not need the reflexive field above, and it
+    would accept `sich kochen` for `kochen`, which is wrong German and
+    harmless in a recall check;)
+  - (done in 7bbf142: the `meaning_de_de` face was the wrong way round,
+    showing the word on the front and the definition on the back; it now
+    shows the definition and asks for the word, as §7.2 says;)
+  - the attempts stored since §7.13 would let a checker be tried against
+    real answers before it grades anything.
+- **Small follow-ups to §7.13**, code changes for the `change` door:
+  - (done in 13fc268: at 40×12 the empty attempt pushed the back below the
+    fold. Dropping the blank lines under `-short` fitted it, so heading,
+    word and part of speech stay on separate rows, unlike the frames, and
+    `assert_inside` now catches a body that needs scrolling;)
+  - (done with §7.13: the two grade buttons take `1fr`, and the space
+    binding reads "Next").
 
 **Spec and doc wording that must change** (user-owned):
 - **80 columns → portrait 40:** spec lines 36, 137 and 257; AGENTS.md line
@@ -6180,9 +6545,8 @@ and 004b (the parallel task graph, with the four criteria in its row).
   and AGENTS.md are already renamed.
 - **Proper nouns:** the spec is silent on them, so nothing needs to change.
 - **Issue 021's acceptance criteria** need the six changes listed in §8.4.
-- **Issue 013:** line 3 ("Blocked on spec open question 5") can go. The
-  acceptance criteria could take the three clarifications at the end of
-  §7.12. The spec still lists open question 5 as open.
+- **Issue 013:** done. Line 3 points at §7.12 and the acceptance criteria
+  carry the clarifications. The spec now marks open question 5 resolved.
 
 **Notes, informational:**
 - **`Option` has no caller in today's code** (§14.10). Every current
@@ -6209,6 +6573,9 @@ and 004b (the parallel task graph, with the four criteria in its row).
   measured components (§3.7); issue 004b measures the real figure.
 - **One behaviour change.** A failing `learning.db` write shows an error and
   keeps the session going, instead of crashing the TUI.
+- **Self-graded cards take a typed attempt and offer only Again and Good**
+  (§7.13, 2026-10-28). That reverses §12.5's keyboard-down rationale for
+  them and drops Hard and Easy from the study screen.
 
 **Gaps found while designing, decided here but worth a veto:**
 - **Separable-verb conjugation fronts** (§7.12, decision 6). The front
