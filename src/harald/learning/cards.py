@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,8 +26,17 @@ def _canonical(content: object) -> str:
 _ONCE_PER_WORD = ("article", "stammformen")
 
 
+def _key(card_type: str, content: dict[str, Any]) -> tuple[str, str]:
+    if card_type in _ONCE_PER_WORD:
+        return (card_type, "")
+    # forms change between builds and the hint follows the first sense picked
+    if card_type == "conjugation":
+        return (card_type, content["slot"])
+    return (card_type, _canonical(content))
+
+
 def _identity(card: NewCard) -> tuple[str, str]:
-    return (card.card_type, "" if card.card_type in _ONCE_PER_WORD else _canonical(card.content))
+    return _key(card.card_type, card.content)
 
 
 def drop_live_duplicates(
@@ -44,7 +54,7 @@ def drop_live_duplicates(
         ).all()
         # the hint follows whichever sense was picked first, so these cards are "the same"
         # whatever their content: one per word
-        return {(t, "" if t in _ONCE_PER_WORD else _canonical(c)) for t, c in rows}
+        return {_key(t, c) for t, c in rows}
 
     found = ctx.run(live).map_err(_storage)
     if found.is_err:

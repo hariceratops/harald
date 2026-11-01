@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from harald.lexicon.model import Entry, Headword
+from harald.lexicon.model import PERSONS, TENSES, Entry, Headword
 
 
 @dataclass(frozen=True)
@@ -46,14 +46,58 @@ def _first_translated_example(entry: Entry, sense_index: int) -> dict[str, str] 
     return None
 
 
+def _conjugation_cards(
+    headword: Headword,
+    entry: Entry | None,
+    en_senses: Sequence[int],
+    de_senses: Sequence[tuple[int, int]],
+    tenses: Sequence[str],
+) -> tuple[list[NewCard], list[Refusal]]:
+    forms = entry.conjugation if entry else {}
+    if entry is not None and en_senses:
+        hint = entry.senses[en_senses[0]].gloss
+    elif de_senses:
+        hint = headword.german[de_senses[0][0]].senses[de_senses[0][1]].gloss
+    else:
+        hint = entry.senses[0].gloss if entry is not None and entry.senses else ""
+    names = dict(TENSES)
+    cards: list[NewCard] = []
+    missing: list[str] = []
+    for stem in tenses:
+        gaps = []
+        for suffix, label in PERSONS:
+            slot = f"{stem}.{suffix}"
+            if not forms.get(slot):
+                gaps.append(label)
+                continue
+            cards.append(
+                NewCard(
+                    "conjugation",
+                    {
+                        "infinitive": headword.lemma,
+                        "hint": hint,
+                        "separable_prefix": (entry.separable_prefix if entry else "") or "",
+                        "slot": slot,
+                        "forms": list(forms[slot]),
+                    },
+                )
+            )
+        if gaps:
+            what = "all persons" if len(gaps) == len(PERSONS) else ", ".join(gaps)
+            missing.append(f"{names[stem]} ({what})")
+    return cards, [Refusal("conjugation", tuple(missing))] if missing else []
+
+
 def plan_word_cards(
     headword: Headword,
     entry_index: int | None,
     en_senses: Sequence[int],
     de_senses: Sequence[tuple[int, int]],
+    tenses: Sequence[str] = (),
 ) -> CardPlan:
     """Picks are positions: `en_senses` into the chosen entry's senses, `de_senses` as
-    (German entry, sense) into `headword.german`."""
+    (German entry, sense) into `headword.german`. `tenses` are stems from `TENSES`; their
+    conjugation cards do not depend on the senses picked."""
     entry = headword.entries[entry_index] if entry_index is not None else None
     gender = entry.gender if entry else ""
     hint = WordHint(
@@ -143,4 +187,8 @@ def plan_word_cards(
                     },
                 )
             )
+    if headword.pos == "verb" and tenses:
+        extra, extra_refusals = _conjugation_cards(headword, entry, en_senses, de_senses, tenses)
+        cards.extend(extra)
+        refusals.extend(extra_refusals)
     return CardPlan(hint, tuple(cards), tuple(refusals))

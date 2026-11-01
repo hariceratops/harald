@@ -4,6 +4,7 @@ from harald.config import Config
 from harald.core.option import Option
 from harald.core.result import Result
 from harald.learning.answers import ArticleCheck
+from harald.learning.answers import FieldCheck as FieldCheck
 from harald.learning.answers import StammformenCheck as StammformenCheck
 from harald.learning.db import transact
 from harald.learning.errors import LearningDbError
@@ -12,6 +13,7 @@ from harald.learning.scheduling import scheduler_for
 from harald.learning.study import (
     SummaryCounts,
     answer_article,
+    answer_conjugation,
     answer_stammformen,
     grade_card,
     next_card,
@@ -99,6 +101,33 @@ class AnswerStammformen:
         return transact(
             self._config.learning_db,
             lambda ctx: answer_stammformen(
+                ctx,
+                card_id,
+                given,
+                now,
+                session_id,
+                duration_ms,
+                lambda scope: scheduler_for(scope, self._enable_fuzzing),
+            ),
+        )
+
+
+class AnswerConjugation:
+    def __init__(self, config: Config, enable_fuzzing: bool = True) -> None:
+        self._config = config
+        self._enable_fuzzing = enable_fuzzing
+
+    def execute(
+        self,
+        card_id: int,
+        given: str,
+        now: datetime,
+        session_id: str,
+        duration_ms: int | None = None,
+    ) -> Result[FieldCheck, LearningDbError]:
+        return transact(
+            self._config.learning_db,
+            lambda ctx: answer_conjugation(
                 ctx,
                 card_id,
                 given,

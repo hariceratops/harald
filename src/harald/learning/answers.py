@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from harald.lexicon.model import PERSONS
 from harald.text import answer_matches
 
 ARTICLES = {"m": "der", "f": "die", "n": "das"}
@@ -53,3 +54,9 @@ def check_stammformen(content: dict[str, Any], given: tuple[str, str, str]) -> S
         for (label, accepted), typed in zip(wanted, given, strict=True)
     )
     return StammformenCheck(all(f.correct for f in fields), fields)
+
+
+def check_conjugation(content: dict[str, Any], given: str) -> FieldCheck:
+    label = dict(PERSONS)[content["slot"].rsplit(".", 1)[1]]
+    forms = content["forms"]
+    return FieldCheck(label, given, any(answer_matches(given, f) for f in forms), "/".join(forms))

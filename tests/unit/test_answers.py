@@ -1,6 +1,6 @@
 import pytest
 
-from harald.learning.answers import check_article, check_stammformen
+from harald.learning.answers import check_article, check_conjugation, check_stammformen
 from harald.text import answer_matches
 
 
@@ -96,3 +96,24 @@ def test_umlaut_digraphs_are_accepted_in_a_stammformen_answer() -> None:
     }
 
     assert check_stammformen(content, ("faehrt um", "fuhr um", "hat umgefahren")).correct
+
+
+def _conjugation_card(*forms: str) -> dict[str, object]:
+    return {"slot": "ind.perf.1sg", "forms": list(forms)}
+
+
+def test_conjugation_accepts_any_listed_form_and_labels_the_person() -> None:
+    card = _conjugation_card("habe gefahren", "bin gefahren")
+
+    for form in ("habe gefahren", "bin gefahren"):
+        assert check_conjugation(card, form).correct
+    check = check_conjugation(card, "habe gefahrn")
+    assert not check.correct
+    assert (check.label, check.expected) == ("ich", "habe gefahren/bin gefahren")
+
+
+def test_conjugation_accepts_umlaut_digraphs_but_not_a_missing_prefix() -> None:
+    card = {"slot": "ind.pres.2sg", "forms": ["fährst um"]}
+
+    assert check_conjugation(card, "faehrst um").correct
+    assert not check_conjugation(card, "fährst").correct

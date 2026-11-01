@@ -5,6 +5,8 @@ from rich.text import Text
 
 from harald.core.option import Option
 from harald.lexicon.model import (
+    PERSONS,
+    TENSES,
     EnLookupResult,
     Entry,
     EnWord,
@@ -21,21 +23,7 @@ from harald.lexicon.model import (
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
 _NARROW_BELOW = 60
 _AUX_FORMS = {"sein": "ist", "haben": "hat"}
-_PERSONS = (
-    ("1sg", "ich"), ("2sg", "du"), ("3sg", "er/sie/es"),
-    ("1pl", "wir"), ("2pl", "ihr"), ("3pl", "sie/Sie"),
-)  # fmt: skip
-_DEFAULT_TENSES = (
-    ("ind.pres", "Präsens"), ("ind.pret", "Präteritum"), ("ind.perf", "Perfekt"),
-)  # fmt: skip
-_FULL_TENSES = (
-    *_DEFAULT_TENSES,
-    ("ind.plup", "Plusquamperfekt"), ("ind.fut1", "Futur I"), ("ind.fut2", "Futur II"),
-    ("subj1.pres", "Konjunktiv I"), ("subj1.perf", "Konj. I Perfekt"),
-    ("subj1.fut1", "Konj. I Futur I"), ("subj1.fut2", "Konj. I Futur II"),
-    ("subj2.pret", "Konjunktiv II"), ("subj2.plup", "Konj. II Plusq."),
-    ("subj2.fut1", "Konj. II Futur I"), ("subj2.fut2", "Konj. II Futur II"),
-)  # fmt: skip
+_DEFAULT_TENSES = TENSES[:3]
 _PERSON_COLUMN = 11
 _TENSE_COLUMN = 23
 
@@ -122,8 +110,8 @@ class RenderConjugation:
         forms = self.entry.conjugation
         tenses = [
             (stem, name)
-            for stem, name in (_FULL_TENSES if self.full else _DEFAULT_TENSES)
-            if any(f"{stem}.{p}" in forms for p, _ in _PERSONS)
+            for stem, name in (TENSES if self.full else _DEFAULT_TENSES)
+            if any(f"{stem}.{p}" in forms for p, _ in PERSONS)
         ]
         per_row = max(1, (options.max_width - _PERSON_COLUMN) // _TENSE_COLUMN)
         for start in range(0, len(tenses), per_row):
@@ -133,7 +121,7 @@ class RenderConjugation:
             for _ in group:
                 grid.add_column(overflow="fold")
             grid.add_row("", *(Text(name, style="bold") for _, name in group))
-            for person, label in _PERSONS:
+            for person, label in PERSONS:
                 grid.add_row(
                     label, *(" / ".join(forms.get(f"{stem}.{person}", ())) for stem, _ in group)
                 )

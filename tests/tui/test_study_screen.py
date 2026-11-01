@@ -269,7 +269,7 @@ def test_stammformen_card_is_typed_and_graded_good_when_right(
         lines = static_lines(app.screen, "#card")
         assert any("Stammformen" in line for line in lines)
         assert any("anrufen  -  to call; to phone" in line for line in lines)
-        assert any("TRENNBAR  an|rufen" in line for line in lines)
+        assert not any("TRENNBAR" in line or "split forms" in line for line in lines)
         assert all(len(line) <= size[0] for line in lines)
         assert not app.screen.query_one("#reveal", Button).display
         assert app.screen.query_one("#fields").display
@@ -328,6 +328,99 @@ def test_umlaut_digraphs_are_accepted_for_a_typed_form(built: Workspace) -> None
         await pilot.press("s")
         await pilot.pause()
         await _type_fields(app, pilot, "laeuft", "lief", "ist gelaufen")
+        assert [r for r, _ in _answers(built)] == [3]
+
+    _drive(built, (40, 30), script)
+
+
+def _seed_conjugation(ws: Workspace, lemma: str, slot: str) -> None:
+    verb = LoadHeadword(ws.config).execute(lemma, "verb").unwrap().unwrap()
+    plan = PlanWordCards(ws.config).execute(verb, 0, [], [], [slot.rsplit(".", 1)[0]]).unwrap()
+    plan = CardPlan(plan.word_hint, tuple(c for c in plan.cards if c.content["slot"] == slot), ())
+    CreateWordCards(ws.config).execute(plan, datetime(2026, 1, 1, tzinfo=UTC)).unwrap()
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_conjugation_card_shows_tense_and_person_and_grades_good_when_right(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_conjugation(built, "anrufen", "ind.pres.1sg")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        assert any("Conjugation" in line for line in lines)
+        assert any("anrufen  -  to call; to phone" in line for line in lines)
+        assert any("Präsens" in line for line in lines)
+        assert not any("TRENNBAR" in line or "split" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert str(app.screen.query_one("#lbl0").render()).strip() == "ich"
+        assert app.screen.query_one("#row0").display
+        assert not app.screen.query_one("#row1").display
+        assert not app.screen.query_one("#reveal", Button).display
+        assert_inside(app.screen, size)
+
+        await _type_fields(app, pilot, "rufe an")
+        assert _answers(built) == [(3, "rufe an")]
+        lines = static_lines(app.screen, "#card")
+        assert any(line.startswith("ich") and line.rstrip().endswith("ok") for line in lines)
+        assert any("RIGHT - graded Good" in line for line in lines)
+        assert not any("trennbar" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert not app.screen.query_one("#fields").display
+        assert app.screen.query_one("#cont", Button).display
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_a_wrong_conjugation_answer_is_graded_again_with_the_separable_note(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_conjugation(built, "anrufen", "ind.pres.1sg")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _type_fields(app, pilot, "rufe")
+        assert _answers(built) == [(1, "rufe")]
+        lines = static_lines(app.screen, "#card")
+        assert any(line.rstrip().endswith("WRONG") and "rufe" in line for line in lines)
+        assert any("-> rufe an" in line for line in lines)
+        assert any("WRONG - graded Again" in line for line in lines)
+        assert any("trennbar: the prefix an" in line for line in lines)
+        assert all(len(line) <= size[0] for line in lines)
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+def test_a_wrong_compound_conjugation_answer_shows_no_separable_note(built: Workspace) -> None:
+    _seed_conjugation(built, "anrufen", "ind.perf.1sg")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        assert any("Perfekt" in line for line in lines)
+        await _type_fields(app, pilot, "habe")
+        lines = static_lines(app.screen, "#card")
+        assert any("-> habe angerufen" in line for line in lines)
+        assert any("WRONG - graded Again" in line for line in lines)
+        assert not any("trennbar" in line for line in lines)
+
+    _drive(built, (40, 30), script)
+
+
+def test_a_conjugation_digraph_is_accepted(built: Workspace) -> None:
+    _seed_conjugation(built, "laufen", "ind.pres.2sg")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _type_fields(app, pilot, "laeufst")
         assert [r for r, _ in _answers(built)] == [3]
 
     _drive(built, (40, 30), script)
