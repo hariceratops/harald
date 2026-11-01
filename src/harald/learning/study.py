@@ -15,8 +15,11 @@ from harald.infrastructure.infra_errors import InfrastructureError
 from harald.infrastructure.transaction_context import DbTransactionContext
 from harald.learning.answers import (
     FieldCheck,
+    MeaningCheck,
+    MeaningGraded,
     StammformenCheck,
     check_conjugation,
+    check_meaning,
     check_stammformen,
 )
 from harald.learning.errors import CardNotFound, LearningDbError, StorageError
@@ -174,6 +177,37 @@ def answer_conjugation(
         checked = check_conjugation(card.content, given)
         rating = Rating.Good if checked.correct else Rating.Again
         return checked, Option.some(rating), given
+
+    return _answer_checked(ctx, card_id, now, session_id, duration_ms, scheduler_for, check)
+
+
+def answer_meaning(
+    ctx: DbTransactionContext,
+    card_id: int,
+    given: str,
+    first_try: str | None,
+    now: datetime,
+    session_id: str,
+    duration_ms: int | None,
+    scheduler_for: Callable[[str], Scheduler],
+) -> Result[MeaningCheck, LearningDbError]:
+    latest = (
+        select(Review.answer)
+        .where(Review.card_id == card_id)
+        .order_by(Review.reviewed_at.desc(), Review.id.desc())
+        .limit(1)
+    )
+    read = ctx.run(lambda s: s.scalar(latest)).map_err(_storage)
+    if read.is_err:
+        return Result.err(read.unwrap_err())
+    previous = read.unwrap()
+
+    def check(card: Card) -> tuple[MeaningCheck, Option[Rating], str]:
+        checked = check_meaning(card.content, given, first_try, previous)
+        rating = (
+            Option.some(checked.rating) if isinstance(checked, MeaningGraded) else Option.none()
+        )
+        return checked, rating, given if first_try is None else f"{first_try} | {given}"
 
     return _answer_checked(ctx, card_id, now, session_id, duration_ms, scheduler_for, check)
 

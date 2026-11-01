@@ -1,13 +1,27 @@
 import sqlite3
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+
+from fsrs import Rating
 
 from harald.core.option import Option
+from harald.core.result import Result
+from harald.learning.answers import ARTICLES
 from harald.learning.content import CardPlan
+from harald.learning.errors import LearningDbError
+from harald.learning.study import SummaryCounts
 from harald.lexicon.model import Headword, PrincipalParts
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 from harald.use_cases.lexicon import LoadHeadword
-from harald.use_cases.study import AnswerConjugation, NextCard
+from harald.use_cases.study import (
+    AnswerConjugation,
+    AnswerMeaning,
+    MeaningCheck,
+    MeaningGraded,
+    NextCard,
+    NoArticleStored,
+    SessionSummary,
+)
 from tests.conftest import Workspace
 
 NOW = datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
@@ -334,3 +348,156 @@ def test_answering_a_conjugation_card_grades_it_by_the_check(built: Workspace) -
         (3, "rufe an"),
         (1, "rufst"),
     ]
+
+
+def _add(
+    ws: Workspace,
+    lemma: str,
+    pos: str,
+    entry: int | None,
+    en: list[int],
+    de: list[tuple[int, int]],
+    card_type: str,
+) -> int:
+    plan = PlanWordCards(ws.config).execute(_headword(ws, lemma, pos), entry, en, de).unwrap()
+    CreateWordCards(ws.config).execute(plan, NOW).unwrap()
+    rows = _rows(
+        ws, f"SELECT id FROM card WHERE card_type = '{card_type}' ORDER BY id DESC LIMIT 1"
+    )
+    return int(str(rows[0][0]))
+
+
+def _meaning(
+    ws: Workspace, card_id: int, given: str, at: datetime = NOW, first_try: str | None = None
+) -> Result[MeaningCheck, LearningDbError]:
+    return AnswerMeaning(ws.config, enable_fuzzing=False).execute(
+        card_id, given, first_try, at, "s1", 1500
+    )
+
+
+def test_a_right_typed_meaning_is_graded_good(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "der Hund").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.word, checked.article) == (Rating.Good, "right", "right")
+    assert _rows(built, "SELECT rating, answer, duration_ms FROM review") == [(3, "der Hund", 1500)]
+
+
+def test_a_wrong_article_is_graded_hard_into_the_review_row(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "die Hund").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.article, checked.expected) == (Rating.Hard, "wrong", "der Hund")
+    assert _rows(built, "SELECT rating, answer FROM review") == [(2, "die Hund")]
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(1, 1)
+
+
+def test_a_wrong_word_is_graded_again_and_counts_as_missed(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "der Hnd").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Again
+    assert _rows(built, "SELECT rating, answer FROM review") == [(1, "der Hnd")]
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(1, 0)
+
+
+def test_an_empty_answer_is_graded_again(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    _meaning(built, card, "").unwrap()
+
+    assert _rows(built, "SELECT rating, answer FROM review") == [(1, "")]
+
+
+def test_a_wrong_article_twice_running_escalates_to_again(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+    later = NOW + timedelta(days=1)
+
+    first = _meaning(built, card, "Hund").unwrap()
+    second = _meaning(built, card, "die Hund", later).unwrap()
+    third = _meaning(built, card, "der Hund", later + timedelta(days=1)).unwrap()
+
+    assert [c.rating for c in (first, second, third) if isinstance(c, MeaningGraded)] == [
+        Rating.Hard,
+        Rating.Again,
+        Rating.Good,
+    ]
+    assert _rows(built, "SELECT rating FROM review ORDER BY id") == [(2,), (1,), (3,)]
+
+
+def test_a_wrong_word_between_resets_the_escalation(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    _meaning(built, card, "Hund").unwrap()
+    _meaning(built, card, "Katze", NOW + timedelta(days=1)).unwrap()
+    third = _meaning(built, card, "Hund", NOW + timedelta(days=2)).unwrap()
+
+    assert isinstance(third, MeaningGraded)
+    assert third.rating == Rating.Hard
+
+
+def test_a_noun_without_gender_typed_with_an_article_is_refused_and_writes_nothing(
+    built: Workspace,
+) -> None:
+    card = _add(built, "Fernweh", "noun", None, [], [(0, 0)], "meaning_de_de")
+    before = _rows(built, "SELECT due, fsrs_state, last_review FROM card")
+
+    checked = _meaning(built, card, "das Fernweh").unwrap()
+
+    assert checked == NoArticleStored()
+    assert _rows(built, "SELECT COUNT(*) FROM review") == [(0,)]
+    assert _rows(built, "SELECT due, fsrs_state, last_review FROM card") == before
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(0, 0)
+
+
+def test_a_noun_without_gender_typed_alone_is_good(built: Workspace) -> None:
+    card = _add(built, "Fernweh", "noun", None, [], [(0, 0)], "meaning_de_de")
+
+    checked = _meaning(built, card, "Fernweh").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.article) == (Rating.Good, "not_asked")
+
+
+def test_a_proper_noun_ignores_the_article(built: Workspace) -> None:
+    card = _add(built, "Berlin", "name", 0, [0], [], "meaning_en_de")
+
+    with_article = _meaning(built, card, "der Berlin").unwrap()
+    alone = _meaning(built, card, "Berlin", NOW + timedelta(days=1)).unwrap()
+
+    assert [c.rating for c in (with_article, alone) if isinstance(c, MeaningGraded)] == [
+        Rating.Good,
+        Rating.Good,
+    ]
+
+
+def test_a_homograph_accepts_the_gender_of_its_own_entry(built: Workspace) -> None:
+    band = _add(built, "Band", "noun", 0, [0], [], "meaning_en_de")
+    entry_gender = str(
+        _rows(built, f"SELECT json_extract(content, '$.gender') FROM card WHERE id = {band}")[0][0]
+    )
+
+    checked = _meaning(built, band, f"{ARTICLES[entry_gender]} Band").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Good
+
+
+def test_a_retry_stores_both_tries_and_is_capped_at_hard(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "der Hund", first_try="Katze").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Hard
+    assert _rows(built, "SELECT rating, answer FROM review") == [(2, "Katze | der Hund")]
+
+
+def test_answering_an_unknown_card_is_an_error(built: Workspace) -> None:
+    assert _meaning(built, 999, "Hund").is_err

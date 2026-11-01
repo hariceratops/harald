@@ -12,8 +12,9 @@ _TO_DIGRAPHS = str.maketrans(
 )
 
 
-def answer_matches(given: str, expected: str) -> bool:
-    def normal(s: str) -> str:
-        return " ".join(unicodedata.normalize("NFC", s).split()).translate(_TO_DIGRAPHS)
+def normalise_answer(s: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", s).split()).translate(_TO_DIGRAPHS)
 
-    return normal(given) == normal(expected)
+
+def answer_matches(given: str, expected: str) -> bool:
+    return normalise_answer(given) == normalise_answer(expected)

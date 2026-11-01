@@ -4,7 +4,11 @@ from harald.config import Config
 from harald.core.option import Option
 from harald.core.result import Result
 from harald.learning.answers import FieldCheck as FieldCheck
+from harald.learning.answers import MeaningCheck as MeaningCheck
+from harald.learning.answers import MeaningGraded as MeaningGraded
+from harald.learning.answers import NoArticleStored as NoArticleStored
 from harald.learning.answers import StammformenCheck as StammformenCheck
+from harald.learning.answers import TryAgain as TryAgain
 from harald.learning.db import transact
 from harald.learning.errors import LearningDbError
 from harald.learning.models import Card
@@ -12,6 +16,7 @@ from harald.learning.scheduling import scheduler_for
 from harald.learning.study import (
     SummaryCounts,
     answer_conjugation,
+    answer_meaning,
     answer_stammformen,
     grade_card,
     next_card,
@@ -102,6 +107,35 @@ class AnswerConjugation:
                 ctx,
                 card_id,
                 given,
+                now,
+                session_id,
+                duration_ms,
+                lambda scope: scheduler_for(scope, self._enable_fuzzing),
+            ),
+        )
+
+
+class AnswerMeaning:
+    def __init__(self, config: Config, enable_fuzzing: bool = True) -> None:
+        self._config = config
+        self._enable_fuzzing = enable_fuzzing
+
+    def execute(
+        self,
+        card_id: int,
+        given: str,
+        first_try: str | None,
+        now: datetime,
+        session_id: str,
+        duration_ms: int | None = None,
+    ) -> Result[MeaningCheck, LearningDbError]:
+        return transact(
+            self._config.learning_db,
+            lambda ctx: answer_meaning(
+                ctx,
+                card_id,
+                given,
+                first_try,
                 now,
                 session_id,
                 duration_ms,
