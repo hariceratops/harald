@@ -23,7 +23,7 @@ def _canonical(content: object) -> str:
     return json.dumps(content, sort_keys=True, ensure_ascii=False)
 
 
-_ONCE_PER_WORD = ("article", "stammformen")
+_ONCE_PER_WORD = ("stammformen",)
 
 
 def _key(card_type: str, content: dict[str, Any]) -> tuple[str, str]:

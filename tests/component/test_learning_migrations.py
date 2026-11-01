@@ -1,3 +1,4 @@
+import re
 import shutil
 import sqlite3
 from collections.abc import Callable, Iterator
@@ -11,6 +12,7 @@ from alembic.script import ScriptDirectory
 from harald.learning import migrate
 from harald.learning.db import open_learning_db
 from harald.learning.errors import LearningDbTooNew, MigrationFailed, NotALearningDb
+from harald.learning.models import CARD_TYPES
 
 EXPECTED_TABLES = {
     "alembic_version",
@@ -107,6 +109,18 @@ def test_fresh_path_is_created_complete_without_a_backup(tmp_path: Path) -> None
     assert EXPECTED_INDEXES <= _names(path, "index")
     assert _revision(path) == migrate.HEAD
     assert not list(tmp_path.glob("*.bak"))
+
+
+def test_the_card_type_check_lists_exactly_the_card_types(tmp_path: Path) -> None:
+    path = tmp_path / "learning.db"
+    open_learning_db(path).unwrap().close()
+
+    with sqlite3.connect(path) as db:
+        (sql,) = db.execute("SELECT sql FROM sqlite_master WHERE name = 'card'").fetchone()
+
+    listed = re.search(r"card_type IN \(([^)]*)\)", sql)
+    assert listed is not None
+    assert set(re.findall(r"'([^']+)'", listed.group(1))) == set(CARD_TYPES)
 
 
 def test_runtime_connection_has_the_designed_pragmas(tmp_path: Path) -> None:

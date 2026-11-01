@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from fsrs import Scheduler
 
-from harald.learning.content import CardPlan
+from harald.learning.models import CARD_TYPES
 from harald.learning.scheduling import CARD_SCOPE, scheduler_for
 from harald.lexicon.model import Headword
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
@@ -18,8 +18,7 @@ AGAIN, GOOD = 1, 3
 def _add(ws: Workspace, sense: int = 0) -> list[int]:
     hund: Headword = LoadHeadword(ws.config).execute("Hund", "noun").unwrap().unwrap()
     planned = PlanWordCards(ws.config).execute(hund, 0, [sense], []).unwrap()
-    plan = CardPlan(planned.word_hint, tuple(c for c in planned.cards if c.card_type != "article"))
-    return CreateWordCards(ws.config).execute(plan, T0).unwrap()
+    return CreateWordCards(ws.config).execute(planned, T0).unwrap()
 
 
 def _next(ws: Workspace, now: datetime) -> int | None:
@@ -28,12 +27,12 @@ def _next(ws: Workspace, now: datetime) -> int | None:
 
 def test_every_card_type_has_a_scope_and_meaning_cards_share_one() -> None:
     assert CARD_SCOPE["meaning_de_en"] == CARD_SCOPE["meaning_en_de"] == CARD_SCOPE["meaning_de_de"]
-    assert CARD_SCOPE["article"] != CARD_SCOPE["meaning_de_en"]
+    assert set(CARD_SCOPE) == set(CARD_TYPES)
 
 
 def test_schedulers_are_cached_per_scope_with_default_parameters() -> None:
     assert scheduler_for("meaning") is scheduler_for("meaning")
-    assert scheduler_for("meaning") is not scheduler_for("article")
+    assert scheduler_for("meaning") is not scheduler_for("phrase")
     assert scheduler_for("meaning").parameters == Scheduler().parameters
 
 

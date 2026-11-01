@@ -45,7 +45,6 @@ def test_add_word_creates_both_meaning_cards(built: Workspace, size: tuple[int, 
         lines = static_lines(app.screen, "#summary")
         assert any("1 x German -> English" in line for line in lines)
         assert any("1 x English -> German" in line for line in lines)
-        assert any("1 x Article" in line for line in lines)
         assert all(len(line) <= size[0] for line in lines)
         assert_inside(app.screen, size)
         assert _cards(built) == []
@@ -53,7 +52,7 @@ def test_add_word_creates_both_meaning_cards(built: Workspace, size: tuple[int, 
         await pilot.press("c")
         await pilot.pause()
         assert isinstance(app.screen, EntryScreen)
-        assert [t for t, _ in _cards(built)] == ["meaning_de_en", "meaning_en_de", "article"]
+        assert [t for t, _ in _cards(built)] == ["meaning_de_en", "meaning_en_de"]
 
     _drive(built, size, script)
 
@@ -74,7 +73,7 @@ def test_senses_that_already_have_cards_are_marked(built: Workspace) -> None:
         await pilot.press("c")
         await pilot.pause()
         assert isinstance(app.screen, AddWordScreen)
-        assert len(_cards(built)) == 3
+        assert len(_cards(built)) == 2
 
     _drive(built, (40, 30), script)
 
@@ -98,7 +97,6 @@ def test_a_headword_with_several_entries_asks_which_one(built: Workspace) -> Non
         await pilot.press("c")
         await pilot.pause()
         assert sorted(t for t, _ in _cards(built)) == [
-            "article",
             "meaning_de_de",
             "meaning_de_en",
             "meaning_en_de",
@@ -161,7 +159,7 @@ def test_a_german_only_headword_goes_straight_to_the_german_step(built: Workspac
 
 
 @pytest.mark.parametrize("size", SIZES)
-def test_a_noun_without_gender_shows_the_refusal_and_still_creates_the_rest(
+def test_a_noun_without_gender_shows_no_refusal_and_creates_its_card(
     built: Workspace, size: tuple[int, int]
 ) -> None:
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
@@ -169,7 +167,7 @@ def test_a_noun_without_gender_shows_the_refusal_and_still_creates_the_rest(
         await pilot.press("a", "space", "n")
         await pilot.pause()
         lines = static_lines(app.screen, "#summary")
-        assert any("Article - missing: gender" in line for line in lines)
+        assert not any("missing" in line for line in lines)
         assert all(len(line) <= size[0] for line in lines)
         assert_inside(app.screen, size)
         await pilot.press("c")

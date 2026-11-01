@@ -166,103 +166,6 @@ def _answers(ws: Workspace) -> list[tuple[int, str]]:
         return db.execute("SELECT rating, answer FROM review ORDER BY id").fetchall()
 
 
-@pytest.mark.parametrize("size", SIZES)
-def test_article_card_is_answered_with_one_key_and_shows_feedback(
-    built: Workspace, size: tuple[int, int]
-) -> None:
-    _seed(built, ("article",))
-
-    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
-        await pilot.press("s")
-        await pilot.pause()
-        lines = static_lines(app.screen, "#card")
-        assert any("Article" in line for line in lines)
-        assert any("Hund   (pl. Hunde)" in line for line in lines)
-        assert any("dog (Canis familiaris)" in line for line in lines)
-        assert all(len(line) <= size[0] for line in lines)
-        assert not app.screen.query_one("#reveal", Button).display
-        assert all(app.screen.query_one(f"#art{n}", Button).display for n in (1, 2, 3))
-        assert not app.screen.query_one("#cont", Button).display
-        assert_inside(app.screen, size)
-
-        await pilot.press("space", "4")
-        await pilot.pause()
-        assert _reviews(built) == []
-
-        await pilot.press("2")
-        await pilot.pause()
-        assert _answers(built) == [(1, "die")]
-        lines = static_lines(app.screen, "#card")
-        assert any("WRONG   der Hund" in line for line in lines)
-        assert any("(you chose: die)" in line for line in lines)
-        assert all(len(line) <= size[0] for line in lines)
-        assert app.screen.query_one("#cont", Button).display
-        assert not app.screen.query_one("#art1", Button).display
-        assert_inside(app.screen, size)
-
-        await pilot.press("1")
-        await pilot.pause()
-        assert len(_reviews(built)) == 1
-
-        await pilot.press("enter")
-        await pilot.pause()
-        # the lapsed card is inside the learn-ahead window, so it comes straight back
-        assert isinstance(app.screen, StudyScreen)
-        assert not app.screen.query_one("#cont", Button).display
-        assert app.screen.query_one("#art1", Button).display
-        await pilot.press("escape")
-        await pilot.pause()
-        assert isinstance(app.screen, SummaryScreen)
-        assert any("1 card reviewed" in x for x in static_lines(app.screen, "#summary"))
-        assert any("0 answered correctly" in x for x in static_lines(app.screen, "#summary"))
-
-    _drive(built, size, script)
-
-
-def test_a_correct_article_is_good_and_space_continues(built: Workspace) -> None:
-    _seed(built, ("article",))
-
-    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
-        await pilot.press("s")
-        await pilot.press("1")
-        await pilot.pause()
-        assert _answers(built) == [(3, "der")]
-        assert any("RIGHT   der Hund" in x for x in static_lines(app.screen, "#card"))
-        await pilot.press("space")
-        await pilot.pause()
-        assert app.screen.query_one("#art1", Button).display
-        assert not app.screen.query_one("#cont", Button).display
-
-    _drive(built, (40, 30), script)
-
-
-def test_article_buttons_answer_and_ignore_a_tap_right_after_they_appear(
-    built: Workspace, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 1.0)
-    _seed(built, ("article",))
-
-    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
-        await pilot.press("s")
-        await pilot.pause()
-        await pilot.click("#art1")
-        await pilot.pause()
-        assert _reviews(built) == []
-        await asyncio.sleep(1.05)
-        await pilot.click("#art1")
-        await pilot.pause()
-        assert _answers(built) == [(3, "der")]
-        await pilot.click("#cont")
-        await pilot.pause()
-        assert app.screen.query_one("#cont", Button).display
-        await asyncio.sleep(1.05)
-        await pilot.click("#cont")
-        await pilot.pause()
-        assert not app.screen.query_one("#cont", Button).display
-
-    _drive(built, (40, 30), script)
-
-
 def _seed_verb(ws: Workspace, lemma: str = "anrufen") -> None:
     verb = LoadHeadword(ws.config).execute(lemma, "verb").unwrap().unwrap()
     plan = PlanWordCards(ws.config).execute(verb, 0, [0], []).unwrap()
@@ -278,6 +181,28 @@ async def _type_fields(app: HaraldApp, pilot: Pilot[None], *forms: str) -> None:
             await pilot.press("space" if ch == " " else ch)
         await pilot.press("enter")
     await pilot.pause()
+
+
+def test_stammformen_next_button_ignores_a_tap_right_after_it_appears(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 1.0)
+    _seed_verb(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _type_fields(app, pilot, "ruft an", "rief an", "hat angerufen")
+        assert len(_reviews(built)) == 1
+        await pilot.click("#cont")
+        await pilot.pause()
+        assert app.screen.query_one("#cont", Button).display
+        await asyncio.sleep(1.05)
+        await pilot.click("#cont")
+        await pilot.pause()
+        assert not app.screen.query_one("#cont", Button).display
+
+    _drive(built, (40, 30), script)
 
 
 @pytest.mark.parametrize("size", SIZES)

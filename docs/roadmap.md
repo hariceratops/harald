@@ -18,7 +18,6 @@ Each item is a vertical slice; the numbers are the issue files in
 
 - [ ] 009 TUI browsing, verified in Termux (built; the Termux checks are outstanding)
 - [ ] 010 Add a word; meaning cards and study (built; awaiting confirmation)
-- [ ] 011 Article cards (built; awaiting confirmation)
 - [ ] 012 Stammformen cards (built; awaiting confirmation)
 - [ ] 013 Per-tense, per-person conjugation cards (built; awaiting confirmation)
 - [ ] 014 German → German cards (built; awaiting confirmation)

@@ -80,7 +80,7 @@ def upgrade() -> None:
         sa.Column("link_state", sa.Text(), server_default="linked", nullable=False),
         sa.Column("check_ack", sa.Text(), nullable=True),
         sa.CheckConstraint(
-            "card_type IN ('meaning_de_en','meaning_en_de','meaning_de_de','article','stammformen','conjugation','phrase_en_de')",  # noqa: E501
+            "card_type IN ('meaning_de_en','meaning_en_de','meaning_de_de','stammformen','conjugation','phrase_en_de')",  # noqa: E501
             name="card_type_valid",
         ),
         sa.CheckConstraint("link_state IN ('linked','unlinked')", name="link_state_valid"),

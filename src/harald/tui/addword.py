@@ -19,7 +19,6 @@ _CARD_NAMES = {
     "meaning_de_en": "German -> English",
     "meaning_en_de": "English -> German",
     "meaning_de_de": "German -> German",
-    "article": "Article",
     "stammformen": "Stammformen",
     "conjugation": "Conjugation",
 }

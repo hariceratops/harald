@@ -14,10 +14,8 @@ from harald.infrastructure.crud import crud_create, crud_update
 from harald.infrastructure.infra_errors import InfrastructureError
 from harald.infrastructure.transaction_context import DbTransactionContext
 from harald.learning.answers import (
-    ArticleCheck,
     FieldCheck,
     StammformenCheck,
-    check_article,
     check_conjugation,
     check_stammformen,
 )
@@ -143,22 +141,6 @@ def _answer_checked[T](
     if graded.is_err:
         return Result.err(graded.unwrap_err())
     return Result.ok(checked)
-
-
-def answer_article(
-    ctx: DbTransactionContext,
-    card_id: int,
-    chosen: str,
-    now: datetime,
-    session_id: str,
-    duration_ms: int | None,
-    scheduler_for: Callable[[str], Scheduler],
-) -> Result[ArticleCheck, LearningDbError]:
-    def check(card: Card) -> tuple[ArticleCheck, bool, str]:
-        checked = check_article(card.content["gender"], chosen)
-        return checked, checked.correct, chosen
-
-    return _answer_checked(ctx, card_id, now, session_id, duration_ms, scheduler_for, check)
 
 
 def answer_stammformen(

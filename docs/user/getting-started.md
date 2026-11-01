@@ -55,12 +55,8 @@ Studying shows the next due card. On a meaning card, type your answer first
 and press `enter`: the card then shows what you typed above the real answer,
 and `1` Again or `2` Good grades it; each grade is saved at once. Pressing
 `enter` with nothing typed counts as not knowing and is graded Again. On
-a touch screen the same actions are buttons. Adding a noun also adds an
-article card: press `1` der, `2` die or `3` das, read the result, then
-`enter` or `space` continues; a right answer counts as Good, a wrong one as
-Again. A noun with no gender in the data is refused an article card, and the
-confirm step says so. Adding a verb also adds a Stammformen card: type the
-3rd person singular present, the Präteritum and the Perfekt (`hat` or `ist`
+a touch screen the same actions are buttons. Adding a verb also adds a
+Stammformen card: type the 3rd person singular present, the Präteritum and the Perfekt (`hat` or `ist`
 plus the Partizip II), moving between the three fields with `enter`; `ae`,
 `oe`, `ue` and `ss` are accepted for `ä`, `ö`, `ü` and `ß`, and the card
 says so under the fields. A verb whose data lacks a form is refused the card
