@@ -58,6 +58,11 @@ leaves the row as it was. The box warns `Contains the word - Enter keeps it` whe
 the note includes the word itself, but it still keeps the note. A sense that
 already has cards takes no note.
 
+The note shows on the study screen as one dim row in parentheses, under the part
+of speech and above the example. It is on the front and stays through the reveal,
+the check, the retry and the verdict, on both cards of an English sense and on a
+German to German card. A note too long for the screen is cut to one row.
+
 Studying shows the next due card. On a German to English card, type your
 answer first and press `enter`: the card then shows what you typed above the real answer, and `1` Again or `2` Good grades it; each grade
 is saved at once. Pressing `enter` with nothing typed counts as not knowing

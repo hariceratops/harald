@@ -1065,3 +1065,255 @@ def test_the_retry_reuses_the_check_button_and_its_tap_guard(
 
 def _content_rows(body: Widget) -> int:
     return sum(child.outer_size.height for child in body.children if child.display)
+
+
+_SHORT_EXAMPLE = {"text": "Der Hund bellt.", "translation": "The dog barks."}
+_NOTE = "the animal, not the slang"
+_LONG_EXAMPLE = {
+    "text": "Der Hund bellt jeden Morgen so laut, dass die ganze Nachbarschaft davon wach wird.",
+    "translation": "The dog barks so loudly every morning that the whole neighbourhood wakes up.",
+}
+
+
+def _note_rows(lines: list[str]) -> list[int]:
+    return [i for i, line in enumerate(lines) if f"({_NOTE})" in line]
+
+
+def _without_note(lines: list[str]) -> list[str]:
+    return [line for line in lines if f"({_NOTE})" not in line]
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_a_note_sits_under_the_pos_and_above_the_example_on_a_german_english_front(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed(built, ("meaning_de_en",))
+    _edit_card(built, note=_NOTE)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = [line.strip() for line in static_lines(app.screen, "#card")]
+        [at] = _note_rows(lines)
+        assert lines[at - 1] == "noun"
+        assert "Der Hund bellt." in lines[at + 1 :]
+        assert max(len(line) for line in lines) <= size[0]
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_a_note_sits_under_the_pos_and_above_the_example_on_an_english_german_front(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_en_de(built, note=_NOTE)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = [line.strip() for line in static_lines(app.screen, "#card")]
+        [at] = _note_rows(lines)
+        assert lines[at - 1] == "noun"
+        assert "The dog barks." in lines[at + 1 :]
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_the_german_english_front_with_a_note_and_a_three_row_example_fits(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed(built, ("meaning_de_en",))
+    _edit_card(built, note=_NOTE, example=_LONG_EXAMPLE)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = static_lines(app.screen, "#card")
+        assert len(_note_rows([line.strip() for line in lines])) == 1
+        assert any("Nachbarschaft" in line for line in lines)
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_the_note_stays_after_the_reveal(built: Workspace, size: tuple[int, int]) -> None:
+    _seed(built, ("meaning_de_en",))
+    _edit_card(built, note=_NOTE)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press(*"dog", "enter")
+        await pilot.pause()
+        lines = [line.strip() for line in static_lines(app.screen, "#card")]
+        [at] = _note_rows(lines)
+        assert lines[at - 1] == "noun"
+        assert lines.index("you: dog") > at
+        assert max(len(line) for line in lines) <= size[0]
+        if size[1] > 12:
+            assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_a_card_without_a_note_renders_as_before(built: Workspace, size: tuple[int, int]) -> None:
+    _seed(built, ("meaning_de_en",))
+    seen: dict[str, list[str]] = {}
+
+    async def front_and_back(app: HaraldApp, pilot: Pilot[None], key: str) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        front = static_lines(app.screen, "#card")
+        await pilot.press(*"dog", "enter")
+        await pilot.pause()
+        seen[key] = [*front, "", *static_lines(app.screen, "#card")]
+
+    async def plain(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await front_and_back(app, pilot, "plain")
+
+    _drive(built, size, plain)
+    _edit_card(built, note=_NOTE)
+
+    async def noted(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await front_and_back(app, pilot, "noted")
+
+    _drive(built, size, noted)
+    assert len(seen["noted"]) == len(seen["plain"]) + 2
+    assert _without_note(seen["noted"]) == seen["plain"]
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_both_cards_of_a_sense_carry_its_note(built: Workspace, size: tuple[int, int]) -> None:
+    hund = LoadHeadword(built.config).execute("Hund", "noun").unwrap().unwrap()
+    plan = PlanWordCards(built.config).execute(hund, 0, [0], [], [], {0: _NOTE}).unwrap()
+    CreateWordCards(built.config).execute(plan, datetime(2026, 1, 1, tzinfo=UTC)).unwrap()
+    headings: list[str] = []
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        for _ in range(2):
+            lines = static_lines(app.screen, "#card")
+            headings.append(lines[0].strip())
+            assert len(_note_rows([line.strip() for line in lines])) == 1
+            await pilot.press("enter")
+            await pilot.pause()
+            await asyncio.sleep(0.35)
+            await pilot.press("enter")
+            await pilot.pause()
+
+    _drive(built, size, script)
+    assert sorted(headings) == ["English -> German", "German -> English"]
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_a_german_german_card_carries_its_note(built: Workspace, size: tuple[int, int]) -> None:
+    _seed_de_de(built)
+    _edit_card(built, note=_NOTE)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = [line.strip() for line in static_lines(app.screen, "#card")]
+        [at] = _note_rows(lines)
+        assert lines[at - 1] == "noun"
+        assert_inside(app.screen, size)
+        await _check(pilot, "das Fernweh")
+        lines = [line.strip() for line in static_lines(app.screen, "#card")]
+        assert len(_note_rows(lines)) == 1
+        if size[1] > 12:
+            assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_the_note_stays_through_a_retry_and_the_verdict(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_en_de(built, note=_NOTE)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "die Katze")
+        assert _cue(app) == "Another noun. Try: H _ _ _"
+        assert len(_note_rows([line.strip() for line in static_lines(app.screen, "#card")])) == 1
+        assert_inside(app.screen, size)
+        await asyncio.sleep(0.35)
+        await _check(pilot, "der Hund")
+        assert len(_note_rows([line.strip() for line in static_lines(app.screen, "#card")])) == 1
+        if size[1] > 12:
+            assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+def test_a_note_longer_than_a_row_is_cut_to_one_row(built: Workspace) -> None:
+    _seed(built, ("meaning_de_en",))
+    _edit_card(built, note="x" * 80)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        lines = [line.strip() for line in static_lines(app.screen, "#card")]
+        [cut] = [line for line in lines if line.startswith("(x")]
+        assert cut.endswith("...)") and len(cut) <= 38
+        assert_inside(app.screen, (40, 30))
+
+    _drive(built, (40, 30), script)
+
+
+def test_a_36_character_note_fits_a_40_column_row_whole(built: Workspace) -> None:
+    note = "n" * 36
+    _seed(built, ("meaning_de_en",))
+    _edit_card(built, note=note)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        for size in ((40, 30), (40, 12)):
+            await pilot.resize_terminal(*size)
+            await pilot.pause()
+            assert f"({note})" in [line.strip() for line in static_lines(app.screen, "#card")]
+
+    _drive(built, (40, 30), script)
+
+
+def test_note_on_german_english_after_reveal_at_40x12(built: Workspace) -> None:
+    """D42/P64: the overflow in rows after the reveal, with and without a note.
+
+    It does not use assert_inside: that fails on vertical scrolling, which is the
+    thing measured here and which the design accepts. Only the difference is asserted.
+    """
+    _seed(built, ("meaning_de_en",))
+    measured: dict[tuple[str, str], tuple[int, int, int]] = {}
+    run: dict[str, tuple[int, int, int]] = {}
+
+    async def reveal(app: HaraldApp, pilot: Pilot[None]) -> tuple[int, int, int]:
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press(*"dog", "enter")
+        await pilot.pause()
+        body = app.screen.query_one("#body")
+        return body.max_scroll_y, _content_rows(body), body.size.height
+
+    for example, content in (("short", None), ("three rows", _LONG_EXAMPLE)):
+        for noted in (False, True):
+            _edit_card(built, note=_NOTE if noted else _GONE, example=content or _SHORT_EXAMPLE)
+
+            async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+                run["rows"] = await reveal(app, pilot)
+
+            _drive(built, (40, 12), script)
+            measured["with" if noted else "without", example] = run["rows"]
+
+    print(f"(max_scroll_y, rows used, body height): {measured}")
+    for example in ("short", "three rows"):
+        with_note, without = measured["with", example], measured["without", example]
+        assert with_note[1] - without[1] == 1, (example, with_note, without)

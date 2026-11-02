@@ -1,5 +1,6 @@
 import time
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -49,13 +50,31 @@ def _gloss(content: dict[str, Any]) -> str:
     return f"[{', '.join(labels)}] {content['gloss']}" if labels else str(content["gloss"])
 
 
-def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str], list[str]]:
+def _note_line(content: dict[str, Any], width: int) -> list[Text]:
+    note = content.get("note")
+    if not note:
+        return []
+    # one row only: a note longer than the body is cut, never wrapped
+    room = width - 2
+    cut = note if len(note) <= room else note[: room - 3].rstrip() + "..."
+    return [Text(f"({cut})", style="dim")]
+
+
+def _card_faces(
+    card_type: str, content: dict[str, Any], width: int
+) -> tuple[str, Sequence[str | Text], list[str]]:
     """Heading, front lines, back lines."""
     example = content.get("example") or {}
+    note = _note_line(content, width)
     if card_type == "meaning_de_en":
         return (
             "German -> English",
-            [_word(content), content["pos"], *([""] + [example["text"]] if example else [])],
+            [
+                _word(content),
+                content["pos"],
+                *note,
+                *([""] + [example["text"]] if example else []),
+            ],
             [_gloss(content), *([example["translation"]] if example else [])],
         )
     if card_type == "meaning_en_de":
@@ -64,6 +83,7 @@ def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str]
             [
                 _gloss(content),
                 *([content["pos"]] if content.get("pos") else []),
+                *note,
                 *([""] + [example["translation"]] if example else []),
             ],
             [_word(content), *([example["text"]] if example else [])],
@@ -71,7 +91,7 @@ def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str]
     if card_type == "meaning_de_de":
         return (
             "German -> German",
-            [content["definition"], *([content["pos"]] if content.get("pos") else [])],
+            [content["definition"], *([content["pos"]] if content.get("pos") else []), *note],
             [_word(content)],
         )
     if card_type == "stammformen":
@@ -265,7 +285,7 @@ class StudyScreen(Screen[None]):
         _, card_type, content = self._card
         typed = card_type in _TYPED
         meaning = card_type in _CHECKED_MEANING
-        heading, front, back = _card_faces(card_type, content)
+        heading, front, back = _card_faces(card_type, content, self.size.width - 2)
         if self._expected is not None:
             back[0] = self._expected
         short = self.has_class("-short")
@@ -278,7 +298,9 @@ class StudyScreen(Screen[None]):
         parts: list[RenderableType] = [
             Text(heading, style="dim", justify="center"),
             *gap,
-            Text("\n".join(front), justify="center"),
+            Text("\n", justify="center").join(
+                line if isinstance(line, Text) else Text(line) for line in front
+            ),
         ]
         if self._feedback is not None:
             parts += [
