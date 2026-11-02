@@ -31,7 +31,10 @@ Working today:
 - `harald` opens a Textual TUI for German lookup and entry
   browsing, down to 40 columns. Not yet verified on the phone.
 - In the TUI, `a` on an entry adds meaning cards for chosen senses, and `s` on
-  Home studies due cards, graded Again or Good (FSRS) and a session summary.
+  Home studies due cards (FSRS) and a session summary. English → German and
+  German → German cards are typed and checked, with the article typed with a
+  noun; the other cards are self-graded, Again or Good. `h` in the Add word
+  pickers adds a note to a sense.
 
 Planned: Tatoeba phrase search,
 `harald-cli check`, backups. See the [roadmap](#roadmap).
@@ -88,6 +91,7 @@ Test layers, build internals and workflow are in the
 - [ ] Add a word; meaning cards and study (built; awaiting confirmation)
 - [ ] Stammformen and per-tense conjugation cards (built; awaiting confirmation)
 - [ ] German → German cards (built; awaiting confirmation)
+- [ ] Typed checking of English → German and German → German answers, and notes on senses (built; awaiting confirmation)
 - [ ] New-card cap and sibling burying
 - [ ] Decks
 - [ ] Edit, suspend, delete cards
