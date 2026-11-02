@@ -39,6 +39,26 @@ def _candidate_keys(lang: str, key: str) -> Select[int, str]:
     )
 
 
+def _known_word_query(key: str) -> Select[str, str, int]:
+    return (
+        select(Headword.lemma, Headword.pos, KeyHeadword.kind)
+        .select_from(SearchKey)
+        .join(KeyHeadword, KeyHeadword.key_id == SearchKey.id)
+        .join(Headword, Headword.id == KeyHeadword.headword_id)
+        .where(SearchKey.lang == "de", SearchKey.key == key)
+        .order_by(Headword.lemma, Headword.pos)
+    )
+
+
+def known_words(lex: Lexicon, word: str) -> tuple[model.KnownWord, ...]:
+    key = fold(" ".join(word.split()))
+    with lex.sessions() as session:
+        return tuple(
+            model.KnownWord(lemma, pos, kind == 1)
+            for lemma, pos, kind in session.execute(_known_word_query(key))
+        )
+
+
 def _key_distances(session: Session, lang: str, key: str) -> dict[int, int]:
     limit = max_distance(key)
     candidates = session.execute(_candidate_keys(lang, key)).all()

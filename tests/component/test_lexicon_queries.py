@@ -3,7 +3,14 @@ from sqlalchemy import text
 
 from harald.lexicon.db import open_lexicon
 from harald.lexicon.errors import LexiconMissing, NotALexicon, SchemaMismatch
-from harald.lexicon.lookup import _candidate_keys, lookup_de, lookup_en
+from harald.lexicon.lookup import (
+    _candidate_keys,
+    _known_word_query,
+    known_words,
+    lookup_de,
+    lookup_en,
+)
+from harald.lexicon.model import KnownWord
 from harald.lexicon.schema import SCHEMA_VERSION
 from tests.conftest import Workspace
 
@@ -198,3 +205,32 @@ def test_fuzzy_candidates_are_driven_from_fuzzy_delete(built: Workspace) -> None
 
     # scanning search_key by language first took ~4 s on the real 1.2M-key lexicon
     assert plan[0].startswith("SEARCH fuzzy_delete"), plan
+
+
+def test_known_words_for_a_lemma_an_inflected_form_and_an_unknown_string(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    assert known_words(lex, "Hund") == (KnownWord("Hund", "noun", False),)
+    assert known_words(lex, "  hunde ") == (KnownWord("Hund", "noun", True),)
+    assert known_words(lex, "Katze") == (KnownWord("Katze", "noun", False),)
+    assert known_words(lex, "Hnud") == ()
+    assert known_words(lex, "dog") == ()
+
+
+def test_known_words_returns_every_headword_with_the_folded_key(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+
+    assert set(known_words(lex, "essen")) == {
+        KnownWord("essen", "verb", False),
+        KnownWord("Essen", "noun", False),
+    }
+
+
+def test_known_word_query_opens_on_the_lang_key_index(built: Workspace) -> None:
+    lex = open_lexicon(built.config.lexicon).unwrap()
+    sql = str(_known_word_query("hund").compile(compile_kwargs={"literal_binds": True}))
+
+    with lex.sessions() as session:
+        plan = [row[3] for row in session.execute(text("EXPLAIN QUERY PLAN " + sql))]
+
+    assert "search_key_lang_key" in plan[0], plan
