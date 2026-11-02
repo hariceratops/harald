@@ -10,6 +10,7 @@ ALLOWED = (
     "harald.tui",
     "harald.config",
     "harald.core.result",
+    "harald.text",
     "harald.lexicon.errors",
     "harald.lexicon.model",
 )

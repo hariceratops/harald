@@ -51,6 +51,13 @@ German to German card), then confirm with `c`. Senses that already have cards
 are marked. `n` and `b` move between steps, `space` toggles a sense; each step says so
 under its title. Confirming with nothing ticked says that nothing was ticked.
 
+On an English sense or a German definition, `h` opens a one-line note (up to 36
+characters), such as a hint about which near-synonym you mean. `enter` keeps it,
+marks the row `+ note` and ticks it; `enter` on an empty note removes it and `esc`
+leaves the row as it was. The box warns `Contains the word - Enter keeps it` when
+the note includes the word itself, but it still keeps the note. A sense that
+already has cards takes no note.
+
 Studying shows the next due card. On a German to English card, type your
 answer first and press `enter`: the card then shows what you typed above the real answer, and `1` Again or `2` Good grades it; each grade
 is saved at once. Pressing `enter` with nothing typed counts as not knowing
