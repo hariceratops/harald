@@ -34,7 +34,7 @@ _GRADES = ((1, "Again"), (2, "Good"))
 _RATING = {1: 1, 2: 3}
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
 _TYPED = ("stammformen", "conjugation")
-_CHECKED_MEANING = ("meaning_en_de",)
+_CHECKED_MEANING = ("meaning_en_de", "meaning_de_de")
 _DIGRAPHS = "ae/oe/ue/ss are accepted for ä/ö/ü/ß"
 _STAMM_LABELS = ("er/sie/es", "Präteritum", "Perfekt")
 
@@ -69,7 +69,11 @@ def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str]
             [_word(content), *([example["text"]] if example else [])],
         )
     if card_type == "meaning_de_de":
-        return "German -> German", [content["definition"]], [_word(content)]
+        return (
+            "German -> German",
+            [content["definition"], *([content["pos"]] if content.get("pos") else [])],
+            [_word(content)],
+        )
     if card_type == "stammformen":
         front = [f"{content['infinitive']}  -  {content['hint']}"]
         return "Stammformen", front, []

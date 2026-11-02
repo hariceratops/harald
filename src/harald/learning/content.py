@@ -2,7 +2,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from harald.lexicon.model import PERSONS, TENSES, Entry, Headword
+from harald.lexicon.model import PERSONS, TENSES, Entry, GermanEntry, Headword
+
+_GENDER_OF_ARTICLE = {"der": "m", "die": "f", "das": "n"}
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,15 @@ def _discriminator(pos: str, entry: Entry) -> str:
     if pos == "verb" and entry.principal_parts and entry.principal_parts.part2:
         return entry.principal_parts.part2
     return ""
+
+
+def _german_entry_gender(entry: GermanEntry) -> str:
+    """Inverts the article part of a label: `das Band` -> `n`, `der/das Liter` -> `mn`."""
+    article, _, lemma = entry.label.partition(" ")
+    genders = {_GENDER_OF_ARTICLE.get(a) for a in article.split("/")}
+    if not lemma or None in genders:
+        return ""
+    return "".join(g for g in "mfn" if g in genders)
 
 
 def _first_translated_example(entry: Entry, sense_index: int) -> dict[str, str] | None:
@@ -131,8 +142,9 @@ def plan_word_cards(
                 {
                     "lemma": headword.lemma,
                     "pos": headword.pos,
-                    "gender": gender,
+                    "gender": _german_entry_gender(headword.german[de_entry]),
                     "definition": sense_de.gloss,
+                    "labels": list(sense_de.labels),
                 },
             )
         )

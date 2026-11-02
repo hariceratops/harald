@@ -444,10 +444,16 @@ def test_a_wrong_word_between_resets_the_escalation(built: Workspace) -> None:
     assert third.rating == Rating.Hard
 
 
+def _clear_gender(ws: Workspace) -> None:
+    with sqlite3.connect(ws.config.learning_db) as db:
+        db.execute("UPDATE card SET content = json_set(content, '$.gender', '')")
+
+
 def test_a_noun_without_gender_typed_with_an_article_is_refused_and_writes_nothing(
     built: Workspace,
 ) -> None:
     card = _add(built, "Fernweh", "noun", None, [], [(0, 0)], "meaning_de_de")
+    _clear_gender(built)
     before = _rows(built, "SELECT due, fsrs_state, last_review FROM card")
 
     checked = _meaning(built, card, "das Fernweh").unwrap()
@@ -460,6 +466,7 @@ def test_a_noun_without_gender_typed_with_an_article_is_refused_and_writes_nothi
 
 def test_a_noun_without_gender_typed_alone_is_good(built: Workspace) -> None:
     card = _add(built, "Fernweh", "noun", None, [], [(0, 0)], "meaning_de_de")
+    _clear_gender(built)
 
     checked = _meaning(built, card, "Fernweh").unwrap()
 
@@ -608,3 +615,73 @@ def test_answering_a_checked_card_without_a_lexicon_is_an_error_and_writes_nothi
     assert answered.is_err
     assert isinstance(answered.unwrap_err(), LexiconError)
     assert _reviews(built) == []
+
+
+def _de_de_contents(
+    ws: Workspace, en: list[int], de: list[tuple[int, int]]
+) -> list[dict[str, object]]:
+    plan = PlanWordCards(ws.config).execute(_headword(ws, "Band"), 0, en, de).unwrap()
+    return [c.content for c in plan.cards if c.card_type == "meaning_de_de"]
+
+
+def test_a_german_definition_takes_its_own_entrys_gender_beside_english_senses(
+    built: Workspace,
+) -> None:
+    # Band's English entry 0 is das Band; the German entries are das, das, der and die Band
+    contents = _de_de_contents(built, [0], [(0, 0), (2, 0), (3, 0)])
+
+    assert [c["gender"] for c in contents] == ["n", "m", "f"]
+
+
+def test_a_german_definition_stores_its_senses_labels(built: Workspace) -> None:
+    contents = _de_de_contents(built, [], [(0, 0), (0, 2), (1, 0)])
+
+    assert [c["labels"] for c in contents] == [[], ["colloquial"], ["poetic"]]
+
+
+def test_a_german_only_headword_takes_the_german_entrys_gender(built: Workspace) -> None:
+    plan = PlanWordCards(built.config).execute(_headword(built, "Fernweh"), None, [], [(0, 0)])
+
+    assert plan.unwrap().cards[0].content["gender"] == "n"
+
+
+def test_a_checked_de_de_card_expects_the_article_of_its_own_entry(built: Workspace) -> None:
+    card = _add(built, "Band", "noun", 0, [0], [(2, 0)], "meaning_de_de")
+
+    checked = _meaning(built, card, "der Band").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.expected) == (Rating.Good, "der Band")
+    assert _reviews(built) == [(3, "der Band")]
+
+
+def test_a_de_de_card_is_graded_hard_for_the_wrong_article(built: Workspace) -> None:
+    card = _add(built, "Band", "noun", 0, [0], [(2, 0)], "meaning_de_de")
+
+    checked = _meaning(built, card, "das Band").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.article) == (Rating.Hard, "wrong")
+
+
+def test_a_de_de_card_retries_on_another_noun_and_stores_both_tries(built: Workspace) -> None:
+    card = _add(built, "Band", "noun", 0, [], [(2, 0)], "meaning_de_de")
+
+    first = _meaning(built, card, "der Hund").unwrap()
+    second = _meaning(built, card, "der Band", first_try="der Hund").unwrap()
+
+    assert first == TryAgain("noun", "B", 4)
+    assert isinstance(second, MeaningGraded)
+    assert second.rating == Rating.Hard
+    assert _reviews(built) == [(2, "der Hund | der Band")]
+
+
+def test_a_de_de_card_made_before_labels_were_stored_still_checks(built: Workspace) -> None:
+    card = _add(built, "Fernweh", "noun", None, [], [(0, 0)], "meaning_de_de")
+    with sqlite3.connect(built.config.learning_db) as db:
+        db.execute("UPDATE card SET content = json_remove(content, '$.labels')")
+
+    checked = _meaning(built, card, "das Fernweh").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Good

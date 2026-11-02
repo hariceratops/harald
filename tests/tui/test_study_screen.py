@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 import sqlite3
 from datetime import UTC, datetime
 
@@ -398,63 +397,163 @@ def _seed_de_de(ws: Workspace, lemma: str = "Fernweh", entry: int | None = None)
 
 
 @pytest.mark.parametrize("size", SIZES)
-def test_german_german_card_asks_for_the_word_from_the_definition(
+def test_checked_german_german_front_shows_definition_pos_and_the_check_button(
     built: Workspace, size: tuple[int, int]
 ) -> None:
     definition = _seed_de_de(built)
-    first = definition.split()[0]
 
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await pilot.press("s")
         await pilot.pause()
         assert isinstance(app.screen, StudyScreen)
         lines = static_lines(app.screen, "#card")
-        assert any(first in line for line in lines)
+        assert any("German -> German" in line for line in lines)
+        assert any(definition.split()[0] in line for line in lines)
+        assert any(line.strip() == "noun" for line in lines)
         assert not any("Fernweh" in line for line in lines)
         assert all(len(line) <= size[0] for line in lines)
-        assert app.screen.query_one("#fields").display
-        assert app.screen.query_one("#sf0", Input).display
+        assert str(app.screen.query_one("#lbl0").render()).strip() == "Art. + noun"
+        check = app.screen.query_one("#check", Button)
+        assert check.display and str(check.label) == "Check (enter)"
+        assert not app.screen.query_one("#reveal", Button).display
+        assert app.screen.query_one("#digraphs").display
         assert_inside(app.screen, size)
-
-        await pilot.press(*"Fernweh", "enter")
-        await pilot.pause()
-        lines = static_lines(app.screen, "#card")
-        you = next(i for i, line in enumerate(lines) if "you: Fernweh" in line)
-        assert any("Fernweh" in line for line in lines[you + 1 :])
-        assert all(len(line) <= size[0] for line in lines)
-        assert_inside(app.screen, size)
-        await pilot.press("2")
-        await pilot.pause()
-        assert _answers(built) == [(3, "Fernweh")]
 
     _drive(built, size, script)
 
 
-def test_german_german_card_with_an_empty_attempt_is_graded_again(built: Workspace) -> None:
+@pytest.mark.parametrize("size", SIZES)
+def test_a_right_german_german_answer_is_graded_good_and_shows_the_expected_word(
+    built: Workspace, size: tuple[int, int]
+) -> None:
     _seed_de_de(built)
 
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await pilot.press("s")
         await pilot.pause()
-        await pilot.press("enter")
-        await pilot.pause()
-        assert _answers(built) == [(1, "")]
+        await _check(pilot, "das Fernweh")
+        assert _answers(built) == [(3, "das Fernweh")]
+        lines = static_lines(app.screen, "#card")
+        assert any("RIGHT - graded Good" in line for line in lines)
+        you = next(i for i, line in enumerate(lines) if "you: das Fernweh" in line)
+        assert lines[you + 1].strip() == "das Fernweh"
+        assert all(len(line) <= size[0] for line in lines)
+        assert app.screen.query_one("#cont", Button).display
+        assert not app.screen.query_one("#fields").display
+        assert_inside(app.screen, size)
 
-    _drive(built, (40, 30), script)
+    _drive(built, size, script)
 
 
-def test_german_german_card_shows_the_article_on_the_back(built: Workspace) -> None:
-    _seed_de_de(built, "Band", entry=0)
+@pytest.mark.parametrize("size", SIZES)
+@pytest.mark.parametrize(
+    ("typed", "rating", "verdict"),
+    [
+        ("der Fernweh", 2, "RIGHT, wrong article - graded Hard"),
+        ("Fernweh", 2, "RIGHT, no article - graded Hard"),
+        ("Xyz", 1, "WRONG - graded Again"),
+        ("", 1, "No answer - graded Again"),
+    ],
+)
+def test_german_german_hard_and_again_show_the_expected_word(
+    built: Workspace, size: tuple[int, int], typed: str, rating: int, verdict: str
+) -> None:
+    _seed_de_de(built)
 
     async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
         await pilot.press("s")
         await pilot.pause()
-        await pilot.press("enter")
+        await _check(pilot, typed)
+        assert [r for r, _ in _answers(built)] == [rating]
+        lines = static_lines(app.screen, "#card")
+        assert any(verdict in line for line in lines)
+        you = next(i for i, line in enumerate(lines) if "you:" in line)
+        assert lines[you + 1].strip() == "das Fernweh"
+        assert all(len(line) <= size[0] for line in lines)
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_german_german_retry_shows_the_cue_and_a_right_second_try_is_hard(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_de_de(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
         await pilot.pause()
-        lines = [line.strip() for line in static_lines(app.screen, "#card")]
-        assert any(re.fullmatch(r"(der|die|das)(/(der|die|das))* Band", line) for line in lines)
+        await _check(pilot, "das Hund")
+        assert _reviews(built) == []
+        assert _cue(app) == "Another noun. Try: F _ _ _ _ _ _"
+        assert app.screen.query_one("#sf0", Input).has_focus
+        assert_inside(app.screen, size)
+        await asyncio.sleep(0.35)
+        await _check(pilot, "das Fernweh")
+        assert _answers(built) == [(2, "das Hund | das Fernweh")]
+        lines = static_lines(app.screen, "#card")
+        assert any("RIGHT on the second try - graded Hard" in line for line in lines)
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+def test_a_german_german_card_without_stored_labels_or_gender_still_checks(
+    built: Workspace,
+) -> None:
+    _seed_de_de(built)
+    _edit_card(built, labels=_GONE)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "das Fernweh")
+        assert _answers(built) == [(3, "das Fernweh")]
 
     _drive(built, (40, 30), script)
+
+
+def test_a_band_card_expects_the_article_of_its_german_entry(built: Workspace) -> None:
+    word = LoadHeadword(built.config).execute("Band", "noun").unwrap().unwrap()
+    plan = PlanWordCards(built.config).execute(word, 0, [0], [(2, 0)]).unwrap()
+    plan = CardPlan(
+        plan.word_hint, tuple(c for c in plan.cards if c.card_type == "meaning_de_de"), ()
+    )
+    CreateWordCards(built.config).execute(plan, datetime(2026, 1, 1, tzinfo=UTC)).unwrap()
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "das Band")
+        lines = [line.strip() for line in static_lines(app.screen, "#card")]
+        assert any("RIGHT, wrong article - graded Hard" in line for line in lines)
+        assert "der Band" in lines
+
+    _drive(built, (40, 30), script)
+
+
+def test_a_checked_german_german_card_fits_the_ten_rows_of_a_40x12_screen(
+    built: Workspace,
+) -> None:
+    _seed_de_de(built)
+    used: dict[str, int] = {}
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        body = app.screen.query_one("#body")
+        used["front"] = _content_rows(body)
+        await _check(pilot, "das Hund")
+        used["retry"] = _content_rows(body)
+        assert_inside(app.screen, (40, 12))
+        await asyncio.sleep(0.35)
+        await _check(pilot, "das Fernweh")
+        used["verdict"] = _content_rows(body)
+        assert_inside(app.screen, (40, 12))
+
+    _drive(built, (40, 12), script)
+    assert (used["front"], used["retry"], used["verdict"]) == (6, 5, 7)
 
 
 def test_a_failed_write_on_an_empty_attempt_leaves_the_front_showing(

@@ -51,13 +51,13 @@ German to German card), then confirm with `c`. Senses that already have cards
 are marked. `n` and `b` move between steps, `space` toggles a sense; each step says so
 under its title. Confirming with nothing ticked says that nothing was ticked.
 
-Studying shows the next due card. On a German to English or German to German
-card, type your answer first and press `enter`: the card then shows what you
-typed above the real answer, and `1` Again or `2` Good grades it; each grade
+Studying shows the next due card. On a German to English card, type your
+answer first and press `enter`: the card then shows what you typed above the real answer, and `1` Again or `2` Good grades it; each grade
 is saved at once. Pressing `enter` with nothing typed counts as not knowing
 and is graded Again. An English to German card is checked for you: it shows
 the English gloss, its labels and the part of speech, and you type the German
-word, then press `enter` (or tap `Check (enter)`). A noun with a known gender
+word. A German to German card is checked the same way: it shows the German
+definition and the part of speech, and you type the word it defines. Press `enter` (or tap `Check (enter)`) to check. A noun with a known gender
 is typed with its article, as in `der Hund`; the field reads `Art. + noun`,
 and any of the word's genders counts. Other words, proper nouns and
 nouns with no stored gender included, are typed alone and the field reads
