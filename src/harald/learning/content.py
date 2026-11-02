@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -105,10 +105,15 @@ def plan_word_cards(
     en_senses: Sequence[int],
     de_senses: Sequence[tuple[int, int]],
     tenses: Sequence[str] = (),
+    en_notes: Mapping[int, str] | None = None,
+    de_notes: Mapping[tuple[int, int], str] | None = None,
 ) -> CardPlan:
     """Picks are positions: `en_senses` into the chosen entry's senses, `de_senses` as
     (German entry, sense) into `headword.german`. `tenses` are stems from `TENSES`; their
-    conjugation cards do not depend on the senses picked."""
+    conjugation cards do not depend on the senses picked. Notes are keyed like the picks and
+    only reach senses that are being planned; an empty note is no note."""
+    en_notes = en_notes or {}
+    de_notes = de_notes or {}
     entry = headword.entries[entry_index] if entry_index is not None else None
     gender = entry.gender if entry else ""
     hint = WordHint(
@@ -129,6 +134,8 @@ def plan_word_cards(
             example = _first_translated_example(entry, i)
             if example:
                 content["example"] = example
+            if en_notes.get(i):
+                content["note"] = en_notes[i]
             cards.append(NewCard("meaning_de_en", content))
             cards.append(NewCard("meaning_en_de", dict(content)))
 
@@ -136,18 +143,16 @@ def plan_word_cards(
         sense_de = headword.german[de_entry].senses[i]
         if sense_de.index is None:
             continue
-        cards.append(
-            NewCard(
-                "meaning_de_de",
-                {
-                    "lemma": headword.lemma,
-                    "pos": headword.pos,
-                    "gender": _german_entry_gender(headword.german[de_entry]),
-                    "definition": sense_de.gloss,
-                    "labels": list(sense_de.labels),
-                },
-            )
-        )
+        de_content: dict[str, Any] = {
+            "lemma": headword.lemma,
+            "pos": headword.pos,
+            "gender": _german_entry_gender(headword.german[de_entry]),
+            "definition": sense_de.gloss,
+            "labels": list(sense_de.labels),
+        }
+        if de_notes.get((de_entry, i)):
+            de_content["note"] = de_notes[(de_entry, i)]
+        cards.append(NewCard("meaning_de_de", de_content))
 
     refusals: list[Refusal] = []
     if headword.pos == "verb" and (en_senses or de_senses):

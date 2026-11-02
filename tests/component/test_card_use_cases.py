@@ -685,3 +685,82 @@ def test_a_de_de_card_made_before_labels_were_stored_still_checks(built: Workspa
 
     assert isinstance(checked, MeaningGraded)
     assert checked.rating == Rating.Good
+
+
+def test_both_cards_of_an_english_sense_carry_its_note(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+
+    plan = (
+        PlanWordCards(built.config).execute(hund, 0, [0, 1], [], en_notes={1: "dog-ish"}).unwrap()
+    )
+
+    assert ["note" in c.content for c in plan.cards] == [False, False, True, True]
+    assert [c.content.get("note") for c in plan.cards[2:]] == ["dog-ish", "dog-ish"]
+
+
+def test_a_german_sense_note_goes_on_its_de_de_card(built: Workspace) -> None:
+    band = _headword(built, "Band")
+
+    plan = (
+        PlanWordCards(built.config)
+        .execute(band, None, [], [(0, 0), (0, 2)], de_notes={(0, 2): "tape"})
+        .unwrap()
+    )
+
+    assert [c.content.get("note") for c in plan.cards] == [None, "tape"]
+    assert "note" not in plan.cards[0].content
+
+
+def test_no_note_leaves_content_without_a_note_key(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+
+    plan = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={1: "elsewhere"}).unwrap()
+
+    assert all("note" not in c.content for c in plan.cards)
+
+
+def test_an_empty_note_adds_no_note_key(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+
+    plan = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={0: ""}).unwrap()
+
+    assert all("note" not in c.content for c in plan.cards)
+
+
+def test_the_same_sense_with_another_note_is_not_a_new_card(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+    first = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={0: "one"}).unwrap()
+    CreateWordCards(built.config).execute(first, NOW).unwrap()
+
+    again = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={0: "two"}).unwrap()
+
+    assert again.cards == ()
+
+
+def test_dedupe_matches_a_noted_card_with_and_without_a_note(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+    noted = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={0: "one"}).unwrap()
+    CreateWordCards(built.config).execute(noted, NOW).unwrap()
+    plain = PlanWordCards(built.config).execute(hund, 0, [1], []).unwrap()
+    CreateWordCards(built.config).execute(plain, NOW).unwrap()
+
+    bare = PlanWordCards(built.config).execute(hund, 0, [0], []).unwrap()
+    renoted = PlanWordCards(built.config).execute(hund, 0, [1], [], en_notes={1: "x"}).unwrap()
+
+    assert bare.cards == ()
+    assert renoted.cards == ()
+
+
+def test_stammformen_and_conjugation_cards_take_no_note(built: Workspace) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+
+    plan = (
+        PlanWordCards(built.config)
+        .execute(anrufen, 0, [0], [], ["ind.pres"], en_notes={0: "ring"})
+        .unwrap()
+    )
+
+    by_type = {c.card_type: c for c in plan.cards}
+    assert by_type["meaning_de_en"].content["note"] == "ring"
+    assert "note" not in by_type["stammformen"].content
+    assert "note" not in by_type["conjugation"].content
