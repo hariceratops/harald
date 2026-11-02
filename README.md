@@ -30,11 +30,10 @@ Working today:
 - `harald-cli lookup --en WORD` lists German words under each English sense.
 - `harald` opens a Textual TUI for German lookup and entry
   browsing, down to 40 columns. Not yet verified on the phone.
-- In the TUI, `a` on an entry adds meaning cards for chosen senses, and `s` on
-  Home studies due cards (FSRS) and a session summary. English → German and
-  German → German cards are typed and checked, with the article typed with a
-  noun; the other cards are self-graded, Again or Good. `h` in the Add word
-  pickers adds a note to a sense.
+- In the TUI, `a` on an entry adds cards, `h` adds a note to a sense, and `s` on
+  Home studies due cards (FSRS). English → German and German → German answers
+  are typed and checked (the article goes with the noun, slips are forgiven);
+  the other cards are self-graded. See [Cards and study](docs/user/study.md).
 
 Planned: Tatoeba phrase search,
 `harald-cli check`, backups. See the [roadmap](#roadmap).

@@ -5,7 +5,8 @@ from reading, TV and conversation. It does two jobs:
 
 - **Look things up fast** — a German word, an English word → German, and
   (planned) a phrase as German/English sentence pairs.
-- **Turn what is worth keeping into spaced-repetition cards** (planned).
+- **Turn what is worth keeping into spaced-repetition cards** and study them,
+  with typed, checked answers.
 
 ## How this guide is organised
 
@@ -13,6 +14,7 @@ from reading, TV and conversation. It does two jobs:
 
 - **[Getting started](user/getting-started.md)** — install, build the lexicon,
   first lookup.
+- **[Cards and study](user/study.md)** — add a word, notes, typed answers, grades.
 - **[Lookup](user/lookup.md)** — what `harald-cli lookup` shows and how it matches.
 - **[Building the lexicon](user/build.md)** — sources, fetching, determinism.
 - **[Configuration](user/configuration.md)** — `config.toml` and file locations.
@@ -35,7 +37,7 @@ from reading, TV and conversation. It does two jobs:
 | File | Holds | Written by |
 |---|---|---|
 | `lexicon.db` | the dictionary: entries, translations, search keys | `harald-cli build`; read-only otherwise |
-| `learning.db` | cards, decks, review log (planned) | the study device only |
+| `learning.db` | cards, review log (decks planned) | the study device only |
 
 A rebuild replaces `lexicon.db` and never touches `learning.db`. The lexicon is
 pushed one way from desktop to phone with Syncthing.

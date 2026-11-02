@@ -35,6 +35,7 @@ nav:
   - Overview: index.md
   - User guide:
       - Getting started: user/getting-started.md
+      - Cards and study: user/study.md
       - Lookup: user/lookup.md
       - Building the lexicon: user/build.md
       - Configuration: user/configuration.md
