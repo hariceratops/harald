@@ -22,6 +22,9 @@ from harald.learning.study import (
     next_card,
     session_summary,
 )
+from harald.lexicon.db import open_lexicon
+from harald.lexicon.errors import LexiconError
+from harald.lexicon.lookup import known_words
 
 
 class NextCard:
@@ -128,20 +131,28 @@ class AnswerMeaning:
         now: datetime,
         session_id: str,
         duration_ms: int | None = None,
-    ) -> Result[MeaningCheck, LearningDbError]:
-        return transact(
-            self._config.learning_db,
-            lambda ctx: answer_meaning(
-                ctx,
-                card_id,
-                given,
-                first_try,
-                now,
-                session_id,
-                duration_ms,
-                lambda scope: scheduler_for(scope, self._enable_fuzzing),
-            ),
-        )
+    ) -> Result[MeaningCheck, LearningDbError | LexiconError]:
+        opened = open_lexicon(self._config.lexicon)
+        if opened.is_err:
+            return Result.err(opened.unwrap_err())
+        lex = opened.unwrap()
+        try:
+            return transact(
+                self._config.learning_db,
+                lambda ctx: answer_meaning(
+                    ctx,
+                    card_id,
+                    given,
+                    first_try,
+                    now,
+                    session_id,
+                    duration_ms,
+                    lambda scope: scheduler_for(scope, self._enable_fuzzing),
+                    lambda word: known_words(lex, word),
+                ),
+            ).map_err(lambda e: e)
+        finally:
+            lex.engine.dispose()
 
 
 class SessionSummary:

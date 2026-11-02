@@ -4,13 +4,16 @@ import pytest
 from fsrs import Rating
 
 from harald.learning.answers import (
+    Known,
     MeaningGraded,
     NoArticleStored,
+    TryAgain,
     check_conjugation,
     check_meaning,
     check_stammformen,
 )
-from harald.text import answer_matches
+from harald.lexicon.model import KnownWord
+from harald.text import answer_matches, fold
 
 ANRUFEN = {
     "infinitive": "anrufen",
@@ -109,13 +112,29 @@ def _noun(gender: str = "m", lemma: str = "Hund", pos: str = "noun") -> dict[str
     return {"lemma": lemma, "pos": pos, "gender": gender}
 
 
+def _lexicon(*words: tuple[str, str, str, bool]) -> Known:
+    """A known() over (typed form, lemma, pos, inflected) rows, keyed the way the lookup folds."""
+
+    def known(word: str) -> tuple[KnownWord, ...]:
+        key = fold(" ".join(word.split()))
+        return tuple(
+            KnownWord(lemma, pos, infl) for form, lemma, pos, infl in words if fold(form) == key
+        )
+
+    return known
+
+
+NOTHING_KNOWN = _lexicon()
+
+
 def _graded(
     content: dict[str, Any],
     given: str,
     previous: str | None = None,
     first_try: str | None = None,
+    known: Known = NOTHING_KNOWN,
 ) -> MeaningGraded:
-    checked = check_meaning(content, given, first_try, previous)
+    checked = check_meaning(content, given, first_try, previous, known)
     assert isinstance(checked, MeaningGraded)
     return checked
 
@@ -199,10 +218,6 @@ def test_a_wrong_word_is_again_whatever_the_article() -> None:
     assert (checked.rating, checked.word, checked.article) == (Rating.Again, "wrong", "not_asked")
 
 
-def test_a_typo_is_again_until_issue_024() -> None:
-    assert _graded(_noun(), "der Hnd").rating == Rating.Again
-
-
 def test_a_noun_without_gender_is_typed_alone() -> None:
     plain = _graded(_noun("", "Fernweh"), "Fernweh")
 
@@ -211,7 +226,9 @@ def test_a_noun_without_gender_is_typed_alone() -> None:
 
 @pytest.mark.parametrize("given", ["der Fernweh", "das Fernweh", "ein Fernweh", "Der Fernweh"])
 def test_an_article_on_a_noun_without_gender_is_refused(given: str) -> None:
-    assert check_meaning(_noun("", "Fernweh"), given, None, None) == NoArticleStored()
+    assert (
+        check_meaning(_noun("", "Fernweh"), given, None, None, NOTHING_KNOWN) == NoArticleStored()
+    )
 
 
 def test_an_article_alone_on_a_noun_without_gender_is_a_wrong_word_not_a_refusal() -> None:
@@ -219,7 +236,10 @@ def test_an_article_alone_on_a_noun_without_gender_is_a_wrong_word_not_a_refusal
 
 
 def test_a_refusal_on_the_second_try_refuses_again() -> None:
-    assert check_meaning(_noun("", "Fernweh"), "das Fernweh", "Fernweh", None) == NoArticleStored()
+    assert (
+        check_meaning(_noun("", "Fernweh"), "das Fernweh", "Fernweh", None, NOTHING_KNOWN)
+        == NoArticleStored()
+    )
 
 
 @pytest.mark.parametrize("given", ["Berlin", "das Berlin", "der Berlin", "ein Berlin"])
@@ -242,10 +262,6 @@ def test_umlaut_digraphs_are_accepted_on_the_word() -> None:
 
     assert _graded(maedchen, "das Maedchen").rating == Rating.Good
     assert _graded(_noun("f", "Straße"), "die Strasse").rating == Rating.Good
-
-
-def test_the_word_is_compared_case_sensitively() -> None:
-    assert _graded(_noun(), "der hund").rating == Rating.Again
 
 
 def test_an_article_word_is_not_stripped_from_a_non_noun() -> None:
@@ -283,3 +299,155 @@ def test_the_second_try_caps_a_pass_at_hard() -> None:
 
 def test_the_first_try_is_not_a_second_try() -> None:
     assert _graded(_noun(), "der Hund").second_try is False
+
+
+def _check(content: dict[str, Any], given: str, known: Known = NOTHING_KNOWN, **kw: Any) -> Any:
+    return check_meaning(content, given, kw.get("first_try"), kw.get("previous"), known)
+
+
+@pytest.mark.parametrize(
+    ("lemma", "given", "slip"),
+    [
+        ("Hund", "Hnd", False),
+        ("Hund", "Hunt", False),
+        ("Hund", "Hudn", False),
+        ("Hund", "Hunde", False),
+        ("Tisch", "Tich", True),
+        ("Tisch", "Tischh", True),
+        ("Tisch", "Tosch", True),
+        ("Tisch", "Tsich", True),
+        ("Tisch", "Tsc", False),
+        ("Tisch", "Tsichh", False),
+        ("Fenster", "Fensler", True),
+        ("Fenster", "Fenstar", True),
+        ("Fenster", "Fensat", False),
+        ("Fenster", "Fensa", False),
+        ("Kühlschrank", "Kuehlschrnk", True),
+        ("Kühlschrank", "Kuehlscrnk", True),
+        ("Kühlschrank", "Kuehlscnk", False),
+        ("Kühlschrank", "Kuehlschrnak", True),
+        ("Zeitschrift", "Zietschrfit", True),
+        ("Zeitschrift", "Zeitschrfit", True),
+        ("Zeitschrift", "Zietschrft", True),
+        ("Zeitschrift", "Zietschrfta", False),
+    ],
+)
+def test_the_slip_allowance_follows_the_length_of_the_lemma(
+    lemma: str, given: str, slip: bool
+) -> None:
+    checked = _graded(_noun("", lemma), given)
+
+    assert (checked.word, checked.rating) == (
+        ("slip", Rating.Good) if slip else ("wrong", Rating.Again)
+    )
+
+
+def test_a_slip_shows_the_correct_spelling() -> None:
+    checked = _graded(_noun("f", "Straße"), "die Strase")
+
+    assert (checked.word, checked.expected) == ("slip", "die Straße")
+
+
+def test_a_slip_with_a_wrong_article_is_hard() -> None:
+    assert _graded(_noun("m", "Tisch"), "die Tich").rating == Rating.Hard
+
+
+def test_a_slip_that_is_itself_a_word_is_not_forgiven() -> None:
+    schoen = {"lemma": "schön", "pos": "adj", "gender": ""}
+    known = _lexicon(("schon", "schon", "adv", False))
+
+    assert _graded(schoen, "schon", known=known).word == "wrong"
+
+
+def test_a_slip_that_is_a_form_of_a_word_of_another_part_of_speech_is_not_forgiven() -> None:
+    known = _lexicon(("Tische", "Tisch", "noun", True))
+    adjective = {"lemma": "Tischen", "pos": "adj", "gender": ""}
+
+    assert _graded(adjective, "Tische", known=known).word == "wrong"
+
+
+def test_wrong_capitalisation_alone_is_a_slip_at_any_length() -> None:
+    for lemma, given in (("Hund", "hund"), ("Ei", "ei"), ("Mädchen", "mädchen")):
+        checked = _graded(_noun("", lemma), given)
+        assert (checked.word, checked.rating) == ("slip", Rating.Good)
+
+
+def test_capitalisation_plus_a_typo_is_two_slips() -> None:
+    assert _graded(_noun("n", "Mädchen"), "madchen").word == "wrong"
+
+
+def test_wrong_capitalisation_that_makes_another_lemma_is_again() -> None:
+    known = _lexicon(("essen", "essen", "verb", False))
+
+    checked = _graded(_noun("n", "Essen"), "Das essen", known=known)
+
+    assert (checked.word, checked.rating) == ("other_case_word", Rating.Again)
+
+
+def test_wrong_capitalisation_that_is_only_an_inflected_form_still_passes() -> None:
+    known = _lexicon(("fliege", "fliegen", "verb", True))
+
+    assert _graded(_noun("f", "Fliege"), "die fliege", known=known).word == "slip"
+
+
+def test_another_word_of_the_same_part_of_speech_offers_a_retry() -> None:
+    known = _lexicon(("Katze", "Katze", "noun", False))
+
+    assert _check(_noun(), "der Katze", known) == TryAgain("noun", "H", 4)
+
+
+def test_the_cue_is_the_first_letter_and_length_of_the_lemma_not_the_article() -> None:
+    known = _lexicon(("Katze", "Katze", "noun", False))
+
+    assert _check(_noun("n", "Mädchen"), "Katze", known) == TryAgain("noun", "M", 7)
+
+
+def test_a_form_of_another_word_of_the_same_part_of_speech_offers_a_retry() -> None:
+    known = _lexicon(("Katzen", "Katze", "noun", True))
+
+    assert isinstance(_check(_noun(), "Katzen", known), TryAgain)
+
+
+def test_a_word_of_another_part_of_speech_is_again_without_a_retry() -> None:
+    known = _lexicon(("essen", "essen", "verb", False))
+
+    checked = _graded(_noun(), "essen", known=known)
+
+    assert (checked.word, checked.rating) == ("wrong", Rating.Again)
+
+
+def test_a_form_of_the_cards_own_word_is_again_without_a_retry() -> None:
+    known = _lexicon(("Hunde", "Hund", "noun", True))
+
+    checked = _graded(_noun(), "Hunde", known=known)
+
+    assert (checked.word, checked.rating) == ("wrong", Rating.Again)
+
+
+def test_a_right_second_try_is_hard_and_a_wrong_one_is_again() -> None:
+    known = _lexicon(("Katze", "Katze", "noun", False))
+
+    right = _graded(_noun(), "der Hund", first_try="Katze", known=known)
+    other = _graded(_noun(), "Katze", first_try="Katze", known=known)
+    typo = _graded(_noun(), "Hnd", first_try="Katze", known=known)
+
+    assert (right.rating, right.second_try) == (Rating.Hard, True)
+    assert (other.rating, other.word) == (Rating.Again, "wrong")
+    assert typo.rating == Rating.Again
+
+
+def test_a_slip_on_the_second_try_is_hard() -> None:
+    known = _lexicon(("Katze", "Katze", "noun", False))
+
+    assert _graded(_noun("", "Tisch"), "Tich", first_try="Katze", known=known).rating == Rating.Hard
+
+
+def test_the_previous_answer_is_judged_with_the_known_words() -> None:
+    known = _lexicon(("Tich", "Tich", "noun", False))
+    card = _noun("m", "Tisch")
+
+    counted = _graded(card, "Tisch", previous="die Tich")
+    not_counted = _graded(card, "Tisch", previous="die Tich", known=known)
+
+    assert (counted.rating, counted.repeated_article) == (Rating.Again, True)
+    assert (not_counted.rating, not_counted.repeated_article) == (Rating.Hard, False)

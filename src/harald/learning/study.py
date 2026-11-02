@@ -15,6 +15,7 @@ from harald.infrastructure.infra_errors import InfrastructureError
 from harald.infrastructure.transaction_context import DbTransactionContext
 from harald.learning.answers import (
     FieldCheck,
+    Known,
     MeaningCheck,
     MeaningGraded,
     StammformenCheck,
@@ -190,6 +191,7 @@ def answer_meaning(
     session_id: str,
     duration_ms: int | None,
     scheduler_for: Callable[[str], Scheduler],
+    known: Known,
 ) -> Result[MeaningCheck, LearningDbError]:
     latest = (
         select(Review.answer)
@@ -203,7 +205,7 @@ def answer_meaning(
     previous = read.unwrap()
 
     def check(card: Card) -> tuple[MeaningCheck, Option[Rating], str]:
-        checked = check_meaning(card.content, given, first_try, previous)
+        checked = check_meaning(card.content, given, first_try, previous, known)
         rating = (
             Option.some(checked.rating) if isinstance(checked, MeaningGraded) else Option.none()
         )

@@ -1,9 +1,12 @@
+import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from fsrs import Rating
 
-from harald.lexicon.model import PERSONS
+from harald.lexicon.fuzzy import osa_within
+from harald.lexicon.model import PERSONS, KnownWord
 from harald.text import answer_matches, normalise_answer
 
 ARTICLES = {"m": "der", "f": "die", "n": "das"}
@@ -101,11 +104,15 @@ def _article_state(
     return "right" if article in {ARTICLES[g] for g in gender} else "wrong"
 
 
-def _had_wrong_article(content: dict[str, Any], previous: str | None) -> bool:
+Known = Callable[[str], tuple[KnownWord, ...]]
+_Word = Literal["right", "slip", "other_case_word", "other_word", "wrong"]
+
+
+def _had_wrong_article(content: dict[str, Any], previous: str | None, known: Known) -> bool:
     if not previous:
         return False
     article, word = _parse(content, previous.rsplit(" | ", 1)[-1])
-    if not answer_matches(word, content["lemma"]):
+    if _judge_word(content, word, known) not in ("right", "slip"):
         return False
     return _article_state(content, article) in ("wrong", "missing")
 
@@ -117,16 +124,46 @@ def _expected(content: dict[str, Any]) -> str:
     return f"{'/'.join(ARTICLES[g] for g in gender)} {content['lemma']}"
 
 
+def _allowance(lemma: str) -> int:
+    length = len(unicodedata.normalize("NFC", lemma))
+    return 0 if length <= 4 else 1 if length <= 9 else 2
+
+
+def _judge_word(content: dict[str, Any], word: str, known: Known) -> _Word:
+    """Rules 3-9 of design 5.1. `other_word` is rule 6's candidate for a retry."""
+    lemma = content["lemma"]
+    typed, wanted = normalise_answer(word), normalise_answer(lemma)
+    if typed == wanted:
+        return "right"
+    if typed.casefold() == wanted.casefold():
+        lemmas = (k.lemma for k in known(word) if not k.inflected)
+        if any(normalise_answer(k) == typed for k in lemmas):
+            return "other_case_word"
+        return "slip"
+    found = known(word)
+    if any(k.pos == content["pos"] and not answer_matches(k.lemma, lemma) for k in found):
+        return "other_word"
+    if found:
+        return "wrong"
+    if osa_within(typed, wanted, _allowance(lemma)).is_some:
+        return "slip"
+    return "wrong"
+
+
 def check_meaning(
-    content: dict[str, Any], given: str, first_try: str | None, previous: str | None
+    content: dict[str, Any],
+    given: str,
+    first_try: str | None,
+    previous: str | None,
+    known: Known,
 ) -> MeaningCheck:
-    """Rules 1-3 and the article of design 5.1; the slip and known-word rules are issue 024."""
+    """Design 5.1: the rules in order, then the article, then the second-try cap."""
     second_try = first_try is not None
     expected = _expected(content)
 
     def graded(
         rating: Rating,
-        word: Literal["right", "wrong", "empty"],
+        word: Literal["right", "slip", "other_case_word", "wrong", "empty"],
         article: Literal["right", "wrong", "missing", "not_asked"] = "not_asked",
         repeated: bool = False,
     ) -> MeaningGraded:
@@ -139,10 +176,16 @@ def check_meaning(
     article, word = _parse(content, given)
     if content["pos"] == "noun" and not content["gender"] and article:
         return NoArticleStored()
-    if normalise_answer(word) != normalise_answer(content["lemma"]):
-        return graded(Rating.Again, "wrong")
+    verdict = _judge_word(content, word, known)
+    if verdict == "other_word":
+        if second_try:
+            return graded(Rating.Again, "wrong")
+        lemma = unicodedata.normalize("NFC", content["lemma"])
+        return TryAgain(content["pos"], lemma[0], len(lemma))
+    if verdict in ("other_case_word", "wrong"):
+        return graded(Rating.Again, verdict)
     state = _article_state(content, article)
     if state in ("right", "not_asked"):
-        return graded(Rating.Good, "right", state)
-    repeated = _had_wrong_article(content, previous)
-    return graded(Rating.Again if repeated else Rating.Hard, "right", state, repeated)
+        return graded(Rating.Good, verdict, state)
+    repeated = _had_wrong_article(content, previous, known)
+    return graded(Rating.Again if repeated else Rating.Hard, verdict, state, repeated)

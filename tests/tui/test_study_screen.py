@@ -653,7 +653,7 @@ def test_a_right_checked_answer_is_graded_good_and_shows_the_expected_word(
     [
         ("die Hund", 2, "RIGHT, wrong article - graded Hard"),
         ("Hund", 2, "RIGHT, no article - graded Hard"),
-        ("Katze", 1, "WRONG - graded Again"),
+        ("Xyz", 1, "WRONG - graded Again"),
         ("", 1, "No answer - graded Again"),
     ],
 )

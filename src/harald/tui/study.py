@@ -25,6 +25,7 @@ from harald.use_cases.study import (
     NoArticleStored,
     SessionSummary,
     StammformenCheck,
+    TryAgain,
 )
 
 # A double tap must not land on the button that appears in the same place under the thumb.
@@ -151,6 +152,7 @@ class StudyScreen(Screen[None]):
         self._card: tuple[int, str, dict[str, Any]] | None = None
         self._revealed = False
         self._attempt = ""
+        self._first_try: str | None = None
         self._feedback: list[str] | None = None
         self._expected: str | None = None
         self._hint = _DIGRAPHS
@@ -225,6 +227,7 @@ class StudyScreen(Screen[None]):
         self._card = (card.id, card.card_type, card.content)
         self._revealed = False
         self._attempt = ""
+        self._first_try = None
         self._feedback = None
         self._expected = None
         self._hint = _DIGRAPHS
@@ -332,7 +335,7 @@ class StudyScreen(Screen[None]):
         given = self.query_one("#sf0", Input).value.strip()
         duration_ms = int((time.monotonic() - self._front_at) * 1000)
         answered = AnswerMeaning(self._config).execute(
-            card_id, given, None, datetime.now(UTC), self._session_id, duration_ms
+            card_id, given, self._first_try, datetime.now(UTC), self._session_id, duration_ms
         )
         if answered.is_err:
             self.notify(str(answered.unwrap_err()), severity="error")
@@ -343,7 +346,14 @@ class StudyScreen(Screen[None]):
             self._shown_at = time.monotonic()
             self._show()
             return
-        # a retry cue needs the second-try rules of issue 024; none of them can return it yet
+        if isinstance(checked, TryAgain):
+            # placeholder cue; the full-screen retry layout is step 3 of issue 024
+            self._first_try = given
+            self._hint = f"Another {checked.pos}. Try: {checked.first_letter}... ({checked.length})"
+            self._shown_at = time.monotonic()
+            self.query_one("#sf0", Input).value = ""
+            self._show()
+            return
         assert isinstance(checked, MeaningGraded)
         self._attempt = given
         self._expected = checked.expected

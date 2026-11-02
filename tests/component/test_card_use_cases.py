@@ -10,6 +10,7 @@ from harald.learning.answers import ARTICLES
 from harald.learning.content import CardPlan
 from harald.learning.errors import LearningDbError
 from harald.learning.study import SummaryCounts
+from harald.lexicon.errors import LexiconError
 from harald.lexicon.model import Headword, PrincipalParts
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 from harald.use_cases.lexicon import LoadHeadword
@@ -21,6 +22,7 @@ from harald.use_cases.study import (
     NextCard,
     NoArticleStored,
     SessionSummary,
+    TryAgain,
 )
 from tests.conftest import Workspace
 
@@ -369,7 +371,7 @@ def _add(
 
 def _meaning(
     ws: Workspace, card_id: int, given: str, at: datetime = NOW, first_try: str | None = None
-) -> Result[MeaningCheck, LearningDbError]:
+) -> Result[MeaningCheck, LearningDbError | LexiconError]:
     return AnswerMeaning(ws.config, enable_fuzzing=False).execute(
         card_id, given, first_try, at, "s1", 1500
     )
@@ -435,7 +437,7 @@ def test_a_wrong_word_between_resets_the_escalation(built: Workspace) -> None:
     card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
 
     _meaning(built, card, "Hund").unwrap()
-    _meaning(built, card, "Katze", NOW + timedelta(days=1)).unwrap()
+    _meaning(built, card, "Xyz", NOW + timedelta(days=1)).unwrap()
     third = _meaning(built, card, "Hund", NOW + timedelta(days=2)).unwrap()
 
     assert isinstance(third, MeaningGraded)
@@ -501,3 +503,108 @@ def test_a_retry_stores_both_tries_and_is_capped_at_hard(built: Workspace) -> No
 
 def test_answering_an_unknown_card_is_an_error(built: Workspace) -> None:
     assert _meaning(built, 999, "Hund").is_err
+
+
+def _reviews(ws: Workspace) -> list[tuple[object, ...]]:
+    return _rows(ws, "SELECT rating, answer FROM review ORDER BY id")
+
+
+def test_a_typo_is_forgiven_graded_good_and_the_spelling_is_shown(built: Workspace) -> None:
+    card = _add(built, "Katze", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "die Katse").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating, checked.expected) == ("slip", Rating.Good, "die Katze")
+    assert _reviews(built) == [(3, "die Katse")]
+
+
+def test_a_typo_that_is_a_known_form_is_not_forgiven(built: Workspace) -> None:
+    card = _add(built, "Katze", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "die Katzen").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating) == ("wrong", Rating.Again)
+
+
+def test_capitalisation_that_makes_another_lemma_is_again(built: Workspace) -> None:
+    card = _add(built, "Essen", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "das essen").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating) == ("other_case_word", Rating.Again)
+
+
+def test_capitalisation_alone_is_forgiven_when_the_other_case_is_no_lemma(
+    built: Workspace,
+) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "der hund").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating) == ("slip", Rating.Good)
+
+
+def test_another_noun_offers_a_retry_and_writes_nothing(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "die Katze").unwrap()
+
+    assert checked == TryAgain("noun", "H", 4)
+    assert _reviews(built) == []
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(0, 0)
+
+
+def test_a_right_second_try_is_hard_and_stores_both_tries(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    assert isinstance(_meaning(built, card, "Katze").unwrap(), TryAgain)
+    checked = _meaning(built, card, "der Hund", first_try="Katze").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.second_try) == (Rating.Hard, True)
+    assert _reviews(built) == [(2, "Katze | der Hund")]
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(1, 1)
+
+
+def test_a_wrong_second_try_is_again_and_counts_as_missed(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "Katze", first_try="Katze").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Again
+    assert _reviews(built) == [(1, "Katze | Katze")]
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(1, 0)
+
+
+def test_a_form_of_the_cards_own_word_is_again_with_no_retry(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "Hunde").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating) == ("wrong", Rating.Again)
+
+
+def test_a_folded_key_shared_with_a_noun_offers_a_retry(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    # keys are case-folded, so essen reaches the noun Essen as well as the verb
+    assert _meaning(built, card, "essen").unwrap() == TryAgain("noun", "H", 4)
+
+
+def test_answering_a_checked_card_without_a_lexicon_is_an_error_and_writes_nothing(
+    built: Workspace,
+) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+    built.config.lexicon.unlink()
+
+    answered = _meaning(built, card, "der Hund")
+
+    assert answered.is_err
+    assert isinstance(answered.unwrap_err(), LexiconError)
+    assert _reviews(built) == []
