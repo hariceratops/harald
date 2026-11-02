@@ -62,7 +62,16 @@ is typed with its article, as in `der Hund`; the field reads `Art. + noun`,
 and any of the word's genders counts. Other words, proper nouns and
 nouns with no stored gender included, are typed alone and the field reads
 `Word`; an article typed there is refused with a message, ungraded, and you
-type again. The right word is graded Good. A wrong or missing article still
+type again. The right word is graded Good. A typing slip is forgiven and
+graded Good too, as long as it is not itself a German word: one wrong,
+missing, extra or swapped letter in a word of 5 to 9 letters, two in a longer
+word, none in a word of up to 4 letters; wrong capitalisation alone counts,
+unless the other case is another word (`essen` for `Essen`), which is graded
+Again. The card shows the right spelling. If you type another German word of
+the same part of speech, nothing is graded yet: the field clears and a hint
+shows the first letter and the length, as in `Another noun. Try: H _ _ _`,
+and you get one more try. Right on that try is graded Hard; anything else is
+graded Again. A wrong or missing article still
 passes but is graded Hard, and a second wrong article in a row on the same
 card is graded Again. Any other answer, or none, is graded Again. The card
 then shows the verdict, what you typed and the right word, and `enter` moves

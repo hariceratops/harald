@@ -3,7 +3,14 @@ from datetime import UTC, datetime, timedelta
 
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 from harald.use_cases.lexicon import LookUpGerman
-from harald.use_cases.study import AnswerMeaning, Grade, MeaningGraded, NextCard, SessionSummary
+from harald.use_cases.study import (
+    AnswerMeaning,
+    Grade,
+    MeaningGraded,
+    NextCard,
+    SessionSummary,
+    TryAgain,
+)
 from tests.conftest import Workspace
 
 T0 = datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
@@ -68,3 +75,31 @@ def test_checked_english_german_card_is_graded_by_its_answer(built: Workspace) -
     assert ratings == {"meaning_en_de": 2, "meaning_de_en": 3}
     summary = SessionSummary(built.config).execute("s1").unwrap()
     assert (summary.reviewed, summary.correct) == (2, 2)
+
+
+def test_another_noun_gets_one_retry_and_a_right_second_try_is_hard(built: Workspace) -> None:
+    shown = LookUpGerman(built.config).execute("Hund").unwrap().shown[0]
+    plan = PlanWordCards(built.config).execute(shown, 0, [0], []).unwrap()
+    CreateWordCards(built.config).execute(plan, T0).unwrap()
+    cards = {}
+    while (card := NextCard(built.config).execute(T0).unwrap()).is_some:
+        c = card.unwrap()
+        if c.card_type in cards:
+            break
+        cards[c.card_type] = c
+        Grade(built.config, enable_fuzzing=False).execute(c.id, 3, T0, "s0").unwrap()
+    card_id = cards["meaning_en_de"].id
+    answer = AnswerMeaning(built.config, enable_fuzzing=False)
+
+    first = answer.execute(card_id, "die Katze", None, T0, "s1").unwrap()
+    assert first == TryAgain("noun", "H", 4)
+    with sqlite3.connect(built.config.learning_db) as db:
+        assert db.execute("SELECT COUNT(*) FROM review WHERE session_id = 's1'").fetchone() == (0,)
+
+    second = answer.execute(card_id, "der Hund", "die Katze", T0, "s1").unwrap()
+    assert isinstance(second, MeaningGraded)
+    assert (int(second.rating), second.second_try) == (2, True)
+    with sqlite3.connect(built.config.learning_db) as db:
+        assert db.execute(
+            "SELECT rating, answer FROM review WHERE session_id = 's1'"
+        ).fetchall() == [(2, "die Katze | der Hund")]

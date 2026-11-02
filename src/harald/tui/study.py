@@ -109,17 +109,34 @@ def _field_label(content: dict[str, Any]) -> str:
     return "Art. + noun" if content.get("pos") == "noun" and content.get("gender") else "Word"
 
 
+def _retry_cue(retry: TryAgain, width: int) -> str:
+    start = f"Another {retry.pos}. Try: "
+    blanks = " ".join([retry.first_letter, *"_" * (retry.length - 1)])
+    if len(start) + len(blanks) <= width:
+        return start + blanks
+    return f"{start}{retry.first_letter}... ({retry.length} letters)"
+
+
 def _meaning_verdict(graded: MeaningGraded) -> str:
     if graded.word == "empty":
         return "No answer - graded Again"
+    if graded.word == "other_case_word":
+        return "WRONG, capitalisation - graded Again"
     if graded.word == "wrong":
         return "WRONG - graded Again"
     if graded.repeated_article:
         return "Wrong article twice - graded Again"
+    if graded.second_try:
+        return "RIGHT on the second try - graded Hard"
+    missing = graded.article in ("wrong", "missing")
+    if graded.word == "slip" and missing:
+        return "RIGHT, typo and article - graded Hard"
     if graded.article == "wrong":
         return "RIGHT, wrong article - graded Hard"
     if graded.article == "missing":
         return "RIGHT, no article - graded Hard"
+    if graded.word == "slip":
+        return "RIGHT, typo - graded Good"
     return "RIGHT - graded Good"
 
 
@@ -153,6 +170,7 @@ class StudyScreen(Screen[None]):
         self._revealed = False
         self._attempt = ""
         self._first_try: str | None = None
+        self._retry: TryAgain | None = None
         self._feedback: list[str] | None = None
         self._expected: str | None = None
         self._hint = _DIGRAPHS
@@ -228,6 +246,7 @@ class StudyScreen(Screen[None]):
         self._revealed = False
         self._attempt = ""
         self._first_try = None
+        self._retry = None
         self._feedback = None
         self._expected = None
         self._hint = _DIGRAPHS
@@ -272,7 +291,8 @@ class StudyScreen(Screen[None]):
         grading = not typed and self._revealed and self._feedback is None
         asking_text = not self._revealed and not self._feedback
         self.query_one("#fields").display = asking_text
-        self.query_one("#digraphs", Static).update(self._hint)
+        hint = _retry_cue(self._retry, self.size.width - 2) if self._retry else self._hint
+        self.query_one("#digraphs", Static).update(hint)
         self.query_one("#digraphs").display = asking_text and (typed or meaning)
         self.query_one("#reveal").display = not typed and not meaning and not self._revealed
         self.query_one("#check").display = meaning and asking_text
@@ -342,14 +362,14 @@ class StudyScreen(Screen[None]):
             return
         checked = answered.unwrap()
         if isinstance(checked, NoArticleStored):
+            self._retry = None
             self._hint = "No article stored - type the word alone"
             self._shown_at = time.monotonic()
             self._show()
             return
         if isinstance(checked, TryAgain):
-            # placeholder cue; the full-screen retry layout is step 3 of issue 024
             self._first_try = given
-            self._hint = f"Another {checked.pos}. Try: {checked.first_letter}... ({checked.length})"
+            self._retry = checked
             self._shown_at = time.monotonic()
             self.query_one("#sf0", Input).value = ""
             self._show()

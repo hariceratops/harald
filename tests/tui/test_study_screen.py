@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 from textual.pilot import Pilot
+from textual.widget import Widget
 from textual.widgets import Button, Input
 
 from harald.core.result import Result
@@ -763,3 +764,205 @@ def test_study_returns_home_with_a_message_when_the_lexicon_has_gone(built: Work
         assert _reviews(built) == []
 
     _drive(built, (40, 30), script)
+
+
+def _cue(app: HaraldApp) -> str:
+    return " ".join(line.strip() for line in static_lines(app.screen, "#digraphs"))
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_another_noun_asks_for_one_more_try_with_a_cue_and_grades_nothing(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_en_de(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "die Katze")
+        assert _reviews(built) == []
+        assert _cue(app) == "Another noun. Try: H _ _ _"
+        field = app.screen.query_one("#sf0", Input)
+        assert field.value == "" and field.has_focus
+        assert app.screen.query_one("#check", Button).display
+        assert not app.screen.query_one("#cont", Button).display
+        lines = static_lines(app.screen, "#card")
+        assert not any("you:" in line or "graded" in line for line in lines)
+        assert not any("Hund" in line for line in lines)
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_a_long_word_cue_gives_the_first_letter_and_length_when_the_blanks_do_not_fit(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_en_de(built, lemma="Aufenthaltsgenehmigung")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "Katze")
+        if size[0] == 40:
+            assert _cue(app) == "Another noun. Try: A... (22 letters)"
+            assert len(static_lines(app.screen, "#digraphs")) == 1
+        else:
+            assert _cue(app) == "Another noun. Try: A " + " ".join("_" * 21)
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+@pytest.mark.parametrize(
+    ("changes", "typed", "shown"),
+    [
+        ({"lemma": "Katze", "gender": "f"}, "die Ktaze", "die Katze"),
+        ({"lemma": "Katze", "gender": "f"}, "die katze", "die Katze"),
+    ],
+)
+def test_a_slip_passes_as_good_and_shows_the_corrected_spelling(
+    built: Workspace,
+    size: tuple[int, int],
+    changes: dict[str, object],
+    typed: str,
+    shown: str,
+) -> None:
+    _seed_en_de(built, **changes)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, typed)
+        assert _answers(built) == [(3, typed)]
+        lines = static_lines(app.screen, "#card")
+        assert any("RIGHT, typo - graded Good" in line for line in lines)
+        you = next(i for i, line in enumerate(lines) if f"you: {typed}" in line)
+        assert lines[you + 1].strip() == shown
+        assert all(len(line) <= size[0] for line in lines)
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_a_capitalisation_slip_that_spells_another_word_is_graded_again(
+    built: Workspace, size: tuple[int, int]
+) -> None:
+    _seed_en_de(built, lemma="Essen", gender="n")
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "das essen")
+        assert _answers(built) == [(1, "das essen")]
+        lines = static_lines(app.screen, "#card")
+        assert any("WRONG, capitalisation - graded Again" in line for line in lines)
+        you = next(i for i, line in enumerate(lines) if "you: das essen" in line)
+        assert lines[you + 1].strip() == "das Essen"
+        assert_inside(app.screen, size)
+
+    _drive(built, size, script)
+
+
+@pytest.mark.parametrize("size", SIZES)
+@pytest.mark.parametrize(
+    ("second", "rating", "verdict"),
+    [
+        ("der Hund", 2, "RIGHT on the second try - graded Hard"),
+        ("Hund", 2, "RIGHT on the second try - graded Hard"),
+        ("die Katze", 1, "WRONG - graded Again"),
+        ("Xyz", 1, "WRONG - graded Again"),
+        ("", 1, "No answer - graded Again"),
+    ],
+)
+def test_the_second_try_is_graded_hard_when_right_and_again_otherwise(
+    built: Workspace, size: tuple[int, int], second: str, rating: int, verdict: str
+) -> None:
+    _seed_en_de(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "die Katze")
+        await asyncio.sleep(0.35)
+        await _check(pilot, second)
+        assert _answers(built) == [(rating, f"die Katze | {second}")]
+        lines = static_lines(app.screen, "#card")
+        assert any(verdict in line for line in lines)
+        you = next(i for i, line in enumerate(lines) if "you:" in line)
+        assert lines[you + 1].strip() == "der Hund"
+        assert_inside(app.screen, size)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen.query_one("#sf0", Input).value == ""
+        assert "Try" not in _cue(app)
+
+    _drive(built, size, script)
+
+
+def test_the_retry_survives_a_resize_and_the_next_card_starts_fresh(built: Workspace) -> None:
+    _seed_en_de(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "die Katze")
+        for size in ((40, 12), (100, 30), (40, 30)):
+            await pilot.resize_terminal(*size)
+            await pilot.pause()
+            assert _cue(app) == "Another noun. Try: H _ _ _"
+            assert app.screen.query_one("#sf0", Input).has_focus
+            assert_inside(app.screen, size)
+        await _check(pilot, "Hund")
+        assert _answers(built) == [(2, "die Katze | Hund")]
+
+    _drive(built, (40, 30), script)
+
+
+def test_the_retry_cue_fits_the_ten_rows_of_a_40x12_screen(built: Workspace) -> None:
+    _seed_en_de(built)
+    used: dict[str, int] = {}
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        body = app.screen.query_one("#body")
+        used["front"] = _content_rows(body)
+        await _check(pilot, "die Katze")
+        used["retry"] = _content_rows(body)
+        assert_inside(app.screen, (40, 12))
+        await asyncio.sleep(0.35)
+        await _check(pilot, "der Hund")
+        used["verdict"] = _content_rows(body)
+        assert_inside(app.screen, (40, 12))
+
+    _drive(built, (40, 12), script)
+    assert (used["retry"], used["verdict"]) == (6, 9)
+
+
+def test_the_retry_reuses_the_check_button_and_its_tap_guard(
+    built: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_en_de(built)
+
+    async def script(app: HaraldApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await pilot.pause()
+        await _check(pilot, "die Katze")
+        monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 60.0)
+        await pilot.click("#check")
+        await pilot.pause()
+        assert _reviews(built) == []
+        monkeypatch.setattr("harald.tui.study._TAP_GUARD_S", 0.0)
+        await asyncio.sleep(0.3)
+        await pilot.click("#check")
+        await pilot.pause()
+        assert _answers(built) == [(1, "die Katze | ")]
+
+    _drive(built, (40, 30), script)
+
+
+def _content_rows(body: Widget) -> int:
+    return sum(child.outer_size.height for child in body.children if child.display)
