@@ -18,6 +18,9 @@ class Lexicon:
     engine: Engine
     sessions: sessionmaker[Session]
 
+    def close(self) -> None:
+        self.engine.dispose()
+
 
 def open_lexicon(path: Path) -> Result[Lexicon, LexiconError]:
     if not path.exists():

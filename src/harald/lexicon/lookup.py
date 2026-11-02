@@ -8,6 +8,7 @@ from harald.lexicon import model
 from harald.lexicon.db import Lexicon
 from harald.lexicon.fuzzy import fuzzy_deletes, max_distance, osa_within
 from harald.lexicon.models import (
+    KIND_INFLECTED,
     DeEntry,
     DeSense,
     Entry,
@@ -54,7 +55,7 @@ def known_words(lex: Lexicon, word: str) -> tuple[model.KnownWord, ...]:
     key = fold(" ".join(word.split()))
     with lex.sessions() as session:
         return tuple(
-            model.KnownWord(lemma, pos, kind == 1)
+            model.KnownWord(lemma, pos, kind == KIND_INFLECTED)
             for lemma, pos, kind in session.execute(_known_word_query(key))
         )
 

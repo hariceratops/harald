@@ -137,7 +137,7 @@ class AnswerMeaning:
             return Result.err(opened.unwrap_err())
         lex = opened.unwrap()
         try:
-            return transact(
+            checked = transact(
                 self._config.learning_db,
                 lambda ctx: answer_meaning(
                     ctx,
@@ -150,9 +150,11 @@ class AnswerMeaning:
                     lambda scope: scheduler_for(scope, self._enable_fuzzing),
                     lambda word: known_words(lex, word),
                 ),
-            ).map_err(lambda e: e)
+            )
+            # Result is invariant, so the identity map widens the error to the union
+            return checked.map_err(lambda e: e)
         finally:
-            lex.engine.dispose()
+            lex.close()
 
 
 class SessionSummary:

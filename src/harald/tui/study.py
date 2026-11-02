@@ -386,29 +386,25 @@ class StudyScreen(Screen[None]):
         if answered.is_err:
             self.notify(str(answered.unwrap_err()), severity="error")
             return
-        checked = answered.unwrap()
-        if isinstance(checked, NoArticleStored):
-            self._retry = None
-            self._hint = "No article stored - type the word alone"
-            self._shown_at = time.monotonic()
-            self._show()
-            return
-        if isinstance(checked, TryAgain):
-            self._first_try = given
-            self._retry = checked
-            self._shown_at = time.monotonic()
-            self.query_one("#sf0", Input).value = ""
-            self._show()
-            return
-        assert isinstance(checked, MeaningGraded)
-        self._attempt = given
-        self._expected = checked.expected
-        self._revealed = True
-        self._feedback = [_meaning_verdict(checked)]
-        self._graded += 1
         self._shown_at = time.monotonic()
-        self._show()
-        self.set_focus(None)
+        match answered.unwrap():
+            case NoArticleStored():
+                self._retry = None
+                self._hint = "No article stored - type the word alone"
+                self._show()
+            case TryAgain() as retry:
+                self._first_try = given
+                self._retry = retry
+                self.query_one("#sf0", Input).value = ""
+                self._show()
+            case MeaningGraded() as graded:
+                self._attempt = given
+                self._expected = graded.expected
+                self._revealed = True
+                self._feedback = [_meaning_verdict(graded)]
+                self._graded += 1
+                self._show()
+                self.set_focus(None)
 
     def _answer_conjugation(self) -> None:
         if self._card is None or self._feedback is not None:

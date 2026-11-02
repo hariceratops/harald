@@ -82,7 +82,6 @@ MeaningCheck = NoArticleStored | TryAgain | MeaningGraded
 
 
 def _parse(content: dict[str, Any], given: str) -> tuple[str, str]:
-    """The typed article (lower-cased, or "") and the word that remains."""
     words = given.split()
     pos = content["pos"]
     if pos in ("noun", "name") and len(words) >= 2 and words[0].casefold() in RECOGNISED_ARTICLES:
@@ -130,7 +129,7 @@ def _allowance(lemma: str) -> int:
 
 
 def _judge_word(content: dict[str, Any], word: str, known: Known) -> _Word:
-    """Rules 3-9 of design 5.1. `other_word` is rule 6's candidate for a retry."""
+    # `other_word` is the retry candidate (design 5.1 rule 6)
     lemma = content["lemma"]
     typed, wanted = normalise_answer(word), normalise_answer(lemma)
     if typed == wanted:
@@ -157,7 +156,6 @@ def check_meaning(
     previous: str | None,
     known: Known,
 ) -> MeaningCheck:
-    """Design 5.1: the rules in order, then the article, then the second-try cap."""
     second_try = first_try is not None
     expected = _expected(content)
 

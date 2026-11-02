@@ -42,7 +42,6 @@ def _discriminator(pos: str, entry: Entry) -> str:
 
 
 def _german_entry_gender(entry: GermanEntry) -> str:
-    """Inverts the article part of a label: `das Band` -> `n`, `der/das Liter` -> `mn`."""
     article, _, lemma = entry.label.partition(" ")
     genders = {_GENDER_OF_ARTICLE.get(a) for a in article.split("/")}
     if not lemma or None in genders:
