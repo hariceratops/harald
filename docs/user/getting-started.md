@@ -15,6 +15,28 @@ cd harald
 uv sync
 ```
 
+## Install on Termux
+
+The phone only studies, so it needs `lexicon.db` from the desktop and no dev
+tools. uv cannot download a Python on Android, so use the one Termux ships.
+
+```sh
+pkg install python git
+export UV_PYTHON_DOWNLOADS=never
+git clone <repo-url> harald
+cd harald
+uv sync --no-dev           # skips pytest, ruff and mypy, which build slowly here
+source .venv/bin/activate
+harald
+```
+
+- Run `harald` and `harald-cli` directly once the venv is active.
+- Do not use `uv run` there: it syncs the dev tools back in. If you must sync
+  again, use `uv sync --no-dev`.
+- Put `export UV_PYTHON_DOWNLOADS=never` and the `source` line in `~/.bashrc` to
+  skip typing them.
+- If Python is older than 3.12, run `pkg upgrade`.
+
 ## Build the lexicon
 
 ```sh
