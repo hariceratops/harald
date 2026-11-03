@@ -34,6 +34,14 @@ def sidecar_path(sources_dir: Path, filename: str) -> Path:
     return sources_dir / f"{filename}.meta.json"
 
 
+def part_path(sources_dir: Path, filename: str) -> Path:
+    return sources_dir / f"{filename}.part"
+
+
+def sidecar_part_path(sources_dir: Path, filename: str) -> Path:
+    return sources_dir / f"{filename}.meta.json.part"
+
+
 def fetch_all(
     sources_dir: Path, files: Sequence[SourceFile] = SOURCE_FILES
 ) -> Result[FetchReport, FetchFailed]:
@@ -82,8 +90,8 @@ def _fetch_file(sources_dir: Path, f: SourceFile) -> Result[bool, FetchFailed]:
     """Returns whether a new copy was downloaded."""
     data = sources_dir / f.filename
     sidecar = sidecar_path(sources_dir, f.filename)
-    part = sources_dir / f"{f.filename}.part"
-    sidecar_part = sources_dir / f"{f.filename}.meta.json.part"
+    part = part_path(sources_dir, f.filename)
+    sidecar_part = sidecar_part_path(sources_dir, f.filename)
     request = urllib.request.Request(f.url, headers=_conditional_headers(sources_dir, f.filename))
     try:
         try:

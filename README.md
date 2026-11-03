@@ -24,6 +24,8 @@ Working today:
 - `harald-cli build` builds `lexicon.db` from locally kept sources: deterministic,
   atomic, parallel. `--fetch` downloads new sources.
 - `harald-cli info` shows sources, dates, attribution and data coverage.
+- `harald-cli prune` deletes the downloaded sources (about 3.4 GB) once the
+  lexicon is built; a rebuild then needs `--fetch` again.
 - `harald-cli lookup WORD` finds German words, including inflected forms
   ("lief" finds *laufen*) and typos, with English glosses, German definitions,
   register labels, IPA and examples. `--conj` shows every tense.

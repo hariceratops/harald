@@ -23,6 +23,26 @@ Nothing is downloaded unless you pass `--fetch`. Each file is downloaded to a
 `already current`. Only the most recent download is kept, and its date is
 recorded in the lexicon.
 
+## Freeing disk space
+
+The sources are about 3.4 GB and stay after a build, so you can rebuild
+without downloading again.
+
+```sh
+harald-cli prune          # lists the files, asks, then deletes them
+harald-cli prune --yes    # no question
+```
+
+- Deletes only the files `--fetch` writes, plus their `.meta.json` and
+  `.part` leftovers. Other files in `sources_dir` stay.
+- Refuses unless `lexicon.db` opens, so you never delete your only way to
+  rebuild.
+- Refuses while a build is running.
+- Never touches `lexicon.db` or `learning.db`.
+- The next rebuild needs `harald-cli build --fetch` and downloads about 3 GB
+  again. It may get a newer dump, so the lexicon can differ.
+- Without the sources, `harald-cli build` says so and points at `--fetch`.
+
 ## Guarantees
 
 - **Deterministic.** A rebuild from the same files produces identical bytes.
