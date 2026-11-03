@@ -25,6 +25,13 @@ uv run harald-cli build --fetch
 build runs. The first build takes a while; later builds with unchanged
 sources do nothing. See [Building the lexicon](build.md).
 
+Free about 3.4 GB once the lexicon is built (a rebuild then needs `--fetch`
+again):
+
+```sh
+uv run harald-cli prune
+```
+
 ## Look something up
 
 ```sh

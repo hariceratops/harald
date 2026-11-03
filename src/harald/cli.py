@@ -84,6 +84,36 @@ def build(config_path: Path | None, fetch: bool, force: bool) -> int:
     return 0
 
 
+@cli.command(help="delete the downloaded sources, keeping lexicon.db")
+@click.option("--yes", is_flag=True, help="do not ask first")
+@click.pass_obj
+def prune(config_path: Path | None, yes: bool) -> int:
+    from harald.use_cases.prune import PruneSources
+
+    loaded = load_config(config_path)
+    if loaded.is_err:
+        return _fail(loaded.unwrap_err())
+    use_case = PruneSources(loaded.unwrap())
+    planned = use_case.plan()
+    if planned.is_err:
+        return _fail(planned.unwrap_err())
+    files = planned.unwrap()
+    if not files:
+        click.echo("nothing to prune")
+        return 0
+    for f in files:
+        click.echo(f"{f.path.name}  {f.size / 1_000_000:.1f} MB")
+    click.echo("The next rebuild needs 'harald-cli build --fetch' and downloads them again.")
+    if not yes and not click.confirm("Delete them?"):
+        click.echo("nothing deleted")
+        return 0
+    freed = use_case.execute()
+    if freed.is_err:
+        return _fail(freed.unwrap_err())
+    click.echo(f"freed {freed.unwrap() / 1_000_000:.1f} MB")
+    return 0
+
+
 @cli.command(help="show sources, dates, attribution and coverage")
 @click.pass_obj
 def info(config_path: Path | None) -> int:

@@ -77,3 +77,46 @@ def test_build_without_sources_points_at_fetch(workspace: Workspace) -> None:
 
     assert res.returncode == 1
     assert "harald-cli build --fetch" in res.stderr
+
+
+def test_prune_asks_first_and_declining_deletes_nothing(built: Workspace) -> None:
+    sources = built.config.sources_dir
+    before = sorted(p.name for p in sources.iterdir())
+
+    res = subprocess.run(
+        [sys.executable, "-m", "harald", "--config", str(built.config_file), "prune"],
+        input="n\n",
+        capture_output=True,
+        text=True,
+        env={"PATH": "", "HOME": str(built.root)},
+    )
+
+    assert res.returncode == 0
+    assert "harald-cli build --fetch" in res.stdout
+    assert "nothing deleted" in res.stdout
+    assert sorted(p.name for p in sources.iterdir()) == before
+
+
+def test_prune_yes_deletes_the_sources_and_keeps_the_lexicon(built: Workspace) -> None:
+    res = _harald(built, "prune", "--yes")
+
+    assert res.returncode == 0
+    assert "freed" in res.stdout
+    assert list(built.config.sources_dir.iterdir()) == []
+    assert built.config.lexicon.exists()
+
+
+def test_prune_without_a_lexicon_exits_2_and_keeps_the_sources(workspace: Workspace) -> None:
+    res = _harald(workspace, "prune", "--yes")
+
+    assert res.returncode == 2
+    assert any(workspace.config.sources_dir.iterdir())
+
+
+def test_a_rebuild_after_prune_points_at_fetch(built: Workspace) -> None:
+    _harald(built, "prune", "--yes")
+
+    res = _harald(built, "build")
+
+    assert res.returncode == 1
+    assert "harald-cli build --fetch" in res.stderr

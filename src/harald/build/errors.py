@@ -71,3 +71,14 @@ class TaskFailed(BuildError):
     def __reduce__(self) -> tuple[type["TaskFailed"], tuple[str, str]]:
         # crosses the process boundary inside a Result; the default would re-call __init__ wrongly
         return (TaskFailed, (self.task, self.detail))
+
+
+class PruneFailed(BuildError):
+    def __init__(self, file: Path, detail: str, deleted: int) -> None:
+        super().__init__(
+            f"cannot delete {file}: {detail}. {deleted} files were already deleted;"
+            " run 'harald-cli prune' again to finish."
+        )
+        self.file = file
+        self.detail = detail
+        self.deleted = deleted
