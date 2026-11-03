@@ -23,6 +23,7 @@ a by-hand run in Termux; record the results here:
 - [ ] Taps arrive as clicks, swipes as scroll.
 - [ ] Typing on the soft keyboard (issues 023 to 026): autocorrect and autocapitalisation, the keyboard staying up through check, retry and Next, and taps on `Check (enter)`.
 - [ ] The note box (issue 026) with the soft keyboard up, and taps on `h Note`.
+- [ ] A timed `harald-cli build` in Termux, sources copied over (not fetched): wall time, peak free-space use (expect about 5 GB), whether Android kills the process, and whether the phone throttles. Record the numbers; they decide whether building on the phone is supported (Syncthing sends `lexicon.db` one way, so a phone-built lexicon would be overwritten).
 
 ## Review notes
 
