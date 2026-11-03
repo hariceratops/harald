@@ -14,11 +14,13 @@ from harald.infrastructure.crud import crud_create, crud_update
 from harald.infrastructure.infra_errors import InfrastructureError
 from harald.infrastructure.transaction_context import DbTransactionContext
 from harald.learning.answers import (
-    ArticleCheck,
     FieldCheck,
+    Known,
+    MeaningCheck,
+    MeaningGraded,
     StammformenCheck,
-    check_article,
     check_conjugation,
+    check_meaning,
     check_stammformen,
 )
 from harald.learning.errors import CardNotFound, LearningDbError, StorageError
@@ -126,39 +128,24 @@ def _answer_checked[T](
     session_id: str,
     duration_ms: int | None,
     scheduler_for: Callable[[str], Scheduler],
-    check: Callable[[Card], tuple[T, bool, str]],
+    check: Callable[[Card], tuple[T, Option[Rating], str]],
 ) -> Result[T, LearningDbError]:
-    """Checked cards grade themselves: Good if correct, Again if not."""
+    """Checked cards grade themselves; no rating (a refusal or a retry) writes nothing."""
     found = ctx.run(lambda s: s.get(Card, card_id)).map_err(_storage)
     if found.is_err:
         return Result.err(found.unwrap_err())
     card = found.unwrap()
     if card is None:
         return Result.err(CardNotFound(card_id))
-    checked, correct, answer = check(card)
-    rating = Rating.Good if correct else Rating.Again
+    checked, rating, answer = check(card)
+    if rating.is_none:
+        return Result.ok(checked)
     graded = grade_card(
-        ctx, card_id, int(rating), now, session_id, duration_ms, answer, scheduler_for
+        ctx, card_id, int(rating.unwrap()), now, session_id, duration_ms, answer, scheduler_for
     )
     if graded.is_err:
         return Result.err(graded.unwrap_err())
     return Result.ok(checked)
-
-
-def answer_article(
-    ctx: DbTransactionContext,
-    card_id: int,
-    chosen: str,
-    now: datetime,
-    session_id: str,
-    duration_ms: int | None,
-    scheduler_for: Callable[[str], Scheduler],
-) -> Result[ArticleCheck, LearningDbError]:
-    def check(card: Card) -> tuple[ArticleCheck, bool, str]:
-        checked = check_article(card.content["gender"], chosen)
-        return checked, checked.correct, chosen
-
-    return _answer_checked(ctx, card_id, now, session_id, duration_ms, scheduler_for, check)
 
 
 def answer_stammformen(
@@ -170,9 +157,10 @@ def answer_stammformen(
     duration_ms: int | None,
     scheduler_for: Callable[[str], Scheduler],
 ) -> Result[StammformenCheck, LearningDbError]:
-    def check(card: Card) -> tuple[StammformenCheck, bool, str]:
+    def check(card: Card) -> tuple[StammformenCheck, Option[Rating], str]:
         checked = check_stammformen(card.content, given)
-        return checked, checked.correct, " | ".join(given)
+        rating = Rating.Good if checked.correct else Rating.Again
+        return checked, Option.some(rating), " | ".join(given)
 
     return _answer_checked(ctx, card_id, now, session_id, duration_ms, scheduler_for, check)
 
@@ -186,9 +174,42 @@ def answer_conjugation(
     duration_ms: int | None,
     scheduler_for: Callable[[str], Scheduler],
 ) -> Result[FieldCheck, LearningDbError]:
-    def check(card: Card) -> tuple[FieldCheck, bool, str]:
+    def check(card: Card) -> tuple[FieldCheck, Option[Rating], str]:
         checked = check_conjugation(card.content, given)
-        return checked, checked.correct, given
+        rating = Rating.Good if checked.correct else Rating.Again
+        return checked, Option.some(rating), given
+
+    return _answer_checked(ctx, card_id, now, session_id, duration_ms, scheduler_for, check)
+
+
+def answer_meaning(
+    ctx: DbTransactionContext,
+    card_id: int,
+    given: str,
+    first_try: str | None,
+    now: datetime,
+    session_id: str,
+    duration_ms: int | None,
+    scheduler_for: Callable[[str], Scheduler],
+    known: Known,
+) -> Result[MeaningCheck, LearningDbError]:
+    latest = (
+        select(Review.answer)
+        .where(Review.card_id == card_id)
+        .order_by(Review.reviewed_at.desc(), Review.id.desc())
+        .limit(1)
+    )
+    read = ctx.run(lambda s: s.scalar(latest)).map_err(_storage)
+    if read.is_err:
+        return Result.err(read.unwrap_err())
+    previous = read.unwrap()
+
+    def check(card: Card) -> tuple[MeaningCheck, Option[Rating], str]:
+        checked = check_meaning(card.content, given, first_try, previous, known)
+        rating = (
+            Option.some(checked.rating) if isinstance(checked, MeaningGraded) else Option.none()
+        )
+        return checked, rating, given if first_try is None else f"{first_try} | {given}"
 
     return _answer_checked(ctx, card_id, now, session_id, duration_ms, scheduler_for, check)
 

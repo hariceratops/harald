@@ -7,4 +7,4 @@ Spec: `dev/specs/harald-v1.md`
 ## Acceptance Criteria
 
 - A configurable daily cap limits how many new cards are introduced per day.
-- Sibling cards (from the same word or phrase) are not shown on the same day.
+- Sibling cards (from the same word or phrase, and of the same card type) are not shown on the same day. The default daily cap is 20.

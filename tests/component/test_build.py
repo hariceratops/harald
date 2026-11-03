@@ -32,7 +32,7 @@ def test_build_writes_lexicon_from_local_source(workspace: Workspace) -> None:
     res = build(workspace.config)
 
     assert res.is_ok
-    assert res.unwrap().entries == 9
+    assert res.unwrap().entries == 12
     assert res.unwrap().bad_lines == 1
     assert workspace.config.lexicon.exists()
 
@@ -77,6 +77,9 @@ def test_form_of_character_and_non_german_entries_are_skipped(built: Workspace) 
         "anrufen",
         "schnell",
         "Fernweh",
+        "Essen",
+        "essen",
+        "Katze",
     }
 
 
@@ -324,9 +327,9 @@ def test_build_records_coverage(built: Workspace) -> None:
         )
     )
 
-    # nouns: Hund, Band x3, Aufenthaltsgenehmigung; Berlin is a proper noun and left out
-    assert stats["coverage.noun_gender"] == (5, 5)
-    assert stats["coverage.stammformen"] == (2, 2)
+    # nouns: Hund, Band x3, Aufenthaltsgenehmigung, Essen, Katze; Berlin is a proper noun and left out
+    assert stats["coverage.noun_gender"] == (7, 7)
+    assert stats["coverage.stammformen"] == (2, 3)
     assert stats["coverage.translated_example"][0] == 1
     assert stats["bad_lines.wiktionary-en"] == (1, None)
     assert stats["bad_lines.wiktionary-de"] == (1, None)

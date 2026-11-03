@@ -23,7 +23,7 @@ def _canonical(content: object) -> str:
     return json.dumps(content, sort_keys=True, ensure_ascii=False)
 
 
-_ONCE_PER_WORD = ("article", "stammformen")
+_ONCE_PER_WORD = ("stammformen",)
 
 
 def _key(card_type: str, content: dict[str, Any]) -> tuple[str, str]:
@@ -32,7 +32,8 @@ def _key(card_type: str, content: dict[str, Any]) -> tuple[str, str]:
     # forms change between builds and the hint follows the first sense picked
     if card_type == "conjugation":
         return (card_type, content["slot"])
-    return (card_type, _canonical(content))
+    # a note is the learner's own and never makes a sense a different card
+    return (card_type, _canonical({k: v for k, v in content.items() if k != "note"}))
 
 
 def _identity(card: NewCard) -> tuple[str, str]:

@@ -1,5 +1,6 @@
 import time
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -13,24 +14,29 @@ from textual.widgets import Button, Footer, Header, Input, Static
 
 from harald.config import Config
 from harald.lexicon.model import PERSONS, TENSES
+from harald.use_cases.lexicon import QueryLexiconInfo
 from harald.use_cases.study import (
-    AnswerArticle,
     AnswerConjugation,
+    AnswerMeaning,
     AnswerStammformen,
     FieldCheck,
     Grade,
+    MeaningGraded,
     NextCard,
+    NoArticleStored,
     SessionSummary,
     StammformenCheck,
+    TryAgain,
 )
 
-# A double tap on "Show answer" must not land on a grade button that appears under the thumb.
+# A double tap must not land on the button that appears in the same place under the thumb.
 _TAP_GUARD_S = 0.3
 _GRADES = ((1, "Again"), (2, "Good"))
 _RATING = {1: 1, 2: 3}
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
-_ARTICLE_BUTTONS = ((1, "der"), (2, "die"), (3, "das"))
 _TYPED = ("stammformen", "conjugation")
+_CHECKED_MEANING = ("meaning_en_de", "meaning_de_de")
+_DIGRAPHS = "ae/oe/ue/ss are accepted for ä/ö/ü/ß"
 _STAMM_LABELS = ("er/sie/es", "Präteritum", "Perfekt")
 
 
@@ -39,34 +45,55 @@ def _word(content: dict[str, Any]) -> str:
     return f"{article} {content['lemma']}".strip()
 
 
-def _card_faces(card_type: str, content: dict[str, Any]) -> tuple[str, list[str], list[str]]:
+def _gloss(content: dict[str, Any]) -> str:
+    labels = content.get("labels")
+    return f"[{', '.join(labels)}] {content['gloss']}" if labels else str(content["gloss"])
+
+
+def _note_line(content: dict[str, Any], width: int) -> list[Text]:
+    note = content.get("note")
+    if not note:
+        return []
+    # one row only: a note longer than the body is cut, never wrapped
+    room = width - 2
+    cut = note if len(note) <= room else note[: room - 3].rstrip() + "..."
+    return [Text(f"({cut})", style="dim")]
+
+
+def _card_faces(
+    card_type: str, content: dict[str, Any], width: int
+) -> tuple[str, Sequence[str | Text], list[str]]:
     """Heading, front lines, back lines."""
     example = content.get("example") or {}
+    note = _note_line(content, width)
     if card_type == "meaning_de_en":
-        gloss = content["gloss"]
-        if content.get("labels"):
-            gloss = f"[{', '.join(content['labels'])}] {gloss}"
         return (
             "German -> English",
-            [_word(content), content["pos"], *([""] + [example["text"]] if example else [])],
-            [gloss, *([example["translation"]] if example else [])],
+            [
+                _word(content),
+                content["pos"],
+                *note,
+                *([""] + [example["text"]] if example else []),
+            ],
+            [_gloss(content), *([example["translation"]] if example else [])],
         )
     if card_type == "meaning_en_de":
         return (
             "English -> German",
             [
-                content["gloss"],
-                content["pos"],
+                _gloss(content),
+                *([content["pos"]] if content.get("pos") else []),
+                *note,
                 *([""] + [example["translation"]] if example else []),
             ],
             [_word(content), *([example["text"]] if example else [])],
         )
     if card_type == "meaning_de_de":
-        return "German -> German", [content["definition"]], [_word(content)]
-    if card_type == "article":
-        lemma = content["lemma"]
-        plural = f"   (pl. {content['plural']})" if content.get("plural") else ""
-        return "Article", [f"{lemma}{plural}", content["hint"]], []
+        return (
+            "German -> German",
+            [content["definition"], *([content["pos"]] if content.get("pos") else []), *note],
+            [_word(content)],
+        )
     if card_type == "stammformen":
         front = [f"{content['infinitive']}  -  {content['hint']}"]
         return "Stammformen", front, []
@@ -101,6 +128,42 @@ def _conjugation_feedback(check: FieldCheck, content: dict[str, Any]) -> list[st
     return lines
 
 
+def _field_label(content: dict[str, Any]) -> str:
+    # a proper noun's article is optional, so it is typed as a plain word
+    return "Art. + noun" if content.get("pos") == "noun" and content.get("gender") else "Word"
+
+
+def _retry_cue(retry: TryAgain, width: int) -> str:
+    start = f"Another {retry.pos}. Try: "
+    blanks = " ".join([retry.first_letter, *"_" * (retry.length - 1)])
+    if len(start) + len(blanks) <= width:
+        return start + blanks
+    return f"{start}{retry.first_letter}... ({retry.length} letters)"
+
+
+def _meaning_verdict(graded: MeaningGraded) -> str:
+    if graded.word == "empty":
+        return "No answer - graded Again"
+    if graded.word == "other_case_word":
+        return "WRONG, capitalisation - graded Again"
+    if graded.word == "wrong":
+        return "WRONG - graded Again"
+    if graded.repeated_article:
+        return "Wrong article twice - graded Again"
+    if graded.second_try:
+        return "RIGHT on the second try - graded Hard"
+    missing = graded.article in ("wrong", "missing")
+    if graded.word == "slip" and missing:
+        return "RIGHT, typo and article - graded Hard"
+    if graded.article == "wrong":
+        return "RIGHT, wrong article - graded Hard"
+    if graded.article == "missing":
+        return "RIGHT, no article - graded Hard"
+    if graded.word == "slip":
+        return "RIGHT, typo - graded Good"
+    return "RIGHT - graded Good"
+
+
 def _stammformen_feedback(check: StammformenCheck, content: dict[str, Any]) -> list[str]:
     lines = _field_lines(check.fields)
     lines.append("")
@@ -118,9 +181,8 @@ class StudyScreen(Screen[None]):
         # check_action refuses, so a second "continue" binding on space is never reached
         Binding("space", "advance", "Next"),
         Binding("enter", "continue", "Next"),
-        # the grade buttons already name their keys, and more hints overflow 40 columns;
-        # key 3 is der/die/das on article cards and refused by check_action elsewhere
-        *(Binding(str(n), f"grade({n})", show=False) for n in (1, 2, 3)),
+        # the grade buttons already name their keys, and more hints overflow 40 columns
+        *(Binding(str(n), f"grade({n})", show=False) for n in (1, 2)),
         Binding("escape", "end", "End"),
     ]
 
@@ -131,10 +193,14 @@ class StudyScreen(Screen[None]):
         self._card: tuple[int, str, dict[str, Any]] | None = None
         self._revealed = False
         self._attempt = ""
+        self._first_try: str | None = None
+        self._retry: TryAgain | None = None
         self._feedback: list[str] | None = None
+        self._expected: str | None = None
+        self._hint = _DIGRAPHS
         self._graded = 0
         self._front_at = 0.0
-        self._grades_at = 0.0
+        self._shown_at = 0.0
 
     def compose(self) -> ComposeResult:
         yield Header(icon="")
@@ -145,13 +211,12 @@ class StudyScreen(Screen[None]):
                     with Horizontal(classes="field", id=f"row{i}"):
                         yield Static(label, classes="field-label", id=f"lbl{i}")
                         yield Input(compact=True, id=f"sf{i}")
-            yield Static("ae/oe/ue/ss are accepted for ä/ö/ü/ß", id="digraphs")
+            yield Static(_DIGRAPHS, id="digraphs")
         with Horizontal(id="buttons"):
             yield self._button("Show answer", "reveal")
+            yield self._button("Check (enter)", "check")
             for n, name in _GRADES:
                 yield self._button(f"{n} {name}", f"grade{n}")
-            for n, name in _ARTICLE_BUTTONS:
-                yield self._button(f"{n} {name}", f"art{n}")
             yield self._button("Next  (enter)", "cont")
         yield Footer(compact=True)
 
@@ -162,6 +227,14 @@ class StudyScreen(Screen[None]):
         return button
 
     def on_mount(self) -> None:
+        # the lexicon can go while the TUI is open (a sync, a rebuild); checking needs it
+        queried = QueryLexiconInfo(self._config).execute()
+        if queried.is_err:
+            self.notify(
+                f"Checking answers needs lexicon.db: {queried.unwrap_err()}", severity="error"
+            )
+            self.app.pop_screen()
+            return
         self._next()
 
     def on_resize(self) -> None:
@@ -170,8 +243,7 @@ class StudyScreen(Screen[None]):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if self._card is None:
             return action in ("end",)
-        article = self._card[1] == "article"
-        checked = article or self._card[1] in _TYPED
+        checked = self._card[1] in _TYPED or self._card[1] in _CHECKED_MEANING
         if action == "advance":
             return self._feedback is not None
         if action == "reveal":
@@ -180,8 +252,6 @@ class StudyScreen(Screen[None]):
             return self._feedback is not None
         if action == "grade":
             number = parameters[0]
-            if article:
-                return self._feedback is None and number in (1, 2, 3)
             return not checked and self._revealed and self._feedback is None and number in (1, 2)
         return True
 
@@ -199,21 +269,25 @@ class StudyScreen(Screen[None]):
         self._card = (card.id, card.card_type, card.content)
         self._revealed = False
         self._attempt = ""
+        self._first_try = None
+        self._retry = None
         self._feedback = None
-        self._grades_at = time.monotonic()
+        self._expected = None
+        self._hint = _DIGRAPHS
+        self._shown_at = time.monotonic()
         self._front_at = time.monotonic()
         self._show()
-        if card.card_type == "article":
-            self.set_focus(None)
-        else:
-            self._focus_fields(card.card_type, card.content)
+        self._focus_fields(card.card_type, card.content)
 
     def _show(self) -> None:
         if self._card is None:
             return
         _, card_type, content = self._card
         typed = card_type in _TYPED
-        heading, front, back = _card_faces(card_type, content)
+        meaning = card_type in _CHECKED_MEANING
+        heading, front, back = _card_faces(card_type, content, self.size.width - 2)
+        if self._expected is not None:
+            back[0] = self._expected
         short = self.has_class("-short")
         if short:
             front = [line for line in front if line]
@@ -224,7 +298,9 @@ class StudyScreen(Screen[None]):
         parts: list[RenderableType] = [
             Text(heading, style="dim", justify="center"),
             *gap,
-            Text("\n".join(front), justify="center"),
+            Text("\n", justify="center").join(
+                line if isinstance(line, Text) else Text(line) for line in front
+            ),
         ]
         if self._feedback is not None:
             parts += [
@@ -238,19 +314,17 @@ class StudyScreen(Screen[None]):
             parts += [Text("\n".join(back), justify="center")]
         self.query_one("#card", Static).update(Group(*parts))
         self.sub_title = f"{self._graded} done"
-        article = card_type == "article"
-        checked = article or typed
-        asking = article and self._feedback is None
-        grading = not checked and self._revealed and self._feedback is None
-        asking_text = not article and not self._revealed and not self._feedback
+        grading = not typed and self._revealed and self._feedback is None
+        asking_text = not self._revealed and not self._feedback
         self.query_one("#fields").display = asking_text
-        self.query_one("#digraphs").display = asking_text and typed
-        self.query_one("#reveal").display = not checked and not self._revealed
+        hint = _retry_cue(self._retry, self.size.width - 2) if self._retry else self._hint
+        self.query_one("#digraphs", Static).update(hint)
+        self.query_one("#digraphs").display = asking_text and (typed or meaning)
+        self.query_one("#reveal").display = not typed and not meaning and not self._revealed
+        self.query_one("#check").display = meaning and asking_text
         self.query_one("#buttons").set_class(grading, "-grading")
         for n, _ in _GRADES:
             self.query_one(f"#grade{n}").display = grading
-        for n, _ in _ARTICLE_BUTTONS:
-            self.query_one(f"#art{n}").display = asking
         self.query_one("#cont").display = self._feedback is not None
         self.refresh_bindings()
 
@@ -261,6 +335,8 @@ class StudyScreen(Screen[None]):
             self.query_one(f"#row{i}").display = not (single and i > 0)
         if card_type == "conjugation":
             label = _slot_labels(content["slot"])[1]
+        elif card_type in _CHECKED_MEANING:
+            label = _field_label(content)
         else:
             label = "Answer" if single else _STAMM_LABELS[0]
         self.query_one("#lbl0", Static).update(label)
@@ -269,7 +345,7 @@ class StudyScreen(Screen[None]):
     def action_reveal(self) -> None:
         self._attempt = self.query_one("#sf0", Input).value.strip()
         self._revealed = True
-        self._grades_at = time.monotonic()
+        self._shown_at = time.monotonic()
         if self._attempt:
             self._show()
             self.set_focus(None)
@@ -282,35 +358,14 @@ class StudyScreen(Screen[None]):
     def action_advance(self) -> None:
         self._next()
 
-    def action_answer_article(self, number: int) -> None:
-        if self._card is None:
-            return
-        card_id, _, content = self._card
-        chosen = _ARTICLE_BUTTONS[number - 1][1]
-        duration_ms = int((time.monotonic() - self._front_at) * 1000)
-        answered = AnswerArticle(self._config).execute(
-            card_id, chosen, datetime.now(UTC), self._session_id, duration_ms
-        )
-        if answered.is_err:
-            self.notify(str(answered.unwrap_err()), severity="error")
-            return
-        check = answered.unwrap()
-        shown = f"{'/'.join(check.accepted)} {content['lemma']}"
-        self._feedback = (
-            [f"RIGHT   {shown}"]
-            if check.correct
-            else [f"WRONG   {shown}", f"(you chose: {chosen})"]
-        )
-        self._graded += 1
-        self._grades_at = time.monotonic()
-        self._show()
-
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
         number = int(cast(str, event.input.id).removeprefix("sf"))
         if self._card is None:
             return
-        if self._card[1] not in _TYPED:
+        if self._card[1] in _CHECKED_MEANING:
+            self._answer_meaning()
+        elif self._card[1] not in _TYPED:
             self.action_reveal()
         elif self._card[1] == "conjugation":
             self._answer_conjugation()
@@ -318,6 +373,38 @@ class StudyScreen(Screen[None]):
             self.query_one(f"#sf{number + 1}", Input).focus()
         else:
             self._answer_stammformen()
+
+    def _answer_meaning(self) -> None:
+        if self._card is None or self._feedback is not None:
+            return
+        card_id, _, _ = self._card
+        given = self.query_one("#sf0", Input).value.strip()
+        duration_ms = int((time.monotonic() - self._front_at) * 1000)
+        answered = AnswerMeaning(self._config).execute(
+            card_id, given, self._first_try, datetime.now(UTC), self._session_id, duration_ms
+        )
+        if answered.is_err:
+            self.notify(str(answered.unwrap_err()), severity="error")
+            return
+        self._shown_at = time.monotonic()
+        match answered.unwrap():
+            case NoArticleStored():
+                self._retry = None
+                self._hint = "No article stored - type the word alone"
+                self._show()
+            case TryAgain() as retry:
+                self._first_try = given
+                self._retry = retry
+                self.query_one("#sf0", Input).value = ""
+                self._show()
+            case MeaningGraded() as graded:
+                self._attempt = given
+                self._expected = graded.expected
+                self._revealed = True
+                self._feedback = [_meaning_verdict(graded)]
+                self._graded += 1
+                self._show()
+                self.set_focus(None)
 
     def _answer_conjugation(self) -> None:
         if self._card is None or self._feedback is not None:
@@ -333,7 +420,7 @@ class StudyScreen(Screen[None]):
             return
         self._feedback = _conjugation_feedback(answered.unwrap(), content)
         self._graded += 1
-        self._grades_at = time.monotonic()
+        self._shown_at = time.monotonic()
         self._show()
         self.set_focus(None)
 
@@ -351,15 +438,12 @@ class StudyScreen(Screen[None]):
             return
         self._feedback = _stammformen_feedback(answered.unwrap(), content)
         self._graded += 1
-        self._grades_at = time.monotonic()
+        self._shown_at = time.monotonic()
         self._show()
         self.set_focus(None)
 
     def action_grade(self, rating: int) -> None:
         if self._card is None:
-            return
-        if self._card[1] == "article":
-            self.action_answer_article(rating)
             return
         self._grade(_RATING[rating])
 
@@ -383,7 +467,7 @@ class StudyScreen(Screen[None]):
             self._next()
             return True
         self._feedback = [feedback]
-        self._grades_at = time.monotonic()
+        self._shown_at = time.monotonic()
         self._show()
         self.set_focus(None)
         return True
@@ -397,14 +481,14 @@ class StudyScreen(Screen[None]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
         button_id = event.button.id or ""
+        if time.monotonic() - self._shown_at < _TAP_GUARD_S:
+            return
         if button_id == "reveal":
             self.action_reveal()
-        elif time.monotonic() - self._grades_at < _TAP_GUARD_S:
-            return
+        elif button_id == "check":
+            self._answer_meaning()
         elif button_id == "cont":
             self.action_continue()
-        elif button_id.startswith("art"):
-            self.action_answer_article(int(button_id.removeprefix("art")))
         else:
             self.action_grade(int(button_id.removeprefix("grade")))
 

@@ -1,6 +1,6 @@
 # [feat] Article cards for nouns
 
-Depends on 010.
+Depends on 010. Superseded by 023 (2026-11-01): the article is now part of the typed English → German answer, and the article card type is removed. This issue is kept as the record of what was built.
 
 Spec: `dev/specs/harald-v1.md`
 

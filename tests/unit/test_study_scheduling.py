@@ -3,8 +3,12 @@ from datetime import UTC, datetime, timedelta
 
 from fsrs import Scheduler
 
-from harald.learning.content import CardPlan
+from harald.core.option import Option
+from harald.core.result import Result
+from harald.learning.db import transact
+from harald.learning.models import CARD_TYPES
 from harald.learning.scheduling import CARD_SCOPE, scheduler_for
+from harald.learning.study import _answer_checked
 from harald.lexicon.model import Headword
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 from harald.use_cases.lexicon import LoadHeadword
@@ -18,8 +22,7 @@ AGAIN, GOOD = 1, 3
 def _add(ws: Workspace, sense: int = 0) -> list[int]:
     hund: Headword = LoadHeadword(ws.config).execute("Hund", "noun").unwrap().unwrap()
     planned = PlanWordCards(ws.config).execute(hund, 0, [sense], []).unwrap()
-    plan = CardPlan(planned.word_hint, tuple(c for c in planned.cards if c.card_type != "article"))
-    return CreateWordCards(ws.config).execute(plan, T0).unwrap()
+    return CreateWordCards(ws.config).execute(planned, T0).unwrap()
 
 
 def _next(ws: Workspace, now: datetime) -> int | None:
@@ -28,12 +31,12 @@ def _next(ws: Workspace, now: datetime) -> int | None:
 
 def test_every_card_type_has_a_scope_and_meaning_cards_share_one() -> None:
     assert CARD_SCOPE["meaning_de_en"] == CARD_SCOPE["meaning_en_de"] == CARD_SCOPE["meaning_de_de"]
-    assert CARD_SCOPE["article"] != CARD_SCOPE["meaning_de_en"]
+    assert set(CARD_SCOPE) == set(CARD_TYPES)
 
 
 def test_schedulers_are_cached_per_scope_with_default_parameters() -> None:
     assert scheduler_for("meaning") is scheduler_for("meaning")
-    assert scheduler_for("meaning") is not scheduler_for("article")
+    assert scheduler_for("meaning") is not scheduler_for("phrase")
     assert scheduler_for("meaning").parameters == Scheduler().parameters
 
 
@@ -163,3 +166,29 @@ def test_session_summary_counts_cards_and_first_grades(built: Workspace) -> None
 
     assert (summary.reviewed, summary.correct) == (2, 1)
     assert SessionSummary(built.config).execute("none").unwrap().reviewed == 0
+
+
+def test_a_checked_answer_with_no_rating_writes_no_review_and_no_audit_entry(
+    built: Workspace,
+) -> None:
+    (first,) = _add(built)[:1]
+
+    checked = transact(
+        built.config.learning_db,
+        lambda ctx: _answer_checked(
+            ctx,
+            first,
+            T0,
+            "s1",
+            None,
+            lambda scope: scheduler_for(scope, False),
+            lambda _card: ("refused", Option.none(), "x"),
+        ),
+    )
+
+    assert checked == Result.ok("refused")
+    with sqlite3.connect(built.config.learning_db) as db:
+        reviews = db.execute("SELECT COUNT(*) FROM review").fetchone()
+        updates = db.execute("SELECT COUNT(*) FROM operations WHERE action = 'update'").fetchone()
+    assert reviews == (0,)
+    assert updates == (0,)

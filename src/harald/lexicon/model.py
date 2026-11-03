@@ -24,6 +24,13 @@ class PrincipalParts:
 
 
 @dataclass(frozen=True)
+class KnownWord:
+    lemma: str
+    pos: str
+    inflected: bool
+
+
+@dataclass(frozen=True)
 class Example:
     text: str
     translation: str | None

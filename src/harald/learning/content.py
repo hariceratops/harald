@@ -1,8 +1,10 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from harald.lexicon.model import PERSONS, TENSES, Entry, Headword
+from harald.lexicon.model import PERSONS, TENSES, Entry, GermanEntry, Headword
+
+_GENDER_OF_ARTICLE = {"der": "m", "die": "f", "das": "n"}
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,14 @@ def _discriminator(pos: str, entry: Entry) -> str:
     if pos == "verb" and entry.principal_parts and entry.principal_parts.part2:
         return entry.principal_parts.part2
     return ""
+
+
+def _german_entry_gender(entry: GermanEntry) -> str:
+    article, _, lemma = entry.label.partition(" ")
+    genders = {_GENDER_OF_ARTICLE.get(a) for a in article.split("/")}
+    if not lemma or None in genders:
+        return ""
+    return "".join(g for g in "mfn" if g in genders)
 
 
 def _first_translated_example(entry: Entry, sense_index: int) -> dict[str, str] | None:
@@ -94,10 +104,15 @@ def plan_word_cards(
     en_senses: Sequence[int],
     de_senses: Sequence[tuple[int, int]],
     tenses: Sequence[str] = (),
+    en_notes: Mapping[int, str] | None = None,
+    de_notes: Mapping[tuple[int, int], str] | None = None,
 ) -> CardPlan:
     """Picks are positions: `en_senses` into the chosen entry's senses, `de_senses` as
     (German entry, sense) into `headword.german`. `tenses` are stems from `TENSES`; their
-    conjugation cards do not depend on the senses picked."""
+    conjugation cards do not depend on the senses picked. Notes are keyed like the picks and
+    only reach senses that are being planned; an empty note is no note."""
+    en_notes = en_notes or {}
+    de_notes = de_notes or {}
     entry = headword.entries[entry_index] if entry_index is not None else None
     gender = entry.gender if entry else ""
     hint = WordHint(
@@ -118,6 +133,8 @@ def plan_word_cards(
             example = _first_translated_example(entry, i)
             if example:
                 content["example"] = example
+            if en_notes.get(i):
+                content["note"] = en_notes[i]
             cards.append(NewCard("meaning_de_en", content))
             cards.append(NewCard("meaning_en_de", dict(content)))
 
@@ -125,65 +142,49 @@ def plan_word_cards(
         sense_de = headword.german[de_entry].senses[i]
         if sense_de.index is None:
             continue
-        cards.append(
-            NewCard(
-                "meaning_de_de",
-                {
-                    "lemma": headword.lemma,
-                    "pos": headword.pos,
-                    "gender": gender,
-                    "definition": sense_de.gloss,
-                },
-            )
-        )
+        de_content: dict[str, Any] = {
+            "lemma": headword.lemma,
+            "pos": headword.pos,
+            "gender": _german_entry_gender(headword.german[de_entry]),
+            "definition": sense_de.gloss,
+            "labels": list(sense_de.labels),
+        }
+        if de_notes.get((de_entry, i)):
+            de_content["note"] = de_notes[(de_entry, i)]
+        cards.append(NewCard("meaning_de_de", de_content))
 
     refusals: list[Refusal] = []
-    if headword.pos in ("noun", "verb") and (en_senses or de_senses):
+    if headword.pos == "verb" and (en_senses or de_senses):
         first = (
             entry.senses[en_senses[0]].gloss
             if entry is not None and en_senses
             else headword.german[de_senses[0][0]].senses[de_senses[0][1]].gloss
         )
-        if headword.pos == "verb":
-            parts = entry.principal_parts if entry else None
-            missing = tuple(
-                label
-                for label, form in (
-                    ("Präsens", parts and parts.pres3sg),
-                    ("Präteritum", parts and parts.pret),
-                    ("Partizip II", parts and parts.part2),
-                    ("auxiliary", parts and parts.auxiliaries),
-                )
-                if not form
+        parts = entry.principal_parts if entry else None
+        missing = tuple(
+            label
+            for label, form in (
+                ("Präsens", parts and parts.pres3sg),
+                ("Präteritum", parts and parts.pret),
+                ("Partizip II", parts and parts.part2),
+                ("auxiliary", parts and parts.auxiliaries),
             )
-            if entry is None or parts is None or missing:
-                refusals.append(Refusal("stammformen", missing))
-            else:
-                cards.append(
-                    NewCard(
-                        "stammformen",
-                        {
-                            "infinitive": headword.lemma,
-                            "hint": first,
-                            "pres3sg": parts.pres3sg,
-                            "preterite": parts.pret,
-                            "participle": parts.part2,
-                            "auxiliaries": list(parts.auxiliaries),
-                            "separable_prefix": entry.separable_prefix or "",
-                        },
-                    )
-                )
-        elif not gender:
-            refusals.append(Refusal("article", ("gender",)))
+            if not form
+        )
+        if entry is None or parts is None or missing:
+            refusals.append(Refusal("stammformen", missing))
         else:
             cards.append(
                 NewCard(
-                    "article",
+                    "stammformen",
                     {
-                        "lemma": headword.lemma,
-                        "gender": gender,
-                        "plural": entry.plural if entry and entry.plural else "",
+                        "infinitive": headword.lemma,
                         "hint": first,
+                        "pres3sg": parts.pres3sg,
+                        "preterite": parts.pret,
+                        "participle": parts.part2,
+                        "auxiliaries": list(parts.auxiliaries),
+                        "separable_prefix": entry.separable_prefix or "",
                     },
                 )
             )

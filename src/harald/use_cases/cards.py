@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from harald.config import Config
@@ -21,8 +21,12 @@ class PlanWordCards:
         en_senses: Sequence[int],
         de_senses: Sequence[tuple[int, int]],
         tenses: Sequence[str] = (),
+        en_notes: Mapping[int, str] | None = None,
+        de_notes: Mapping[tuple[int, int], str] | None = None,
     ) -> Result[CardPlan, LearningDbError]:
-        plan = plan_word_cards(headword, entry_index, en_senses, de_senses, tenses)
+        plan = plan_word_cards(
+            headword, entry_index, en_senses, de_senses, tenses, en_notes, de_notes
+        )
 
         def dedupe(ctx):  # type: ignore[no-untyped-def]
             return drop_live_duplicates(ctx, plan.word_hint, plan.cards).map(

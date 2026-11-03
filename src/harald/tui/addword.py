@@ -1,3 +1,4 @@
+import re
 from collections import Counter
 from datetime import UTC, datetime
 
@@ -6,12 +7,13 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.content import Content
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, Footer, Header, OptionList, SelectionList, Static
+from textual.widgets import Button, Footer, Header, Input, OptionList, SelectionList, Static
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
 from harald.config import Config
 from harald.lexicon.model import PERSONS, TENSES, Headword
+from harald.text import fold
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 
 _ARTICLES = {"m": "der", "f": "die", "n": "das"}
@@ -19,7 +21,6 @@ _CARD_NAMES = {
     "meaning_de_en": "German -> English",
     "meaning_en_de": "English -> German",
     "meaning_de_de": "German -> German",
-    "article": "Article",
     "stammformen": "Stammformen",
     "conjugation": "Conjugation",
 }
@@ -62,10 +63,44 @@ class PickEntryScreen(ModalScreen[int | None]):
         self.dismiss(event.option_index)
 
 
+class NoteScreen(ModalScreen[str | None]):
+    BINDINGS = [Binding("escape", "dismiss(None)", "Cancel")]
+
+    def __init__(self, lemma: str, note: str) -> None:
+        super().__init__()
+        self._lemma = fold(lemma)
+        self._note = note
+
+    def compose(self) -> ComposeResult:
+        yield Input(self._note, max_length=36, id="note")
+        yield Static(id="note-hint")
+        yield Footer(compact=True)
+
+    def on_mount(self) -> None:
+        self.query_one(Input).border_title = "Note for this sense"
+        self._hint(self._note)
+
+    def _hint(self, note: str) -> None:
+        contains = re.search(rf"(?<!\w){re.escape(self._lemma)}(?!\w)", fold(note))
+        self.query_one("#note-hint", Static).update(
+            "Contains the word - Enter keeps it"
+            if contains
+            else "Shown before you answer, both sides"
+        )
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        self._hint(event.value)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        self.dismiss(event.value.strip())
+
+
 class AddWordScreen(Screen[None]):
     TITLE = "Add word"
     BINDINGS = [
         Binding("n", "next", "Next"),
+        Binding("h", "note", "Note"),
         Binding("c", "create", "Create"),
         Binding("b", "back", "Back"),
         Binding("escape", "cancel", "Cancel"),
@@ -87,6 +122,8 @@ class AddWordScreen(Screen[None]):
         self._de_picked: list[tuple[int, int]] = []
         self._en_have: set[int] = set()
         self._de_have: set[tuple[int, int]] = set()
+        self._en_notes: dict[int, str] = {}
+        self._de_notes: dict[tuple[int, int], str] = {}
         self._tense_picked: list[str] = []
         self._tense_have: set[str] = set()
         self._new_count = 0
@@ -200,6 +237,8 @@ class AddWordScreen(Screen[None]):
                 label = f"{i + 1}. {_labelled(sense.labels, sense.gloss)}"
                 if i in self._en_have:
                     label += "  (has cards)"
+                elif self._en_notes.get(i):
+                    label += "  + note"
                 picker.add_option(Selection(Content(label), i, i in self._en_picked))
             picker.highlighted = 0
             picker.focus()
@@ -215,6 +254,8 @@ class AddWordScreen(Screen[None]):
                     label = f"[{de_sense.index}] {_labelled(de_sense.labels, de_sense.gloss)}"
                     if (e, i) in self._de_have:
                         label += "  (has cards)"
+                    elif self._de_notes.get((e, i)):
+                        label += "  + note"
                     picker.add_option(Selection(Content(label), (e, i), (e, i) in self._de_picked))
             picker.highlighted = next(
                 i for i in range(picker.option_count) if not picker.get_option_at_index(i).disabled
@@ -236,7 +277,13 @@ class AddWordScreen(Screen[None]):
 
     def _show_confirm(self) -> None:
         planned = PlanWordCards(self._config).execute(
-            self._headword, self._entry_index, self._en_picked, self._de_picked, self._tense_picked
+            self._headword,
+            self._entry_index,
+            self._en_picked,
+            self._de_picked,
+            self._tense_picked,
+            self._en_notes,
+            self._de_notes,
         )
         summary = self.query_one("#summary", Static)
         if planned.is_err:
@@ -273,6 +320,8 @@ class AddWordScreen(Screen[None]):
         last = self._step == "confirm"
         if action == "next":
             return not last
+        if action == "note":
+            return self._step in ("en", "de")
         if action == "create":
             return last and self._new_count > 0
         return True
@@ -281,6 +330,41 @@ class AddWordScreen(Screen[None]):
         self._capture()
         self._at += 1
         self._show()
+
+    def action_note(self) -> None:
+        picker = self.query_one("#picker", SelectionList)
+        if picker.highlighted is None:
+            return
+        row = picker.highlighted
+        option = picker.get_option_at_index(row)
+        if option.disabled:
+            return
+        value = option.value
+        if value in (self._en_have if isinstance(value, int) else self._de_have):
+            self.notify("This sense has cards - notes come with card editing", severity="warning")
+            return
+        current = (
+            self._en_notes.get(value, "")
+            if isinstance(value, int)
+            else self._de_notes.get(value, "")
+        )
+
+        def stored(note: str | None) -> None:
+            if note is None:
+                return
+            self._capture()
+            if isinstance(value, int):
+                self._en_notes[value] = note
+                if note and value not in self._en_picked:
+                    self._en_picked.append(value)
+            else:
+                self._de_notes[value] = note
+                if note and value not in self._de_picked:
+                    self._de_picked.append(value)
+            self._show()
+            picker.highlighted = row
+
+        self.app.push_screen(NoteScreen(self._headword.lemma, current), stored)
 
     def action_back(self) -> None:
         if self._at == 0:
@@ -295,7 +379,13 @@ class AddWordScreen(Screen[None]):
 
     def action_create(self) -> None:
         planned = PlanWordCards(self._config).execute(
-            self._headword, self._entry_index, self._en_picked, self._de_picked, self._tense_picked
+            self._headword,
+            self._entry_index,
+            self._en_picked,
+            self._de_picked,
+            self._tense_picked,
+            self._en_notes,
+            self._de_notes,
         )
         if planned.is_err:
             self.notify(str(planned.unwrap_err()), severity="error")

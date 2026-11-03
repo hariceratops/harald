@@ -12,7 +12,6 @@ CARD_SCOPE = {
     "meaning_de_en": "meaning",
     "meaning_en_de": "meaning",
     "meaning_de_de": "meaning",
-    "article": "article",
     "stammformen": "conjugation",
     "conjugation": "conjugation",
     "phrase_en_de": "phrase",

@@ -6,7 +6,7 @@ Spec: `dev/specs/harald-v1.md`
 
 ## Acceptance Criteria
 
-- From a lookup, the user picks English-edition senses of any part of speech. Each picked sense yields a German → English and an English → German meaning card.
+- From a lookup, the user picks English-edition senses of any part of speech. Each picked sense yields a German → English and an English → German meaning card. The English → German card is later typed and checked (issue 023), and the German → English card stays self-graded.
 - Each card stores its own copy of what it teaches (lemma, gender, chosen gloss) in `learning.db`, independent of `lexicon.db` row ids.
 - The TUI study screen shows due cards and accepts an Again or Good self-grade, given after the learner has typed an attempt and seen it beside the answer; an empty attempt is graded Again. Scheduling uses the `fsrs` package with default parameters scoped per card type.
 - Every review is appended to the review log. Each grade is stored immediately: killing the process mid-session loses at most the card on screen.

@@ -20,7 +20,6 @@ CARD_TYPES = (
     "meaning_de_en",
     "meaning_en_de",
     "meaning_de_de",
-    "article",
     "stammformen",
     "conjugation",
     "phrase_en_de",

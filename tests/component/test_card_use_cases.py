@@ -1,13 +1,29 @@
 import sqlite3
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+
+from fsrs import Rating
 
 from harald.core.option import Option
+from harald.core.result import Result
+from harald.learning.answers import ARTICLES
 from harald.learning.content import CardPlan
+from harald.learning.errors import LearningDbError
+from harald.learning.study import SummaryCounts
+from harald.lexicon.errors import LexiconError
 from harald.lexicon.model import Headword, PrincipalParts
 from harald.use_cases.cards import CreateWordCards, PlanWordCards
 from harald.use_cases.lexicon import LoadHeadword
-from harald.use_cases.study import AnswerConjugation, NextCard
+from harald.use_cases.study import (
+    AnswerConjugation,
+    AnswerMeaning,
+    MeaningCheck,
+    MeaningGraded,
+    NextCard,
+    NoArticleStored,
+    SessionSummary,
+    TryAgain,
+)
 from tests.conftest import Workspace
 
 NOW = datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
@@ -32,7 +48,6 @@ def test_each_english_sense_gives_a_de_en_and_an_en_de_card(built: Workspace) ->
         "meaning_en_de",
         "meaning_de_en",
         "meaning_en_de",
-        "article",
     ]
     assert plan.word_hint.lemma == "Hund"
     assert plan.word_hint.discriminator == "m|Hunde"
@@ -70,8 +85,8 @@ def test_cards_store_their_own_copy_and_no_lexicon_ids(built: Workspace) -> None
     assert card.content["gender"] == "m"
     assert card.content["example"]["translation"] == "The dog barks."
     stored = _rows(built, "SELECT card_type, content FROM card ORDER BY id")
-    assert [t for t, _ in stored] == ["meaning_de_en", "meaning_en_de", "article"]
-    assert all('"gloss": "dog (Canis familiaris)"' in str(c) for t, c in stored if t != "article")
+    assert [t for t, _ in stored] == ["meaning_de_en", "meaning_en_de"]
+    assert all('"gloss": "dog (Canis familiaris)"' in str(c) for _, c in stored)
     columns = [r[1] for r in _rows(built, "PRAGMA table_info(card)")]
     assert not any("lexicon" in c or "sense" in c for c in columns)
 
@@ -82,15 +97,14 @@ def test_creating_cards_is_one_audited_transaction(built: Workspace) -> None:
 
     ids = CreateWordCards(built.config).execute(plan, NOW).unwrap()
 
-    assert len(ids) == 3
+    assert len(ids) == 2
     assert _rows(built, "SELECT COUNT(*) FROM operation_groups") == [(1,)]
     assert _rows(built, "SELECT entity_type, action FROM operations ORDER BY id") == [
         ("word", "create"),
         ("card", "create"),
         ("card", "create"),
-        ("card", "create"),
     ]
-    assert _rows(built, "SELECT COUNT(*) FROM card WHERE last_review IS NULL") == [(3,)]
+    assert _rows(built, "SELECT COUNT(*) FROM card WHERE last_review IS NULL") == [(2,)]
 
 
 def test_already_live_cards_are_dropped_from_a_new_plan(built: Workspace) -> None:
@@ -111,7 +125,7 @@ def test_second_add_reuses_the_word_row(built: Workspace) -> None:
         CreateWordCards(built.config).execute(plan, NOW).unwrap()
 
     assert _rows(built, "SELECT COUNT(*) FROM word") == [(1,)]
-    assert _rows(built, "SELECT COUNT(*) FROM card") == [(5,)]
+    assert _rows(built, "SELECT COUNT(*) FROM card") == [(4,)]
 
 
 def test_homographs_get_separate_word_rows(built: Workspace) -> None:
@@ -136,61 +150,11 @@ def test_deleted_cards_are_not_dedupe_targets_nor_studied(built: Workspace) -> N
     again = PlanWordCards(built.config).execute(hund, 0, [0], []).unwrap()
     nxt = NextCard(built.config).execute(NOW)
 
-    assert len(again.cards) == 3
+    assert len(again.cards) == 2
     assert nxt.unwrap() == Option.none()
 
 
-def test_a_noun_gets_one_article_card_with_its_copied_content(built: Workspace) -> None:
-    band = _headword(built, "Band")
-
-    plan = PlanWordCards(built.config).execute(band, 0, [0], []).unwrap()
-
-    article = [c for c in plan.cards if c.card_type == "article"]
-    assert [c.content for c in article] == [
-        {"lemma": "Band", "gender": "n", "plural": "Bänder", "hint": "ribbon, tape"}
-    ]
-    assert plan.refusals == ()
-
-
-def test_the_article_card_is_planned_once_per_word_however_many_senses(
-    built: Workspace,
-) -> None:
-    hund = _headword(built, "Hund")
-
-    both = PlanWordCards(built.config).execute(hund, 0, [0, 1], []).unwrap()
-    assert [c.card_type for c in both.cards].count("article") == 1
-    assert both.cards[-1].content["hint"] == "dog (Canis familiaris)"
-
-    CreateWordCards(built.config).execute(both, NOW).unwrap()
-    later = PlanWordCards(built.config).execute(hund, 0, [1], []).unwrap()
-
-    assert later.cards == ()
-
-
-def test_a_second_sense_added_later_does_not_add_a_second_article_card(
-    built: Workspace,
-) -> None:
-    hund = _headword(built, "Hund")
-    for sense in (0, 1):
-        plan = PlanWordCards(built.config).execute(hund, 0, [sense], []).unwrap()
-        CreateWordCards(built.config).execute(plan, NOW).unwrap()
-
-    assert _rows(built, "SELECT COUNT(*) FROM card WHERE card_type = 'article'") == [(1,)]
-
-
-def test_a_noun_without_a_gender_refuses_the_article_card_and_names_it(
-    built: Workspace,
-) -> None:
-    fernweh = _headword(built, "Fernweh")
-
-    plan = PlanWordCards(built.config).execute(fernweh, None, [], [(0, 0)]).unwrap()
-
-    assert [c.card_type for c in plan.cards] == ["meaning_de_de"]
-    assert [(r.card_type, r.missing) for r in plan.refusals] == [("article", ("gender",))]
-    assert len(CreateWordCards(built.config).execute(plan, NOW).unwrap()) == 1
-
-
-def test_a_noun_with_no_sense_picked_gets_no_article_card(built: Workspace) -> None:
+def test_a_noun_with_no_sense_picked_gets_no_cards(built: Workspace) -> None:
     hund = _headword(built, "Hund")
 
     plan = PlanWordCards(built.config).execute(hund, 0, [], []).unwrap()
@@ -386,3 +350,417 @@ def test_answering_a_conjugation_card_grades_it_by_the_check(built: Workspace) -
         (3, "rufe an"),
         (1, "rufst"),
     ]
+
+
+def _add(
+    ws: Workspace,
+    lemma: str,
+    pos: str,
+    entry: int | None,
+    en: list[int],
+    de: list[tuple[int, int]],
+    card_type: str,
+) -> int:
+    plan = PlanWordCards(ws.config).execute(_headword(ws, lemma, pos), entry, en, de).unwrap()
+    CreateWordCards(ws.config).execute(plan, NOW).unwrap()
+    rows = _rows(
+        ws, f"SELECT id FROM card WHERE card_type = '{card_type}' ORDER BY id DESC LIMIT 1"
+    )
+    return int(str(rows[0][0]))
+
+
+def _meaning(
+    ws: Workspace, card_id: int, given: str, at: datetime = NOW, first_try: str | None = None
+) -> Result[MeaningCheck, LearningDbError | LexiconError]:
+    return AnswerMeaning(ws.config, enable_fuzzing=False).execute(
+        card_id, given, first_try, at, "s1", 1500
+    )
+
+
+def test_a_right_typed_meaning_is_graded_good(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "der Hund").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.word, checked.article) == (Rating.Good, "right", "right")
+    assert _rows(built, "SELECT rating, answer, duration_ms FROM review") == [(3, "der Hund", 1500)]
+
+
+def test_a_wrong_article_is_graded_hard_into_the_review_row(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "die Hund").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.article, checked.expected) == (Rating.Hard, "wrong", "der Hund")
+    assert _rows(built, "SELECT rating, answer FROM review") == [(2, "die Hund")]
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(1, 1)
+
+
+def test_a_wrong_word_is_graded_again_and_counts_as_missed(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "der Hnd").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Again
+    assert _rows(built, "SELECT rating, answer FROM review") == [(1, "der Hnd")]
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(1, 0)
+
+
+def test_an_empty_answer_is_graded_again(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    _meaning(built, card, "").unwrap()
+
+    assert _rows(built, "SELECT rating, answer FROM review") == [(1, "")]
+
+
+def test_a_wrong_article_twice_running_escalates_to_again(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+    later = NOW + timedelta(days=1)
+
+    first = _meaning(built, card, "Hund").unwrap()
+    second = _meaning(built, card, "die Hund", later).unwrap()
+    third = _meaning(built, card, "der Hund", later + timedelta(days=1)).unwrap()
+
+    assert [c.rating for c in (first, second, third) if isinstance(c, MeaningGraded)] == [
+        Rating.Hard,
+        Rating.Again,
+        Rating.Good,
+    ]
+    assert _rows(built, "SELECT rating FROM review ORDER BY id") == [(2,), (1,), (3,)]
+
+
+def test_a_wrong_word_between_resets_the_escalation(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    _meaning(built, card, "Hund").unwrap()
+    _meaning(built, card, "Xyz", NOW + timedelta(days=1)).unwrap()
+    third = _meaning(built, card, "Hund", NOW + timedelta(days=2)).unwrap()
+
+    assert isinstance(third, MeaningGraded)
+    assert third.rating == Rating.Hard
+
+
+def _clear_gender(ws: Workspace) -> None:
+    with sqlite3.connect(ws.config.learning_db) as db:
+        db.execute("UPDATE card SET content = json_set(content, '$.gender', '')")
+
+
+def test_a_noun_without_gender_typed_with_an_article_is_refused_and_writes_nothing(
+    built: Workspace,
+) -> None:
+    card = _add(built, "Fernweh", "noun", None, [], [(0, 0)], "meaning_de_de")
+    _clear_gender(built)
+    before = _rows(built, "SELECT due, fsrs_state, last_review FROM card")
+
+    checked = _meaning(built, card, "das Fernweh").unwrap()
+
+    assert checked == NoArticleStored()
+    assert _rows(built, "SELECT COUNT(*) FROM review") == [(0,)]
+    assert _rows(built, "SELECT due, fsrs_state, last_review FROM card") == before
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(0, 0)
+
+
+def test_a_noun_without_gender_typed_alone_is_good(built: Workspace) -> None:
+    card = _add(built, "Fernweh", "noun", None, [], [(0, 0)], "meaning_de_de")
+    _clear_gender(built)
+
+    checked = _meaning(built, card, "Fernweh").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.article) == (Rating.Good, "not_asked")
+
+
+def test_a_proper_noun_ignores_the_article(built: Workspace) -> None:
+    card = _add(built, "Berlin", "name", 0, [0], [], "meaning_en_de")
+
+    with_article = _meaning(built, card, "der Berlin").unwrap()
+    alone = _meaning(built, card, "Berlin", NOW + timedelta(days=1)).unwrap()
+
+    assert [c.rating for c in (with_article, alone) if isinstance(c, MeaningGraded)] == [
+        Rating.Good,
+        Rating.Good,
+    ]
+
+
+def test_a_homograph_accepts_the_gender_of_its_own_entry(built: Workspace) -> None:
+    band = _add(built, "Band", "noun", 0, [0], [], "meaning_en_de")
+    entry_gender = str(
+        _rows(built, f"SELECT json_extract(content, '$.gender') FROM card WHERE id = {band}")[0][0]
+    )
+
+    checked = _meaning(built, band, f"{ARTICLES[entry_gender]} Band").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Good
+
+
+def test_a_retry_stores_both_tries_and_is_capped_at_hard(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "der Hund", first_try="Katze").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Hard
+    assert _rows(built, "SELECT rating, answer FROM review") == [(2, "Katze | der Hund")]
+
+
+def test_answering_an_unknown_card_is_an_error(built: Workspace) -> None:
+    assert _meaning(built, 999, "Hund").is_err
+
+
+def _reviews(ws: Workspace) -> list[tuple[object, ...]]:
+    return _rows(ws, "SELECT rating, answer FROM review ORDER BY id")
+
+
+def test_a_typo_is_forgiven_graded_good_and_the_spelling_is_shown(built: Workspace) -> None:
+    card = _add(built, "Katze", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "die Katse").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating, checked.expected) == ("slip", Rating.Good, "die Katze")
+    assert _reviews(built) == [(3, "die Katse")]
+
+
+def test_a_typo_that_is_a_known_form_is_not_forgiven(built: Workspace) -> None:
+    card = _add(built, "Katze", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "die Katzen").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating) == ("wrong", Rating.Again)
+
+
+def test_capitalisation_that_makes_another_lemma_is_again(built: Workspace) -> None:
+    card = _add(built, "Essen", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "das essen").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating) == ("other_case_word", Rating.Again)
+
+
+def test_capitalisation_alone_is_forgiven_when_the_other_case_is_no_lemma(
+    built: Workspace,
+) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "der hund").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating) == ("slip", Rating.Good)
+
+
+def test_another_noun_offers_a_retry_and_writes_nothing(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "die Katze").unwrap()
+
+    assert checked == TryAgain("noun", "H", 4)
+    assert _reviews(built) == []
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(0, 0)
+
+
+def test_a_right_second_try_is_hard_and_stores_both_tries(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    assert isinstance(_meaning(built, card, "Katze").unwrap(), TryAgain)
+    checked = _meaning(built, card, "der Hund", first_try="Katze").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.second_try) == (Rating.Hard, True)
+    assert _reviews(built) == [(2, "Katze | der Hund")]
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(1, 1)
+
+
+def test_a_wrong_second_try_is_again_and_counts_as_missed(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "Katze", first_try="Katze").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Again
+    assert _reviews(built) == [(1, "Katze | Katze")]
+    assert SessionSummary(built.config).execute("s1").unwrap() == SummaryCounts(1, 0)
+
+
+def test_a_form_of_the_cards_own_word_is_again_with_no_retry(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    checked = _meaning(built, card, "Hunde").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.word, checked.rating) == ("wrong", Rating.Again)
+
+
+def test_a_folded_key_shared_with_a_noun_offers_a_retry(built: Workspace) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+
+    # keys are case-folded, so essen reaches the noun Essen as well as the verb
+    assert _meaning(built, card, "essen").unwrap() == TryAgain("noun", "H", 4)
+
+
+def test_answering_a_checked_card_without_a_lexicon_is_an_error_and_writes_nothing(
+    built: Workspace,
+) -> None:
+    card = _add(built, "Hund", "noun", 0, [0], [], "meaning_en_de")
+    built.config.lexicon.unlink()
+
+    answered = _meaning(built, card, "der Hund")
+
+    assert answered.is_err
+    assert isinstance(answered.unwrap_err(), LexiconError)
+    assert _reviews(built) == []
+
+
+def _de_de_contents(
+    ws: Workspace, en: list[int], de: list[tuple[int, int]]
+) -> list[dict[str, object]]:
+    plan = PlanWordCards(ws.config).execute(_headword(ws, "Band"), 0, en, de).unwrap()
+    return [c.content for c in plan.cards if c.card_type == "meaning_de_de"]
+
+
+def test_a_german_definition_takes_its_own_entrys_gender_beside_english_senses(
+    built: Workspace,
+) -> None:
+    # Band's English entry 0 is das Band; the German entries are das, das, der and die Band
+    contents = _de_de_contents(built, [0], [(0, 0), (2, 0), (3, 0)])
+
+    assert [c["gender"] for c in contents] == ["n", "m", "f"]
+
+
+def test_a_german_definition_stores_its_senses_labels(built: Workspace) -> None:
+    contents = _de_de_contents(built, [], [(0, 0), (0, 2), (1, 0)])
+
+    assert [c["labels"] for c in contents] == [[], ["colloquial"], ["poetic"]]
+
+
+def test_a_german_only_headword_takes_the_german_entrys_gender(built: Workspace) -> None:
+    plan = PlanWordCards(built.config).execute(_headword(built, "Fernweh"), None, [], [(0, 0)])
+
+    assert plan.unwrap().cards[0].content["gender"] == "n"
+
+
+def test_a_checked_de_de_card_expects_the_article_of_its_own_entry(built: Workspace) -> None:
+    card = _add(built, "Band", "noun", 0, [0], [(2, 0)], "meaning_de_de")
+
+    checked = _meaning(built, card, "der Band").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.expected) == (Rating.Good, "der Band")
+    assert _reviews(built) == [(3, "der Band")]
+
+
+def test_a_de_de_card_is_graded_hard_for_the_wrong_article(built: Workspace) -> None:
+    card = _add(built, "Band", "noun", 0, [0], [(2, 0)], "meaning_de_de")
+
+    checked = _meaning(built, card, "das Band").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert (checked.rating, checked.article) == (Rating.Hard, "wrong")
+
+
+def test_a_de_de_card_retries_on_another_noun_and_stores_both_tries(built: Workspace) -> None:
+    card = _add(built, "Band", "noun", 0, [], [(2, 0)], "meaning_de_de")
+
+    first = _meaning(built, card, "der Hund").unwrap()
+    second = _meaning(built, card, "der Band", first_try="der Hund").unwrap()
+
+    assert first == TryAgain("noun", "B", 4)
+    assert isinstance(second, MeaningGraded)
+    assert second.rating == Rating.Hard
+    assert _reviews(built) == [(2, "der Hund | der Band")]
+
+
+def test_a_de_de_card_made_before_labels_were_stored_still_checks(built: Workspace) -> None:
+    card = _add(built, "Fernweh", "noun", None, [], [(0, 0)], "meaning_de_de")
+    with sqlite3.connect(built.config.learning_db) as db:
+        db.execute("UPDATE card SET content = json_remove(content, '$.labels')")
+
+    checked = _meaning(built, card, "das Fernweh").unwrap()
+
+    assert isinstance(checked, MeaningGraded)
+    assert checked.rating == Rating.Good
+
+
+def test_both_cards_of_an_english_sense_carry_its_note(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+
+    plan = (
+        PlanWordCards(built.config).execute(hund, 0, [0, 1], [], en_notes={1: "dog-ish"}).unwrap()
+    )
+
+    assert ["note" in c.content for c in plan.cards] == [False, False, True, True]
+    assert [c.content.get("note") for c in plan.cards[2:]] == ["dog-ish", "dog-ish"]
+
+
+def test_a_german_sense_note_goes_on_its_de_de_card(built: Workspace) -> None:
+    band = _headword(built, "Band")
+
+    plan = (
+        PlanWordCards(built.config)
+        .execute(band, None, [], [(0, 0), (0, 2)], de_notes={(0, 2): "tape"})
+        .unwrap()
+    )
+
+    assert [c.content.get("note") for c in plan.cards] == [None, "tape"]
+    assert "note" not in plan.cards[0].content
+
+
+def test_no_note_leaves_content_without_a_note_key(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+
+    plan = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={1: "elsewhere"}).unwrap()
+
+    assert all("note" not in c.content for c in plan.cards)
+
+
+def test_an_empty_note_adds_no_note_key(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+
+    plan = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={0: ""}).unwrap()
+
+    assert all("note" not in c.content for c in plan.cards)
+
+
+def test_the_same_sense_with_another_note_is_not_a_new_card(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+    first = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={0: "one"}).unwrap()
+    CreateWordCards(built.config).execute(first, NOW).unwrap()
+
+    again = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={0: "two"}).unwrap()
+
+    assert again.cards == ()
+
+
+def test_dedupe_matches_a_noted_card_with_and_without_a_note(built: Workspace) -> None:
+    hund = _headword(built, "Hund")
+    noted = PlanWordCards(built.config).execute(hund, 0, [0], [], en_notes={0: "one"}).unwrap()
+    CreateWordCards(built.config).execute(noted, NOW).unwrap()
+    plain = PlanWordCards(built.config).execute(hund, 0, [1], []).unwrap()
+    CreateWordCards(built.config).execute(plain, NOW).unwrap()
+
+    bare = PlanWordCards(built.config).execute(hund, 0, [0], []).unwrap()
+    renoted = PlanWordCards(built.config).execute(hund, 0, [1], [], en_notes={1: "x"}).unwrap()
+
+    assert bare.cards == ()
+    assert renoted.cards == ()
+
+
+def test_stammformen_and_conjugation_cards_take_no_note(built: Workspace) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+
+    plan = (
+        PlanWordCards(built.config)
+        .execute(anrufen, 0, [0], [], ["ind.pres"], en_notes={0: "ring"})
+        .unwrap()
+    )
+
+    by_type = {c.card_type: c for c in plan.cards}
+    assert by_type["meaning_de_en"].content["note"] == "ring"
+    assert "note" not in by_type["stammformen"].content
+    assert "note" not in by_type["conjugation"].content

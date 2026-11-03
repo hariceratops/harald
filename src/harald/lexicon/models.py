@@ -143,13 +143,17 @@ class SearchKey(Base):
     key: Mapped[str]
 
 
+KIND_LEMMA = 0
+KIND_INFLECTED = 1
+
+
 class KeyHeadword(Base):
     __tablename__ = "key_headword"
     __table_args__ = {"sqlite_with_rowid": False}
 
     key_id: Mapped[int] = mapped_column(primary_key=True)
     headword_id: Mapped[int] = mapped_column(primary_key=True)
-    kind: Mapped[int]  # 0 lemma, 1 inflected form
+    kind: Mapped[int]  # KIND_LEMMA or KIND_INFLECTED
 
 
 class KeyEnWord(Base):

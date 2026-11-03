@@ -3,22 +3,28 @@ from datetime import datetime
 from harald.config import Config
 from harald.core.option import Option
 from harald.core.result import Result
-from harald.learning.answers import ArticleCheck
 from harald.learning.answers import FieldCheck as FieldCheck
+from harald.learning.answers import MeaningCheck as MeaningCheck
+from harald.learning.answers import MeaningGraded as MeaningGraded
+from harald.learning.answers import NoArticleStored as NoArticleStored
 from harald.learning.answers import StammformenCheck as StammformenCheck
+from harald.learning.answers import TryAgain as TryAgain
 from harald.learning.db import transact
 from harald.learning.errors import LearningDbError
 from harald.learning.models import Card
 from harald.learning.scheduling import scheduler_for
 from harald.learning.study import (
     SummaryCounts,
-    answer_article,
     answer_conjugation,
+    answer_meaning,
     answer_stammformen,
     grade_card,
     next_card,
     session_summary,
 )
+from harald.lexicon.db import open_lexicon
+from harald.lexicon.errors import LexiconError
+from harald.lexicon.lookup import known_words
 
 
 class NextCard:
@@ -53,33 +59,6 @@ class Grade:
                 session_id,
                 duration_ms,
                 answer,
-                lambda scope: scheduler_for(scope, self._enable_fuzzing),
-            ),
-        )
-
-
-class AnswerArticle:
-    def __init__(self, config: Config, enable_fuzzing: bool = True) -> None:
-        self._config = config
-        self._enable_fuzzing = enable_fuzzing
-
-    def execute(
-        self,
-        card_id: int,
-        chosen: str,
-        now: datetime,
-        session_id: str,
-        duration_ms: int | None = None,
-    ) -> Result[ArticleCheck, LearningDbError]:
-        return transact(
-            self._config.learning_db,
-            lambda ctx: answer_article(
-                ctx,
-                card_id,
-                chosen,
-                now,
-                session_id,
-                duration_ms,
                 lambda scope: scheduler_for(scope, self._enable_fuzzing),
             ),
         )
@@ -137,6 +116,45 @@ class AnswerConjugation:
                 lambda scope: scheduler_for(scope, self._enable_fuzzing),
             ),
         )
+
+
+class AnswerMeaning:
+    def __init__(self, config: Config, enable_fuzzing: bool = True) -> None:
+        self._config = config
+        self._enable_fuzzing = enable_fuzzing
+
+    def execute(
+        self,
+        card_id: int,
+        given: str,
+        first_try: str | None,
+        now: datetime,
+        session_id: str,
+        duration_ms: int | None = None,
+    ) -> Result[MeaningCheck, LearningDbError | LexiconError]:
+        opened = open_lexicon(self._config.lexicon)
+        if opened.is_err:
+            return Result.err(opened.unwrap_err())
+        lex = opened.unwrap()
+        try:
+            checked = transact(
+                self._config.learning_db,
+                lambda ctx: answer_meaning(
+                    ctx,
+                    card_id,
+                    given,
+                    first_try,
+                    now,
+                    session_id,
+                    duration_ms,
+                    lambda scope: scheduler_for(scope, self._enable_fuzzing),
+                    lambda word: known_words(lex, word),
+                ),
+            )
+            # Result is invariant, so the identity map widens the error to the union
+            return checked.map_err(lambda e: e)
+        finally:
+            lex.close()
 
 
 class SessionSummary:

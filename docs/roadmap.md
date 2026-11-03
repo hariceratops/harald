@@ -18,10 +18,14 @@ Each item is a vertical slice; the numbers are the issue files in
 
 - [ ] 009 TUI browsing, verified in Termux (built; the Termux checks are outstanding)
 - [ ] 010 Add a word; meaning cards and study (built; awaiting confirmation)
-- [ ] 011 Article cards (built; awaiting confirmation)
 - [ ] 012 Stammformen cards (built; awaiting confirmation)
 - [ ] 013 Per-tense, per-person conjugation cards (built; awaiting confirmation)
 - [ ] 014 German → German cards (built; awaiting confirmation)
+- [ ] 023 Check English → German answers, with the article in the answer (built; awaiting confirmation)
+- [ ] 024 Forgive slips and retry on a different word (built; awaiting confirmation)
+- [ ] 025 Check German → German answers (built; awaiting confirmation)
+- [ ] 026 Notes on senses (built; awaiting confirmation)
+- [ ] 027 Audit the checked answers (built; awaiting confirmation)
 - [ ] 015 New-card cap and sibling burying
 - [ ] 016 Decks
 - [ ] 017 Edit, suspend and delete cards

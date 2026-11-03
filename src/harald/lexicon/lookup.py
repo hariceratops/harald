@@ -8,6 +8,7 @@ from harald.lexicon import model
 from harald.lexicon.db import Lexicon
 from harald.lexicon.fuzzy import fuzzy_deletes, max_distance, osa_within
 from harald.lexicon.models import (
+    KIND_INFLECTED,
     DeEntry,
     DeSense,
     Entry,
@@ -37,6 +38,26 @@ def _candidate_keys(lang: str, key: str) -> Select[int, str]:
         .where(FuzzyDelete.d.in_(fuzzy_deletes(key)), SearchKey.lang.concat("") == lang)
         .distinct()
     )
+
+
+def _known_word_query(key: str) -> Select[str, str, int]:
+    return (
+        select(Headword.lemma, Headword.pos, KeyHeadword.kind)
+        .select_from(SearchKey)
+        .join(KeyHeadword, KeyHeadword.key_id == SearchKey.id)
+        .join(Headword, Headword.id == KeyHeadword.headword_id)
+        .where(SearchKey.lang == "de", SearchKey.key == key)
+        .order_by(Headword.lemma, Headword.pos)
+    )
+
+
+def known_words(lex: Lexicon, word: str) -> tuple[model.KnownWord, ...]:
+    key = fold(" ".join(word.split()))
+    with lex.sessions() as session:
+        return tuple(
+            model.KnownWord(lemma, pos, kind == KIND_INFLECTED)
+            for lemma, pos, kind in session.execute(_known_word_query(key))
+        )
 
 
 def _key_distances(session: Session, lang: str, key: str) -> dict[int, int]:
