@@ -29,7 +29,7 @@ The full node table is in design §3.7.
 Everything that decides an id or an order is sorted on content, never on
 arrival order: chunk boundaries and worker count do not change the output.
 Any new table must follow the same rule, or a rebuild stops being
-byte-identical and Syncthing resends the file.
+byte-identical.
 
 ## Schema versions
 

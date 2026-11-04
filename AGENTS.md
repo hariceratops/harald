@@ -2,7 +2,7 @@
 
 ## Context
 Harald is a personal, offline German vocabulary tool for a learner who picks German up from reading and conversation. It has a Textual TUI for study and browsing, plus plain CLI commands for lookup, the lexicon build and checks. It has two modes: dictionary lookup (German, German → German, or English → German, with gender, conjugation and examples), and phrase lookup (German/English sentence pairs). Anything worth keeping becomes a spaced-repetition card.
-The lexicon is built on a desktop and pushed one way to a phone (Termux) with Syncthing. Study happens on the phone.
+The app is mobile first: the lexicon is built where Harald runs, with `harald-cli build --fetch`, and study happens on the phone (Termux). The desktop works the same way.
 Prototype language: Python 3.12+, packaged with uv. A Rust rewrite of hot paths is anticipated later.
 Data: Wiktionary extracts from kaikki.org (wiktextract JSONL, English and German editions) and Tatoeba sentence pairs, imported into `lexicon.db`, the built, read-only lexicon. The user's cards, decks and review log live in `learning.db`, which a rebuild never touches.
 Target terminals: 40 columns minimum (phone, portrait); 80 or more on desktop and SSH. Output adapts to the terminal width.

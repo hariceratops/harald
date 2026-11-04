@@ -7,7 +7,7 @@ class LexiconError(Exception):
 
 class LexiconMissing(LexiconError):
     def __init__(self, path: Path) -> None:
-        super().__init__(f"{path} does not exist. Run 'harald-cli build' on the desktop first.")
+        super().__init__(f"{path} does not exist. Run 'harald-cli build --fetch' to build it.")
         self.path = path
 
 
@@ -22,7 +22,7 @@ class SchemaMismatch(LexiconError):
     def __init__(self, found: int, expected: int, harald_version: str) -> None:
         super().__init__(
             f"lexicon.db has schema {found}, but Harald {harald_version} needs schema "
-            f"{expected}. Rebuild on the desktop or update Harald."
+            f"{expected}. Run 'harald-cli build' to rebuild it, or update Harald."
         )
         self.found = found
         self.expected = expected
