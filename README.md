@@ -4,8 +4,9 @@ A personal, offline German vocabulary tool for a learner who picks German up
 from reading and conversation rather than a course. Look a word up fast,
 keep what is worth keeping as a spaced-repetition card.
 
-The dictionary is built on a desktop from Wiktionary and Tatoeba data, then
-pushed one way to a phone (Termux) with Syncthing. Study happens on the phone.
+The dictionary is built from Wiktionary and Tatoeba data with one command, on
+the device you use. Mobile first: study happens on the phone (Termux), and the
+desktop works the same way.
 
 ## Use case
 

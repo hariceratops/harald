@@ -46,8 +46,7 @@ harald-cli prune --yes    # no question
 ## Guarantees
 
 - **Deterministic.** A rebuild from the same files produces identical bytes.
-  If the result is identical, the published file is left untouched, so
-  Syncthing has nothing to resend.
+  If the result is identical, the published file is left untouched.
 - **Atomic.** An interrupted build (Ctrl-C, crash, disk full) leaves the
   previous `lexicon.db` intact; staging files are removed and a partial file
   never reaches the phone.

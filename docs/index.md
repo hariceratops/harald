@@ -39,8 +39,8 @@ from reading, TV and conversation. It does two jobs:
 | `lexicon.db` | the dictionary: entries, translations, search keys | `harald-cli build`; read-only otherwise |
 | `learning.db` | cards, review log (decks planned) | the study device only |
 
-A rebuild replaces `lexicon.db` and never touches `learning.db`. The lexicon is
-pushed one way from desktop to phone with Syncthing.
+A rebuild replaces `lexicon.db` and never touches `learning.db`. Build the lexicon on
+the device you study on.
 
 ## Terminal width
 

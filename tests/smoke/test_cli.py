@@ -120,3 +120,11 @@ def test_a_rebuild_after_prune_points_at_fetch(built: Workspace) -> None:
 
     assert res.returncode == 1
     assert "harald-cli build --fetch" in res.stderr
+
+
+def test_lookup_without_a_lexicon_says_to_build_it_wherever_you_are(workspace: Workspace) -> None:
+    res = _harald(workspace, "lookup", "Hund")
+
+    assert res.returncode == 2
+    assert "harald-cli build --fetch" in res.stderr
+    assert "desktop" not in res.stderr
