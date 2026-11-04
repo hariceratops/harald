@@ -17,8 +17,8 @@ uv sync
 
 ## Install on Termux
 
-The phone only studies, so it needs `lexicon.db` from the desktop and no dev
-tools. uv cannot download a Python on Android, so use the one Termux ships.
+The phone builds its own lexicon and needs no dev tools. uv cannot download a
+Python on Android, so use the one Termux ships.
 
 ```sh
 pkg install python git
@@ -27,6 +27,8 @@ git clone <repo-url> harald
 cd harald
 uv sync --no-dev           # skips pytest, ruff and mypy, which build slowly here
 source .venv/bin/activate
+harald-cli build --fetch   # about 11 minutes on a Pixel 9
+harald-cli prune --yes     # frees about 3.4 GB of sources
 harald
 ```
 
