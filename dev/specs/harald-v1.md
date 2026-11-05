@@ -276,8 +276,9 @@ still stands.
   - Holds decks, cards, phrases and the review log.
   - Lives on the phone, which is its only writer.
   - Is never synced two ways.
-  - A consistent copy goes one way from the phone to the desktop as a
-    backup, and is never read back automatically.
+  - `harald-cli backup --to PATH` writes a consistent copy of it into
+    the folder PATH. It is the only way a copy leaves the device.
+  - Harald never makes a copy on its own and never reads one back.
 
 **Sources.**
 - English edition: `raw-wiktextract-data.jsonl.gz` (2.8 GB gz), streamed.
@@ -338,7 +339,7 @@ are not assumptions.
 ## Open Questions
 
 1. **Plain-file export/import of the user's own deck.** It would be an escape
-   route beyond the one-way backup, but the user hasn't accepted or rejected
+   route beyond the backup command, but the user hasn't accepted or rejected
    it. It is not in the requirements.
 2. **Does kaikki keep older dated dumps?** If it doesn't, the locally kept
    copy is the only way to pin a version. Either way, design for the local
@@ -352,8 +353,8 @@ are not assumptions.
    copy); see design §8.
 5. ~~Per-(tense, person) cards.~~ Resolved; see the requirements on
    per-(tense, person) cards and separable verbs above.
-6. ~~Backup details.~~ Resolved: after each session and on exit, plus
-   `harald backup`, keeping 10 copies; see design §10.
+6. ~~Backup details.~~ Resolved: only the explicit
+   `harald-cli backup --to PATH`, with no automatic copies; see design §10.
 7. ~~Defaults.~~ Resolved: the daily cap on new cards is 20. Fuzzy ranking
    applies to German lookup and to English → German lookup, not to phrase
    search.
