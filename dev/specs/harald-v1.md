@@ -7,16 +7,17 @@ Flavor: minimal (single user, who is both operator and consumer).
 Harald is a personal, offline German vocabulary tool for a B1 learner who
 learns from reading, TV and conversation rather than from a course. It has a
 Textual TUI for studying and for browsing the dictionary, alongside plain CLI
-commands for one-shot lookups and the scriptable desktop build.
+commands for one-shot lookups and the scriptable build.
 
 It does two jobs. It makes looking things up fast: a German word, an English
 word → German, or a phrase as German/English sentence pairs. And it turns
 whatever the learner decides to keep into FSRS-scheduled cards.
 
-The dictionary is built on a desktop from Wiktionary (kaikki.org wiktextract)
-and Tatoeba data, then pushed one way to a phone. Studying happens on the
-phone in Termux, in spare moments. The deck is built entirely from the
-learner's own encounters.
+The dictionary is built from Wiktionary (kaikki.org wiktextract) and Tatoeba
+data with one command, on the device the learner uses. The app is mobile first:
+studying happens on the phone in Termux, in spare moments, and the desktop
+works the same way. The deck is built entirely from the learner's own
+encounters.
 
 Background: `dev/inbox/harald-data-and-modes.md` and
 `german_learning_app_design.md`. Where either conflicts with this document,
@@ -31,7 +32,7 @@ still stands.
   search.
 - Plain CLI commands remain for:
   - one-shot `lookup`;
-  - the desktop `build` (with `--fetch`), which must stay scriptable;
+  - `build` (with `--fetch`), which must stay scriptable;
   - `check`.
 - Everything, TUI included, works at 40 columns minimum (portrait phone);
   desktop and SSH use 80 or more. That includes conjugation displays.
@@ -71,8 +72,10 @@ still stands.
   the German definition and the part of speech; the user types the German
   word and Harald checks it. There is no word → definition direction, since
   that would mostly duplicate the German → English card.
-- A noun's gender comes from the chosen English-edition entry or, when only
-  German-edition senses are chosen, from the German entry.
+- A card takes a noun's gender from the entry its own sense came from: an
+  English sense from its English entry, a German definition from its German
+  entry. This holds even when senses of two homographs, such as das Band and
+  der Band, are picked in one add.
 - Nouns get no separate article card. The article is part of the typed
   answer.
 - When picking senses, the user can add a one-line note to a sense: a hint
@@ -99,9 +102,13 @@ still stands.
   - The right word passes, graded Good. ae/oe/ue/ss are always accepted for
     ä/ö/ü/ß, and a verb may be typed with a leading `sich`.
   - A noun whose gender is known is typed with its article (`der Hund`).
-    Any of the word's genders counts. A wrong or missing article still
-    passes, graded Hard; if the previous answer on that card also had a
-    wrong article, it is graded Again.
+    Any of the word's genders counts. der, die, das, ein, eine, einen,
+    einem, einer, eines, den, dem and des are recognised as articles in
+    any case. A wrong or missing article still passes, graded Hard; if the
+    previous answer on that card also had a wrong article, it is graded
+    Again.
+  - A proper noun may be typed with or without its article, and the
+    article never changes the grade.
   - A noun without gender data is typed without an article. This includes
     plural-only nouns (`Leute`). If an article is typed, Harald says that
     none is stored and asks again, without grading.
@@ -122,9 +129,10 @@ still stands.
 - Checking needs `lexicon.db` while studying, to tell a slip from another
   real word.
 - Checked grading applies from the first review. After 200 checked reviews
-  or two weeks, the checked answers are audited against the user's own
-  judgement. If more than 5% were failed wrongly, a way to claim a right
-  answer is reconsidered.
+  or two weeks, an audit shows each failed checked answer with the expected
+  one, and the user marks the ones they were right on. The marks are not
+  stored. If more than 5% of the checked reviews were failed wrongly, a way
+  to claim a right answer is reconsidered.
 - Per-(tense, person) cards: the user picks tenses per verb, and each
   picked tense makes one card per person: ich, du, er/sie/es, wir, ihr and
   sie/Sie. The formal Sie is not a separate person, because sie/Sie shares
@@ -163,8 +171,9 @@ still stands.
 
 **Study and card management**
 - By default study covers everything that is due; a deck filter narrows it.
-- Sibling cards (from the same word or phrase, and of the same card type)
-  are buried for the day.
+- Sibling cards (from the same word or phrase, and of the same card type:
+  German → English, English → German, German → German, Stammformen,
+  conjugation or phrase) are buried for the day.
 - There is a configurable daily cap on new cards.
 - Each session ends with a short summary: how many cards were reviewed and
   how many were answered correctly.
@@ -185,7 +194,7 @@ still stands.
     optimisation later suggests it.
 - The full review log is kept, so the parameters can be optimised later.
 
-**Data build (desktop)**
+**Data build**
 - Builds `lexicon.db` from locally kept source files.
 - Downloads new sources only on explicit request (`--fetch`). The most recent
   download is kept.
@@ -204,7 +213,7 @@ still stands.
 - `lookup lief` shows laufen, including läuft / lief / ist gelaufen. All
   lookup output, CLI and TUI, fits the terminal width down to 40 columns.
 - Rebuilding twice from the same local files leaves the existing
-  `lexicon.db` byte-for-byte untouched, so Syncthing has nothing to resend.
+  `lexicon.db` byte-for-byte untouched.
 - Suppose an entry that cards were built from disappears or splits in a
   rebuild. Those cards still study correctly from their own content, and
   `harald check` lists them.
@@ -255,12 +264,12 @@ still stands.
   (e.g. `fsrs`, `textual`, a fuzzy matcher, a stemmer).
 - Storage is SQLite.
 
-**Two databases, two machines.**
+**Two databases.**
 - `lexicon.db`
   - Read-only at runtime.
-  - Built on the desktop.
-  - Pushed one way to the phone by Syncthing, which is send-only on the
-    desktop.
+  - Built where Harald runs, with `harald-cli build --fetch`.
+  - The downloaded sources (about 3.4 GB) can be deleted with
+    `harald-cli prune`; a rebuild then downloads them again.
   - A rebuild replaces it and never touches `learning.db`.
   - About 1 GB is acceptable.
 - `learning.db`
@@ -295,7 +304,7 @@ architect's decision.
 - A build is deterministic. A rebuild with nothing new leaves the existing
   file untouched.
 - An interrupted build (Ctrl-C, crash, disk full) leaves the previous
-  `lexicon.db` intact, and a partial file never reaches the phone.
+  `lexicon.db` intact, and a partial file is never published.
 - If the Harald version and the schema of `lexicon.db` don't match,
   Harald refuses to start and names both versions.
 
