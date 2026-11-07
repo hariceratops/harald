@@ -11,8 +11,7 @@ is superseded, and only its rejected ideas matter here (see §14.8).
 search indexes and the Tatoeba pairs; formerly `dictionary.db`) and
 `learning.db` (cards, phrases, decks and the review log; formerly
 `user.db`). Their packages are `harald/lexicon/` and `harald/learning/`. The
-frozen spec, the issues and AGENTS.md still use the old names; §16 lists
-where, for the user to update.
+spec, the issues and AGENTS.md use the new names too.
 
 This document settles how v1 is built: module boundaries, both database
 schemas, the build pipeline, lookup and search algorithms, the study loop, and
@@ -100,6 +99,13 @@ raises `SuspendNotSupported` only on Textual Web.
 **Termux**: `libsqlite` 3.54.1 is built with `--enable-fts5`. rapidfuzz ships
 no wheel Termux's bionic Python can install (only manylinux, musllinux, macOS
 and Windows), so on the phone it would need a C++ build from source.
+
+**The build on the phone** (the user's run, 2026-11-03, a Pixel 9 in Termux):
+`harald-cli build --fetch` fetched the sources in about 200 s and built
+`lexicon.db` in about 460 s with the forkserver pool, about 11 minutes in
+all against 7 m 14 s for the same command on the desktop (issue 009). Peak
+free space, peak memory and throttling were not recorded; issue 009 still
+asks for them.
 
 **Measurements** (desktop, 979k folded German keys; the phone is assumed to be
 about 3–5× slower):
@@ -272,15 +278,21 @@ Python 3.12; nothing was written to the project):
 ## 1. Shape of the solution
 
 ```
-desktop                                              phone (Termux)
-  sources/ (kept downloads) ──► harald build ──► staging/ ──atomic rename──►
-  <synced>/lexicon.db ═══ Syncthing send-only ═══► <received>/lexicon.db (read-only)
-                                                     ~/.local/share/harald/learning.db (only writer)
-  <backup>/ ◄══ Syncthing send-only ══════════════ <backup>/learning-*.db (VACUUM INTO)
+on the device that runs Harald: the phone first (Termux), a desktop the same way
+
+  kaikki.org, tatoeba.org ──build --fetch──► sources/  (about 3.4 GB; prune deletes them)
+  sources/ ──build──► staging/ ──atomic rename──► lexicon.db  (read-only at runtime)
+  learning.db (written only by Harald) ──backup --to PATH──► PATH/learning-<stamp>.db
 ```
 
-- One Python package, `harald`, with a `src/` layout, installed with uv and
-  the console script `harald`.
+- **Mobile first, one device at a time.** Each device that runs Harald
+  builds its own `lexicon.db` with `harald-cli build --fetch` (§3.8) and
+  keeps its own `learning.db`. Nothing syncs between devices: the spec rules
+  out two-way sync and studying on more than one device. The only copy that
+  leaves a device is a backup the user writes with `harald-cli backup --to
+  PATH` (§10).
+- One Python package, `harald`, with a `src/` layout, installed with uv, with
+  the console scripts `harald` (the TUI) and `harald-cli` (§11).
 - **The importer** (`harald.build`) is the only code that reads source files.
   Everything else reads `lexicon.db` through `harald.lexicon`. It runs
   as a task graph: worker processes parse sources into shard files, and one
@@ -299,9 +311,9 @@ desktop                                              phone (Termux)
   style, the user's choice. It sits behind the `lexicon/` package
   interface, so callers never see a `Session` (§4.4). The startup cost is
   watched by a benchmark harness with explicit budgets and a per-path Core
-  fallback (§14.9). The build, desktop-only, is the one place that writes
-  through stdlib `sqlite3`, and its schema still comes from the same table
-  definitions (§3.5).
+  fallback (§14.9). The build is the one place that writes through stdlib
+  `sqlite3`, and its schema still comes from the same table definitions
+  (§3.5).
 - Operations that can fail return `Result[T, E]` with `Exception` subclasses
   as error values. Only six named seams turn arbitrary exceptions into `Err`
   (§14.2). A value that may be absent is an `Option[T]` wherever a public
@@ -355,7 +367,8 @@ src/harald/
                         AnswerMeaning (§7.14), SessionSummary
     decks.py            CreateDeck, DeleteDeck, SetDeckMembership
     check.py            the check listing and its three repairs (§8)
-    backup.py           BackUp
+    prune.py            PruneSources: plan() lists, execute() deletes (§3.8)
+    backup.py           BackUp (§10)
   build/                IMPORTER: the only package that reads source files
     errors.py           BuildError family (§14.2)
     graph.py            task graph, process pool, job wrapper run_job (§3.7)
@@ -370,6 +383,7 @@ src/harald/
     writer.py           merge nodes: ATTACH shards, id offsets, keys, FTS, finalize, VACUUM
     publish.py          fingerprint, lock, byte compare, atomic replace
     run.py              build(config, fetch, force) -> Result[BuildReport, BuildError]
+    prune.py            prunable(), prune_sources(): the fetched files, under the build lock (§3.8)
   lexicon/              runtime, read-only access to lexicon.db
     schema.py           SCHEMA_VERSION, slot vocabulary
     models.py           Base(DeclarativeBase) + read-only mapped classes (lazy="raise") + FTS5 DDL
@@ -398,7 +412,7 @@ src/harald/
     study.py            study services; FSRS scopes
     decks.py            deck services
     check.py            re-resolution for `harald check` (§8.1)
-    backup.py           VACUUM INTO a temp file, rename, prune (§10)
+    backup.py           back_up(): VACUUM INTO a .partial in the target folder, fsync, rename (§10)
   tui/
     app.py              HaraldApp; holds Lexicon + LearningDb opened by cli;
                         screens call use_cases/ (§11.2)
@@ -563,7 +577,7 @@ fatal.
 
 **Guard against format drift.** If the byte prefilter stops matching (say, the
 serialisation changes), the build would quietly publish a near-empty
-lexicon straight to the phone. So the build refuses to publish when it
+lexicon over a good one. So the build refuses to publish when it
 finds fewer than `build_min_entries` German English-edition entries. That is a
 config key defaulting to 50,000 (the 2026-10-03 dump has 92,651); tests set it
 to 0.
@@ -751,8 +765,9 @@ Written to `build_stat`, printed at the end of the build, and shown by
    the staging file needs no journal). It starts by creating the schema with
    `lexicon.models.Base.metadata.create_all(engine)` on a short-lived
    SQLAlchemy engine (the FTS5 virtual tables come from the same call), then
-   disposes of that engine. The build is desktop-only, so importing the ORM
-   there costs nothing that matters. Worker processes write their own shard
+   disposes of that engine. The build runs for minutes, on the phone as on
+   the desktop, so importing the ORM there costs nothing that matters.
+   Worker processes write their own shard
    files beside it, and the main process is the only writer of the staging
    file. The graph ends with the `finalize` node: `meta`,
    `source`, `source_file`, `build_stat` and `unmapped_tagset`, dropping the
@@ -772,7 +787,7 @@ Written to `build_stat`, printed at the end of the build, and shown by
 - **What it does:** workers write shard files, and the main process merges
   with `executemany`, `ATTACH`, `INSERT … SELECT` and `VACUUM INTO`.
 - **Why not SQLAlchemy:**
-  - it's bulk SQL on the desktop, never on the phone;
+  - it's bulk SQL in a command that runs for minutes, not a runtime path;
   - routing rows through the ORM's unit of work, or even Core's
     statement layer, adds per-row cost exactly where §3.7 measured the
     bottleneck: one writer doing `executemany` already plateaued at 16 s;
@@ -801,10 +816,10 @@ Written to `build_stat`, printed at the end of the build, and shown by
 The published file can only change in step 10, which is a single rename, so
 nothing partial is ever published.
 
-**Staging lives outside the synced folder.** A temp file inside the Syncthing
-folder would be synced as a partial file, under a temp name, which breaks
-"a partial file never reaches the phone". `os.replace` is only atomic within
-one filesystem, hence step 3. It never falls back to copying.
+**Staging shares the published file's filesystem.** `os.replace` is only
+atomic within one filesystem, hence step 3. It never falls back to copying.
+The defaults (`~/.cache/harald/staging` and `~/.local/share/harald/lexicon.db`)
+share one filesystem on a desktop and in Termux's private storage alike.
 
 **Rules the implementer must hold for determinism.** The output must be
 byte-identical whatever the worker count and whatever order tasks complete
@@ -845,10 +860,19 @@ in.
   - per-node timings are printed.
 
 **Why the fingerprint is not stored inside `lexicon.db`.** If it were, any
-code change would change the file's bytes even when its content didn't, and
-Syncthing would resend 1 GB. The rule is simple: **the file changes if and
-only if its content changes**. For the same reason `meta` holds no Harald
-version and no build time.
+code change would change the file's bytes even when its content didn't. The
+rule is simple: **the file changes if and only if its content changes**. For
+the same reason `meta` holds no Harald version and no build time. What the
+rule buys:
+- the spec's criterion that rebuilding from the same local files leaves
+  `lexicon.db` byte-for-byte untouched;
+- a sha256 that names the content. The fast path (step 6) compares it, and
+  the audit records it to recompute verdicts against the lexicon the
+  reviews were graded with (§7.14), so a code-only rebuild doesn't make the
+  lexicon look different;
+- no rewrite of about 470 MB of the phone's flash after a code-only update,
+  which the fingerprint sends past the fast path to the byte compare
+  (step 9).
 
 **Version check**, `open_lexicon(path) -> Result[Lexicon,
 LexiconError]`:
@@ -859,7 +883,8 @@ LexiconError]`:
 - Read `meta.schema_version`. If it differs from `SCHEMA_VERSION`, return
   `Err(SchemaMismatch(found=…, expected=…, harald_version=…))`. Its message
   reads, for example, "lexicon.db has schema 3, but Harald 0.5.0 needs
-  schema 4. Rebuild on the desktop or update Harald." The CLI prints it and
+  schema 4. Run 'harald-cli build' to rebuild it, or update Harald." The
+  CLI prints it and
   exits with code 2 before Textual is imported.
 - A missing file returns `Err(LexiconMissing(path))`, and a file that
   isn't SQLite returns `Err(NotALexicon(path, detail))`
@@ -867,9 +892,10 @@ LexiconError]`:
 - It opens through `make_engine(path, read_only=True)`, and reads the version
   with the ORM (§4.4).
 
-An open `immutable` connection on the phone keeps reading the old inode when
-Syncthing renames a new file over it. The new file is picked up at the next
-start.
+An open `immutable` connection keeps reading the old inode when a rebuild
+renames a new file over it, as `harald-cli build` in a second Termux session
+does while the TUI is open. The TUI opens the lexicon per call (§12.9), so
+its next lookup or check reads the new file.
 
 ### 3.6 Fetch (issue 005)
 
@@ -1066,7 +1092,8 @@ arguments, never through inherited state.
   German token).
 - Nothing holds a whole source, and stage rows go straight to disk.
 - The expected peak is well under 2 GB across all processes, on a 15 GB
-  desktop.
+  desktop. On the phone the default runs more workers (7 on 8 cores), so
+  more chunks are in flight; its peak is unmeasured (issue 009).
 
 **SQLite's attach limit** (10 by default). The writer attaches at most 8
 shards at a time and loops for larger pools. It detaches after each merge
@@ -1141,10 +1168,71 @@ The graph built so far has only the English German-entries stream:
 `finalize`. The `de.*` and `tatoeba.*` nodes arrive with their own slices, so
 the full-build figure will change.
 
-**The phone.** The build runs only on the desktop. `harald.build` is never
-imported on the phone's code paths (lazy imports, §11). The pool, `fork`
-semantics and Termux therefore never meet, and none of this affects the
-pure-Python rule.
+**The phone.** The build runs where Harald runs, the phone included (§3.8).
+Termux's Python runs the same forkserver pool, and the default
+`build_workers` gives 7 workers on an 8-core phone such as the Pixel 9. The
+build needs only the standard library and the models (SQLAlchemy, already a
+runtime dependency), so the pure-Python rule (§2) holds. `harald.build` stays off the runtime code paths
+(lazy imports, §11): lookup and the TUI never import it.
+
+### 3.8 Where the build runs, disk use, and `prune` (mobile first, 2026-11-04)
+
+The lexicon is built where Harald runs (spec). On the phone and on a
+desktop alike:
+
+```sh
+harald-cli build --fetch   # download the sources (§3.6), then build (§3.5)
+harald-cli prune           # delete the sources once lexicon.db works
+```
+
+- **Measured on a Pixel 9 in Termux** (§0): about 200 s of fetch and 460 s
+  of build. The same `build --fetch` took 7 m 14 s on the desktop (issue
+  009).
+- **Disk use:**
+
+  | What | Size |
+  |---|---|
+  | sources: the five files of §3.6 and their sidecars | about 3.4 GB |
+  | `lexicon.db` (the 2026-10-25 build) | 468 MB |
+  | peak during a build: the sources, shard and staging files, the vacuumed final file, and the published file until the rename | about 5 GB expected; issue 009 measures it on the phone |
+  | after `prune` | `lexicon.db` and `learning.db` |
+
+- **`harald-cli prune [--yes]`** (`build/prune.py`, `use_cases/prune.py`;
+  built through the `change` door in b0eabbf):
+  - deletes only the names the fetch writes: each `SOURCE_FILES` data
+    file, its `.meta.json` sidecar, and their `.part` leftovers. Anything
+    else in `sources_dir` is the user's and stays;
+  - refuses unless `lexicon.db` opens (`QueryLexiconInfo`), because the
+    sources are the only way to rebuild it. It checks when listing and
+    again before deleting;
+  - takes the build's `flock` (`build_lock(staging_dir)`), so it refuses
+    with `BuildLocked` while a build reads the sources, and a build refuses
+    while prune deletes them;
+  - lists each file with its size and asks, unless `--yes`;
+  - stops at the first failed delete with `PruneFailed(file, detail,
+    deleted)`, which says how many files were already gone. A rerun
+    finishes the rest, since it lists only what still exists;
+  - never touches `lexicon.db`, `learning.db` or the staging files.
+- **Its use case has two methods.** `PruneSources(config).plan() ->
+  Result[list[Prunable], LexiconError]` lists, and `execute() ->
+  Result[int, BuildError | LexiconError]` deletes and returns the bytes
+  freed. The CLI asks for confirmation between the two, which a single
+  `execute` (§11.2) can't do without taking a callback. It is the only use
+  case with a second method.
+- **Exit codes:** a lexicon that won't open is a refusal (2); `BuildLocked`
+  and `PruneFailed` are failures (1), from the existing `exit_code`.
+- **After a prune:**
+  - `harald-cli build` without `--fetch` returns `SourceMissing`, whose
+    message points at `--fetch`;
+  - `build --fetch` downloads every file unconditionally, because no
+    sidecar is left (§3.6): about 3.4 GB again;
+  - if upstream hasn't changed, the new copies hash the same, the
+    fingerprint matches `last_build.json`, and the fast path leaves
+    `lexicon.db` untouched (§3.5 step 6). If it has changed, a new lexicon
+    is published, and `harald check` lists the cards whose entries moved
+    (§8);
+  - keeping the sources is how a dump is pinned (open question 2), so
+    pruning is the user's call each time. Harald never prunes on its own.
 
 ---
 
@@ -1387,6 +1475,8 @@ study flow are in §7.14.
 - **`sich`**, on `pos == "verb"` only: a leading `sich` is dropped from `W`
   unless the lemma itself starts with it (`sich auf den Weg machen`). D2
   allowed it on any lemma; the spec allows it on verbs, and the spec wins.
+  It is matched as typed, in lower case only. Whether `Sich` should count
+  too, as articles do in any case, is open (§16).
 
 **Rules, in order; the first that applies decides.** `L` is the card's
 lemma. The slip allowance `k` follows `L`'s length as written (NFC, so
@@ -1437,6 +1527,9 @@ forms, case-sensitive.
     whose other-case spelling is a word (`fliege` for `Fliege`) passes as
     a slip. The spec says "itself a German word", and its examples are
     lemmas.
+
+These consequences, the article escalation and the `sich` rule were checked
+against `learning/answers.py` on 2026-11-07 and are settled (§16).
 
 Rules 1–3 and the article need no lexicon. Issue 023 builds them; 024 adds
 `known` and rules 4–8 (§7.14).
@@ -1929,10 +2022,13 @@ Further details:
 - **Unit tests** build the schema from `Base.metadata.create_all` on an
   in-memory engine, as kohle's `conftest.py` does. Only the migration tests
   drive Alembic.
-- **Rehearsal on real data before releasing a revision.** Copy the newest
-  phone backup out of the desktop's backup folder (§10) and run
-  `uv run alembic -x db=<copy> upgrade head` on the copy, never on the backup
-  itself.
+- **Rehearsal on real data before releasing a revision.** Write a fresh
+  copy with `harald-cli backup --to PATH` (§10), copy that file once more,
+  and run `alembic -x db=<second copy> upgrade head` on the second copy,
+  never on the backup or the live file. It runs from a checkout: on the
+  phone, the Termux checkout with its venv active (not `uv run`, which syncs
+  the dev tools back in); on the desktop, once the user has moved the copy
+  there their own way.
 - **On the phone.** Issue 009's checklist covers installing the stack on
   Termux and running one upgrade there (§15).
 
@@ -2222,7 +2318,8 @@ one batch.
   case returning the marks in one transaction would be cleaner.
 - **Screens.** No deck step, no study-start scope screen, no due/new counts
   in the study header or on Home (the sub-title reads "N done"), no "Backup
-  written" line on the summary. Only the three meaning card types have
+  written" line on the summary (none is planned now: backups are explicit,
+  §10). Only the three meaning card types have
   faces. Grade keys `1`-`4` are hidden from the footer because four more
   hints overflow 40 columns; the buttons carry the key labels. (Since
   2026-10-28 there are two, `1` Again and `2` Good, still hidden, §7.13.)
@@ -2938,9 +3035,9 @@ change". The brief's alternatives are in §14.8.
   `StudyScreen.on_mount` runs `QueryLexiconInfo(config)` before the first
   `NextCard`. On `Err` it shows `Checking answers needs lexicon.db: <error>`
   and returns to Home. The startup preflight already refuses a missing or
-  mismatched lexicon; this one catches a file that Syncthing replaced or
-  removed while the TUI stayed open, or a desktop rebuild with a new
-  `SCHEMA_VERSION`.
+  mismatched lexicon; this one catches a lexicon deleted while the TUI
+  stayed open, or replaced with a new `SCHEMA_VERSION` by a rebuild run
+  from a second Termux session.
 
 **Issue 023 versus 024.** In 023, `check_meaning` has no `known` parameter
 and implements rules 1–3 and the article (§5.1), so a capitalisation error
@@ -2965,7 +3062,10 @@ Issue 024 adds `known_words`, the `known` parameter, the lexicon open in
 - **After `AnswerMeaning`:**
   - `NoArticleStored`: the digraph row reads `No article stored - type the
     word alone`. At 39 cells it wraps to two rows at 40 columns. The field
-    keeps its text and focus, and nothing is counted.
+    keeps its text and focus, and nothing is counted. On a retry the
+    message takes the cue's place and the cue does not come back, while the
+    retry stays open: `_first_try` is kept, so the next answer is still the
+    second try (the code, checked 2026-11-07).
   - `TryAgain`: `_first_try` holds the first answer, the field is cleared
     and keeps focus, and the digraph row shows the cue, `Another noun. Try:
     H _ _ _`. When the underscores don't fit the row, it reads `Another
@@ -3057,8 +3157,8 @@ Issue 024 adds `known_words`, the `known` parameter, the lexicon open in
   order. A rebuild can change the guard, so the audit records the lexicon's
   sha256.
 - `dev/audit/checked_answers.py`, beside `dev/bench/`: a stdlib `sqlite3`
-  script that opens a copy of the newest phone backup (§10) with
-  `mode=ro`, never the live file. It prints the reviews it covers, their
+  script that opens a copy written by `harald-cli backup --to PATH` (§10)
+  with `mode=ro`, never the live file. It prints the reviews it covers, their
   count and date range, and whether the trigger (200 checked reviews, or 14
   days since the first) is met. It writes nothing to `learning.db`.
 - Not auditable: a D19 refusal and a retry's first try write no row of their
@@ -3340,24 +3440,156 @@ whichever of issues 017 and 020 lands first creates it.
 
 ## 10. Backup (issue 022)
 
-- `backup(ldb, config, now) -> Result[Path, BackupError]`, where the error is
-  `BackupNotConfigured` or `BackupFailed(detail)`
-  (`sqlalchemy.exc.SQLAlchemyError` and `OSError` caught by type).
-- `VACUUM INTO '<backup_dir>/.learning-<stamp>.db.partial'`, run with
-  `exec_driver_sql` on an engine connection set to
-  `isolation_level="AUTOCOMMIT"` (VACUUM cannot run inside a transaction),
-  then fsync, then
-  `os.replace` to `learning-<stamp>.db`. The temp file sits in the same directory
-  because it must share a filesystem with the destination. Only complete
-  files ever carry the final name. Recommend `*.partial` in the folder's
-  `.stignore`.
-- Prune to the newest `backup_keep` copies.
-- Nothing ever reads the backup folder.
-- **Trigger points (confirmed by the user)**: after each study
-  session's summary and on TUI exit, if any write happened since the last
-  backup; plus `harald backup` on demand. Default `backup_keep = 10`. When
-  `backup_dir` is unset, backup is off and `harald backup` explains how to
-  set it.
+Open question 6 is resolved by the spec (2026-11-05). `harald-cli backup
+--to PATH` writes a consistent copy of `learning.db` into the folder PATH,
+and that is the only way a copy leaves the device. Harald never makes a copy
+on its own and never reads one back. This section used to design automatic
+copies after each session and on exit, into a configured `backup_dir`,
+keeping `backup_keep`. They are gone, and §14.8 says why.
+
+**Interfaces.**
+- `learning/backup.py`: `back_up(source: Path, folder: Path, now: datetime)
+  -> Result[Path, BackupError]`, returning the path of the copy.
+- `use_cases/backup.py`: `BackUp(config).execute(folder, now) ->
+  Result[Path, BackupError]`. It is a plain class, not a `UnitOfWork`,
+  because `VACUUM INTO` cannot run inside a transaction. It takes `Config`
+  and passes `config.learning_db`, as the existing use cases do (§7.9,
+  §12.9).
+- `cli.py`: `backup --to PATH`, with `required=True` and
+  `type=click.Path(path_type=Path)` but no `exists=True` or
+  `file_okay=False`. `back_up` stays the one place that judges the folder,
+  with its own messages and exit codes, for the reason `--config` has no
+  `exists=True` either (§11.1). On success it prints the copy's path.
+
+**Steps of `back_up`.** Steps 1–3 refuse before anything is written.
+1. `source` must be a file, or `Err(NoLearningDb(source))`. `back_up` never
+   calls `open_learning_db`, which creates a missing file and migrates an
+   old one before returning (§7.6). A backup copies the file as it is, at
+   whatever revision it holds.
+2. `folder` must exist, or `Err(BackupFolderMissing(folder))`, and must be
+   a directory, or `Err(NotAFolder(folder))`. Harald never creates it,
+   because a mistyped path would then get a copy that no sync app watches.
+3. The copy is named `learning-<stamp>.db`, where the stamp is `now` in UTC
+   as `YYYYMMDDTHHMMSSZ` (`learning-20261107T214012Z.db`). UTC keeps name
+   order equal to time order across clock changes. If that name exists,
+   return `Err(BackupExists(target))`. Only a second backup into the same
+   folder in the same second gets there, and the existing copy is left as
+   it is.
+4. Delete leftovers of killed runs: files in `folder` matching
+   `.learning-*.db.partial` or `.learning-*.db.partial-journal`, and
+   nothing else. These are Harald's own names, the way prune deletes only
+   the names the fetch writes (§3.8). Android can kill Termux at any moment
+   (spec, Durability), and no `finally` survives that.
+5. `VACUUM INTO '<folder>/.learning-<stamp>-<pid>.db.partial'`, run with
+   `exec_driver_sql` on a connection from `make_engine(source,
+   pragmas={"busy_timeout": "5000"})` set to
+   `isolation_level="AUTOCOMMIT"`, the shape of the pre-migration backup
+   (§7.6). The connection only reads, so `busy_timeout` is the one pragma
+   it needs; the WAL mode is the file's own. The pid keeps two simultaneous
+   runs from renaming each other's partial file (§14.3).
+6. `os.fsync` the partial file, `os.replace` it onto `learning-<stamp>.db`,
+   then `fsync` the folder. SQLite does not fsync a `VACUUM INTO` output
+   (its documentation says so), so without the first fsync a power loss
+   could leave the final name over missing pages. The partial sits in
+   `folder`, so the rename never crosses a filesystem.
+7. A `finally` deletes the partial file and its `-journal` if they are
+   still there. If step 5 or 6 failed, `back_up` returns
+   `Err(BackupFailed(target, detail))`. `sqlalchemy.exc.SQLAlchemyError` and
+   `OSError` are caught by type: disk full, permission denied, a folder
+   SQLite can't lock. `KeyboardInterrupt` is not caught: the `finally`
+   cleans up, and click turns it into exit 130. This adds no broad-catch
+   seam, so AGENTS.md's Override stays as it is.
+
+**What it rests on**, checked on 2026-11-07 with SQLite 3.45, on a scratch
+WAL database with a second connection holding a write transaction open:
+- `VACUUM INTO` from another connection neither blocks nor waits on the
+  open write transaction. The copy holds every committed row, including
+  rows still only in the `-wal` file, and not the uncommitted one. So the
+  backup runs while the TUI is open and grading, and a grade committed
+  after the copy starts is in the next one.
+- The copy is one file in rollback-journal mode, with no `-wal` to carry
+  along. It keeps `alembic_version`, so it records its own revision.
+- While it runs, SQLite keeps a `-journal` beside the output, named after
+  it. Hence step 4's second pattern and step 7's second delete.
+- `VACUUM INTO` refuses an output file that exists and isn't empty
+  (`output file already exists`).
+
+So a partial copy never carries the final name. Anything that watches PATH,
+such as a sync or cloud app, can match `learning-*.db` and only ever see
+complete copies.
+
+**What it never does:**
+- copy on its own: no copy after a session, on exit or on a schedule. A
+  user who wants a schedule runs the command from one
+  (`termux-job-scheduler`, cron);
+- overwrite (step 3) or prune: every copy stays until the user deletes it;
+- read a copy back: nothing in Harald opens one. The migration rehearsal
+  (§7.6) and the audit (§7.14) are dev tools, run by hand on a copy;
+- read a setting: there is no `backup_dir` or `backup_keep`, and the folder
+  is named on every run.
+
+**Errors** (`learning/errors.py`; a family of its own, §14.2):
+
+| Error | When | Exit |
+|---|---|---|
+| `NoLearningDb(path)` | `learning_db` doesn't exist: nothing to back up | 2 |
+| `BackupFolderMissing(folder)` | PATH doesn't exist | 2 |
+| `NotAFolder(folder)` | PATH exists but isn't a directory | 2 |
+| `BackupExists(target)` | the stamped name is taken | 2 |
+| `BackupFailed(target, detail)` | the copy, an fsync or the rename failed; nothing carries the final name | 1 |
+
+The first four are refusals and write nothing. `exit_code` matches
+`BackupFailed` before the family (§14.2). `BackupError` is not a
+`LearningDbError`: the CLI is its only caller and handles it as one family,
+while a `LearningDbError` is what the TUI's write paths turn into a toast.
+
+**CLI only, no TUI entry** (decided here; open to a veto, §16):
+- the spec names the CLI command, and the TUI's goals are study, browsing,
+  lookup and phrase search;
+- with no `backup_dir`, a TUI entry would ask for the folder on every run:
+  a path typed on the soft keyboard at 40 columns, where the shell offers
+  tab completion. Remembering the last folder would bring back the setting
+  the spec removed;
+- the command runs beside the open TUI (above), so a second Termux session
+  takes a backup without leaving study;
+- a command fits the user's own automation (a Termux:Widget shortcut,
+  `termux-job-scheduler`); a TUI entry does not.
+
+If the user turns out never to leave the TUI, the shape is a Home key that
+asks for a folder and calls the same `BackUp`.
+
+**Restoring, by hand** (for issue 022's user docs; Harald has no restore):
+1. Quit Harald: the TUI and any `harald-cli` command.
+2. Move `learning.db` aside, together with `learning.db-wal` and
+   `learning.db-shm` if they exist. A leftover `-wal` beside a restored file
+   would be replayed into it and corrupt it (SQLite's "How To Corrupt An
+   SQLite Database File", on mispairing a database and its journal).
+3. Copy the backup to `learning_db`'s path, named `learning.db`.
+4. The next start opens it as usual. A copy from an older Harald is
+   migrated, with its pre-migration backup beside it (§7.6); a copy from a
+   newer Harald is refused as `LearningDbTooNew`.
+
+**Tests** (issue 022):
+- component, on a fixture `learning.db`:
+  - with a write transaction open on a second connection, the copy opens
+    (stdlib `sqlite3`, `mode=ro`), holds the committed rows and not the
+    uncommitted one, and is the only `learning-*.db` in the folder;
+  - the same `now` twice gives `BackupExists`, and the first copy is
+    byte-identical afterwards;
+  - a missing folder, a file given as the folder and a missing
+    `learning.db` are each refused, write nothing, and create no
+    `learning.db`;
+  - a source that isn't SQLite gives `BackupFailed` and leaves no
+    `.partial` or `-journal`;
+  - leftover `.learning-x.db.partial` and `.learning-x.db.partial-journal`
+    files are deleted, and an unrelated `notes.txt` stays;
+- smoke: `harald-cli backup --to DIR` exits 0 and prints the path; a
+  missing DIR exits 2; no `--to` is a usage error (2);
+- by hand in Termux: a backup into a folder under `~/storage/shared` while
+  the TUI is open in another session. That checks SQLite's lock and fsync
+  on Android shared storage. If it fails there, the fallback is `VACUUM
+  INTO` a private partial beside `learning.db`, then a byte copy into
+  PATH's `.partial` and the same rename (§14.8).
 
 ---
 
@@ -3366,16 +3598,17 @@ whichever of issues 017 and 020 lands first creates it.
 **Two entry points (revised 2026-10-25, a finding from reviewing 009).** `harald-cli`
 is the click CLI (`harald.cli:main`); `harald` is the TUI (`harald.tui.main:main`).
 A bare `harald-cli` prints usage. Everywhere else in this document, `harald <command>`
-for `lookup`, `phrase`, `build`, `info`, `check`, `backup` means `harald-cli <command>`.
+for `lookup`, `phrase`, `build`, `prune`, `info`, `check`, `backup` means `harald-cli <command>`.
 
 | Command | Purpose | Notes |
 |---|---|---|
 | `harald` | TUI | its own entry point, not a subcommand of `harald-cli` |
 | `harald-cli lookup [--en] [--conj] WORD…` | one-shot lookup | words are joined with spaces (`ruft an`); exit 1 on no match |
 | `harald-cli phrase TEXT…` | phrase search | required from the CLI by issue 018 |
-| `harald-cli build [--fetch] [--force]` | desktop build | prints sources, coverage, the unmapped count, task timings and db size; exit 1 on any `BuildError` |
+| `harald-cli build [--fetch] [--force]` | builds `lexicon.db` where Harald runs (§3.5, §3.8) | prints sources, coverage, the unmapped count, task timings and db size; exit 1 on any `BuildError` |
 | `harald-cli check [--interactive]`; `harald check accept\|keep\|relink <card-id> …` | §8.4 | lists flagged cards (exit 1 if any); interactive line prompts; per-card scripted repairs; 40-column output |
-| `harald-cli backup` | §10 | |
+| `harald-cli prune [--yes]` | deletes the downloaded sources (§3.8) | lists the files and sizes and asks unless `--yes`; refuses unless `lexicon.db` opens (exit 2), and while a build runs (exit 1) |
+| `harald-cli backup --to PATH` | writes a consistent copy of `learning.db` into the folder PATH (§10) | prints the copy's path; a refusal exits 2, a failed copy 1; CLI only, no TUI entry |
 | `harald-cli info` | versions, paths, sources with date, licence and attribution, coverage | the spec's "Harald displays the sources…" |
 
 - Global options: `--config PATH`, or the `HARALD_CONFIG` environment
@@ -3446,9 +3679,10 @@ revision chose argparse to keep click's import off the one-shot `lookup`
   - Commands never call `ctx.exit()` or `sys.exit()`. click's own source
     warns that mixing `return 1` with `ctx.exit(1)` makes non-standalone
     results ambiguous.
-- **Options are as now:** `build --fetch --force`, and `lookup --conj
-  WORD…` (`nargs=-1, required=True`). Later come `lookup --en`, `phrase
-  TEXT…`, `backup`, and `check` as a nested `click.group` with `accept`,
+- **Options are as now:** `build --fetch --force`, `prune --yes`, and
+  `lookup --conj WORD…` (`nargs=-1, required=True`), with `lookup --en`
+  since 008. Later come `phrase TEXT…`, `backup --to PATH`, and `check` as a
+  nested `click.group` with `accept`,
   `keep` and `relink` (§8.4). Nested groups are one of the things click
   makes simpler than argparse's nested subparsers.
 - **Imports stay lazy inside each command function**, as now. At the top,
@@ -3621,7 +3855,8 @@ built get indicative names; the issue that builds each one fixes the name.
 | TUI Study (010, 015) | `NextCard`, `Grade`, `SessionSummary`, each `X(ldb.session())` | `use_cases/study.py` | `learning.study` services |
 | TUI Decks (016) | `CreateDeck`, `DeleteDeck`, `SetDeckMembership`, each `X(ldb.session())` | `use_cases/decks.py` | `learning.decks` services |
 | `harald check …` (021); TUI Check | one class for the listing and one for each of the three repairs (§8.3), each `X(ldb.session())` | `use_cases/check.py` | `learning.check`, card services |
-| `harald backup` (022); after sessions and on exit | `BackUp(ldb).execute(...)`, a plain class: `VACUUM INTO` runs outside a transaction (§10) | `use_cases/backup.py` | `learning.backup` |
+| `harald prune [--yes]` (change, b0eabbf) | `PruneSources(config)`: `plan()`, then `execute()` (§3.8) | `use_cases/prune.py` | `QueryLexiconInfo`, then `build.prune` |
+| `harald backup --to PATH` (022), CLI only | `BackUp(config).execute(folder, now) -> Result[Path, BackupError]`, a plain class: `VACUUM INTO` runs outside a transaction (§10) | `use_cases/backup.py` | `learning.backup.back_up` |
 
 The refactor slice builds only the first three rows (§11.3). The other rows
 say where each later issue puts its use cases. Their signatures are the
@@ -3671,7 +3906,7 @@ and print its info. That composition moves into the use case.
 `.py` file of the package (§3.5 step 5), so the first `harald build` after
 this slice misses the fast path. It runs the graph for a few minutes, finds
 the bytes identical, and leaves the published file untouched. That is
-expected, not a regression, and Syncthing has nothing to send.
+expected, not a regression.
 
 **Tests:**
 - **Unchanged, and the contract for the switch:** the subprocess smoke
@@ -4465,8 +4700,8 @@ esc End
 space Next   enter Next   esc End
 ```
 
-**Session summary.** Computed from the review log (§7.4). The backup line
-appears when a backup was written (§10).
+**Session summary.** Computed from the review log (§7.4). It has no backup
+line, since Harald never writes a backup on its own (§10).
 
 ```
 =============================== Session finished ===============================
@@ -4476,7 +4711,7 @@ appears when a backup was written (§10).
                                15 cards reviewed
                              12 answered correctly
 
-                    Backup written: learning-20261018-214012.db
+
 
 
 
@@ -4611,9 +4846,8 @@ n New   x Delete   esc Back
 ===================================== Info =====================================
  Harald 0.5.0     lexicon schema 4     learning.db revision 0001
  Paths
-   lexicon     ~/storage/shared/harald/lexicon.db
+   lexicon     ~/.local/share/harald/lexicon.db
    learning    ~/.local/share/harald/learning.db
-   backup      ~/storage/shared/harald-backup   (last 2026-10-18 21:40)
  Sources
    Tatoeba           2026-10-17   CC BY 2.0 FR
      Tatoeba contributors (tatoeba.org)
@@ -4625,6 +4859,7 @@ n New   x Delete   esc Back
    verbs with complete Stammformen     nn.n %
    nouns with a gender                 nn.n %
    senses with a translated example    nn.n %
+
 
 
 
@@ -5622,8 +5857,8 @@ Session summary:
            15 cards reviewed
          12 answered correctly
 
-            Backup written:
-      learning-20261018-214012.db
+
+
 
 
 
@@ -5747,13 +5982,10 @@ Info:
  lexicon schema 4
  learning.db revision 0001
  Paths
-  lexicon  ~/storage/shared/harald/
+  lexicon  ~/.local/share/harald/
            lexicon.db
   learning ~/.local/share/harald/
            learning.db
-  backup   ~/storage/shared/
-           harald-backup
-           (last 2026-10-18 21:40)
  Sources
   Tatoeba          2026-10-17
     CC BY 2.0 FR
@@ -5762,6 +5994,9 @@ Info:
   Wiktionary (en)  2026-10-03
     CC BY-SA 4.0
  Coverage, attribution  (scrolls)
+
+
+
 
 
 
@@ -6108,7 +6343,8 @@ lines don't count.
   portrait frames here stay at 40×24, to compare with the rest of §12.8.
 
 **Spec and doc wording that must change** (user-owned; this design doesn't
-edit them):
+edit them). All done by 2026-11-04: the spec, AGENTS.md and the issues say
+40 columns now. Kept as the record:
 - **Spec line 36**, "Everything, TUI included, works at 80 columns minimum.
   That includes conjugation displays." → "works at 40 columns minimum
   (portrait phone); desktop and SSH use 80 or more. That includes
@@ -6168,25 +6404,28 @@ as one batch.
 `tomllib`. Unknown keys are an error, to catch typos. Paths are expanded with
 `~`.
 
-| Key | Default | Machine |
+| Key | Default | Used by |
 |---|---|---|
-| `lexicon` | `$XDG_DATA_HOME/harald/lexicon.db` | both. On the desktop, a path inside the send-only Syncthing folder; on the phone, where Syncthing delivers it |
-| `learning_db` | `$XDG_DATA_HOME/harald/learning.db` | phone |
-| `backup_dir` | unset (backup off) | phone, a send-only Syncthing folder |
-| `backup_keep` | 10 (confirmed) | phone |
-| `sources_dir` | `$XDG_DATA_HOME/harald/sources` | desktop |
-| `staging_dir` | `$XDG_CACHE_HOME/harald/staging` | desktop, same filesystem as `lexicon` |
-| `build_min_entries` | 50000 | desktop |
-| `build_workers` | `os.cpu_count() - 1`, minimum 1; `0` runs every job inline (§3.7) | desktop |
-| `new_cards_per_day` | 20 (confirmed) | phone |
-| `day_starts_at` | 4 | phone |
+| `lexicon` | `$XDG_DATA_HOME/harald/lexicon.db` | `build` writes it; lookup, the TUI, `info`, `check` and `prune` read it |
+| `learning_db` | `$XDG_DATA_HOME/harald/learning.db` | the TUI and `check` write it; `backup` reads it |
+| `sources_dir` | `$XDG_DATA_HOME/harald/sources` | `build --fetch` writes it, `build` reads it, `prune` empties it (§3.8) |
+| `staging_dir` | `$XDG_CACHE_HOME/harald/staging` | `build`, on the same filesystem as `lexicon`; its lock also excludes `prune` |
+| `build_min_entries` | 50000 | `build` |
+| `build_workers` | `os.cpu_count() - 1`, minimum 1; `0` runs every job inline (§3.7) | `build` |
+| `new_cards_per_day` | 20 (confirmed) | study |
+| `day_starts_at` | 4 | study |
 
-**Phone storage note.** The Syncthing Android app cannot see Termux's private
-`$HOME`. If that app is used, `lexicon` and `backup_dir` must live in
-shared storage (`~/storage/shared/...`), while `learning_db` stays in Termux's
-home for reliable locking and fsync. If Syncthing runs inside Termux, every
-path can stay in `$HOME`. The design works either way, because every atomic
-replace happens within a single directory's filesystem.
+Every key applies on whichever device runs Harald; the last column used to
+name a machine. There is no backup key: the folder is named on every
+`backup --to PATH` (§10).
+
+**Phone storage.** The defaults all sit in Termux's private home, which
+gives SQLite reliable locking and fsync and keeps `staging_dir` and
+`lexicon` on one filesystem (§3.5 step 3). Other Android apps can't see that
+home. So the one path likely to be in shared storage (`~/storage/shared/...`,
+after `termux-setup-storage`) is a backup's PATH, when a sync or cloud app
+is meant to pick the copy up. Issue 022's Termux check covers a backup there
+(§10).
 
 ---
 
@@ -6196,7 +6435,7 @@ replace happens within a single directory's filesystem.
 
 | Unit | Boundary | Why |
 |---|---|---|
-| Build | Staging file plus per-worker shard files, then one `os.replace`. All or nothing; the old file survives any failure, including a failed or killed worker | Spec: interrupted builds leave the previous file intact; partial files never reach the phone |
+| Build | Staging file plus per-worker shard files, then one `os.replace`. All or nothing; the old file survives any failure, including a failed or killed worker | Spec: interrupted builds leave the previous file intact; a partial file is never published |
 | No-op rebuild | Fingerprint fast path, then byte compare | Spec: identical inputs leave the file untouched (same mtime and hash) |
 | Fetch, per file | `.part` file, then replace data, then replace sidecar | The previous download survives a failed fetch. A crash between the two replaces leaves a sha mismatch, which the build detects and turns into `unknown` |
 | Grade | One transaction: card update plus review insert | Spec: a kill loses at most the card on screen |
@@ -6205,7 +6444,8 @@ replace happens within a single directory's filesystem.
 | Add word | One transaction: word upsert, cards, deck memberships | Half a word's cards would leave orphan siblings and break dedupe |
 | Save or write a phrase | One transaction: phrase plus card | Same reasoning |
 | Edit, suspend, delete | One statement each | Nothing to compose |
-| Backup | VACUUM INTO a temp file, then rename | Consistent snapshot; only complete files carry the final name |
+| Backup (`backup --to PATH`) | `VACUUM INTO` a `.partial` in PATH, fsync, rename to `learning-<stamp>.db`, fsync PATH; the partial is deleted on failure. Never overwrites, never prunes | A consistent snapshot; only complete copies carry the final name, so whatever watches PATH sees whole files only (§10) |
+| Prune | One file at a time, under the build lock; the first failure stops it and says how many were deleted | Each file goes whole, a rerun finishes the rest, and a build never reads a half-pruned folder (§3.8) |
 | learning.db migration | Pre-migration backup (`VACUUM INTO`), then Alembic with one transaction per revision | The user's only copy of their data. A failed revision leaves the database at the last good revision, with the backup beside it |
 | Build command (`BuildLexicon`, §11.2) | The build's own boundary (first row), then a read-only open for the info report | The report is not part of the publish. If reading it failed, the new file would stay published and the `Err` would say why it couldn't be read |
 
@@ -6231,7 +6471,8 @@ no undelete (not requested). Card edits overwrite content without keeping
 history, since the review log is what must be kept.
 
 `lexicon.db` is disposable and rebuilt from sources. `learning.db` is the only
-irreplaceable state.
+irreplaceable state. Its only copies off the device are the backups the user
+writes (§10).
 
 ### 14.2 Error propagation
 
@@ -6262,9 +6503,9 @@ with a family base class only where some caller handles the whole family:
 | `lexicon/errors.py` | `LexiconError` | `LexiconMissing(path)`, `SchemaMismatch(found, expected, harald_version)`, `NotALexicon(path, detail)` |
 | `infrastructure/infra_errors.py` (kohle's) | `InfrastructureError` | `UniqueViolation(constraint)`; plus `check_if_unique_constraint_failed(err, column)` |
 | `learning/errors.py` | `LearningDbError` | `LearningDbTooNew(found, head)`, `NotALearningDb(path)`, `MigrationFailed(stage, detail)`, `StorageError(detail)`, `DeckNameTaken(name)` |
-| `build/errors.py` | `BuildError` | `BuildLocked(lock)`, `SourceMissing(file)`, `SourceUnreadable(file, detail)`, `StagingNotSameFilesystem(staging, target)`, `FetchFailed(file, detail)`, `TaskFailed(task, detail)`, `TooFewEntries(found, minimum)`, `BuildFailed(stage, detail)` |
+| `build/errors.py` | `BuildError` | `BuildLocked(lock)`, `SourceMissing(file)`, `SourceUnreadable(file, detail)`, `StagingNotSameFilesystem(staging, target)`, `FetchFailed(file, detail)`, `TaskFailed(task, detail)`, `TooFewEntries(found, minimum)`, `BuildFailed(stage, detail)`, `PruneFailed(file, detail, deleted)` |
 | `harald/editor.py` | – | `EditorFailed(command, detail)`, `InvalidInput(message)` |
-| `learning/backup.py` | `BackupError` | `BackupNotConfigured`, `BackupFailed(detail)` |
+| `learning/errors.py` | `BackupError`, a family of its own: the CLI maps it to exit codes as one (§10) | `NoLearningDb(path)`, `BackupFolderMissing(folder)`, `NotAFolder(folder)`, `BackupExists(target)`, `BackupFailed(target, detail)` |
 
 **Every operation with a real failure mode returns a `Result`:**
 
@@ -6282,7 +6523,8 @@ with a family base class only where some caller handles the whole family:
 | `DbTransactionContext.run(op)`, inside services | `Result[T, InfrastructureError]`, mapped to `LearningDbError` by the service with `map_err` |
 | `edit_fields` | `Result[Option[dict[str, str]], EditorFailed]`. `Option.none()` means the user cancelled, an outcome rather than an error (§14.10) |
 | validators passed to `edit_fields` | `Result[T, InvalidInput]` |
-| `backup` | `Result[Path, BackupError]` |
+| `back_up`, and `BackUp.execute` (§10) | `Result[Path, BackupError]` |
+| `prune_sources`; `PruneSources.plan` and `.execute` (§3.8) | `Result[int, BuildError]`; `Result[list[Prunable], LexiconError]` and `Result[int, BuildError \| LexiconError]` |
 
 **Functions and use cases with no failure mode return plain values:**
 - `lookup_de`, `lookup_en`, `search_phrases`, `load_headword`,
@@ -6316,6 +6558,8 @@ expected, or not caught at all:
 - `sqlalchemy.exc.DatabaseError` in `open_lexicon`;
 - `tomllib.TOMLDecodeError` and `OSError` in `load_config`;
 - `FileNotFoundError` for the editor binary;
+- `sqlalchemy.exc.SQLAlchemyError` and `OSError` in `back_up`, and
+  `OSError` per file in `prune_sources`;
 - `json.JSONDecodeError` per importer line;
 - `sqlalchemy.exc.IntegrityError`, inside `DbTransactionContext.run`, which
   becomes `UniqueViolation` and then, in the service, `DeckNameTaken`.
@@ -6408,7 +6652,9 @@ dic = res.unwrap()
 
 def exit_code(err: Exception) -> int:
     match err:
-        case ConfigError() | LexiconError() | LearningDbTooNew() | NotALearningDb():
+        case BackupFailed():
+            return 1  # a copy was attempted (§10)
+        case ConfigError() | LexiconError() | LearningDbTooNew() | NotALearningDb() | BackupError():
             return 2  # refusal
         case _:
             return 1  # the operation failed
@@ -6429,7 +6675,8 @@ def exit_code(err: Exception) -> int:
 
 ### 14.3 Concurrency and ownership
 
-- **Build** (desktop only): one main process plus a `ProcessPoolExecutor` of
+- **Build** (on the device that runs Harald, the phone included): one main
+  process plus a `ProcessPoolExecutor` of
   `build_workers` processes, using the forkserver start method (§3.7).
   - The main process owns the staging file's only write connection, the
     scheduler, and the reader threads (decompress and block scan per gzip
@@ -6437,7 +6684,8 @@ def exit_code(err: Exception) -> int:
   - Each worker owns its shard file exclusively. The writer attaches a shard
     only after every job writing to it in that phase has finished, and
     detaches it after merging.
-  - `flock` on `staging_dir/.lock` excludes a concurrent build.
+  - `flock` on `staging_dir/.lock` excludes a concurrent build, and a
+    concurrent `prune` (§3.8).
   - Determinism rests on the id rules and `VACUUM INTO` (§3.5), not on a
     single thread.
 - **TUI**: single-threaded, with **no worker threads in v1**. Textual's event
@@ -6473,18 +6721,32 @@ def exit_code(err: Exception) -> int:
 - **Change 3** (§7.14) adds no thread. The study screen owns the retry's
   first answer, and Add word owns the notes until Create. The lexicon is
   opened per check and per Study start, like the lookups (§12.9), so no
-  session is shared, and a lexicon Syncthing replaced between two answers is
+  session is shared, and a lexicon a rebuild replaced between two answers is
   simply the one the next check opens.
-- **Across processes on the phone**:
-  - A second TUI or `harald backup` alongside the TUI: WAL plus
-    `busy_timeout` serialise them. Two TUIs studying at once is not
-    prevented, and SQLite keeps it safe; it just isn't a supported workflow.
+- **Across processes on one device** (Termux sessions side by side):
+  - `harald backup --to PATH` alongside the TUI: a separate reader. WAL
+    gives it a snapshot while the TUI writes, checked with a write
+    transaction open (§10), and `busy_timeout` covers WAL recovery. A grade
+    committed during the copy lands in the next backup.
+  - A second TUI: WAL plus `busy_timeout` serialise the writes. Two TUIs
+    studying at once is not prevented, and SQLite keeps it safe; it just
+    isn't a supported workflow.
+  - `harald build` alongside the TUI: it writes only staging and shard
+    files and publishes by rename, so open readers keep the old inode, and
+    the TUI's next lexicon open reads the new file (§3.5).
+  - `harald prune` and `harald build` exclude each other through the build
+    lock. Prune touches only `sources_dir`, which nothing else has open.
+  - Two backups into one folder at once are not guarded beyond the pid in
+    the partial name. Within one second, the later rename can replace the
+    earlier copy, a snapshot of the same moment. One run's leftover cleanup
+    may delete the other's partial, which then fails at its rename and
+    publishes nothing.
   - `harald lookup` in another shell only opens `lexicon.db` immutable.
-  - A Syncthing replacement of `lexicon.db` is a rename, so open readers
-    keep the old inode.
-- **Across machines**: the phone is the only writer of `learning.db`, and the
-  desktop the only writer of `lexicon.db`. Both channels are one-way by
-  configuration.
+- **Across devices: nothing.** Each device that runs Harald owns its own
+  `lexicon.db`, whose only writer is its build, and its own `learning.db`,
+  whose only writer is Harald. Nothing syncs between devices, and the spec
+  rules out studying on more than one. A backup is a copy the user carries
+  off themselves.
 
 ### 14.4 Reuse
 
@@ -6548,6 +6810,20 @@ shared pieces once inside it.
   plus a use case in its area's module, and the TUI screen for the same
   action calls the same use case.
 
+**Backup and prune reuse** rather than rebuild:
+- prune uses the fetch's own names (`SOURCE_FILES`, `sidecar_path`,
+  `part_path`), the build's `build_lock`, and `QueryLexiconInfo` as its
+  test that the lexicon works (§3.8);
+- backup uses `make_engine`, the pre-migration backup's `VACUUM INTO` on an
+  AUTOCOMMIT connection (§7.6), the partial-then-rename publish of the
+  build and the fetch (§3.5, §3.6), and the build's cleanup of its own
+  leftovers, limited to Harald's own names as prune's deletes are (§10);
+- the two `VACUUM INTO` calls, pre-migration and backup, are not factored
+  into a helper. They share one statement on an AUTOCOMMIT connection,
+  while what surrounds it differs: a fixed name with a stale file deleted
+  first, against a pid-named partial, an fsync and a rename that never
+  overwrites. A third caller would justify lifting it.
+
 **Change 3 reuses** rather than rebuilds (§7.14): `fold`, `answer_matches`'
 normalisation (as `normalise_answer`), `osa_within` with its early exit, the
 `search_key` / `key_headword` index, `ARTICLES`, `_answer_checked`,
@@ -6580,6 +6856,11 @@ failed wrongly (D26), a way to claim a right answer is reconsidered; the
 brief's Round 5 holds the design to start from (one grade, written when the
 learner leaves the feedback screen). Nothing is prepared for it now.
 
+**Backup and prune add none.** A backup is a `learning.db` file, so its only
+contract is that file's schema row above; open question 1's export, if
+accepted, would be a command of its own. Prune's contract is the fetch's
+file names.
+
 ### 14.6 Build vs. buy
 
 | Component | Decision | Evaluated | Why |
@@ -6594,7 +6875,7 @@ learner leaves the feedback screen). Nothing is prepared for it now.
 | Slip distance in the meaning check | **reuse**: `osa_within` | rapidfuzz | as above; and it is the edit model lookup already uses, transpositions included |
 | Known-word guard | **reuse**: the lexicon's `search_key`, one exact query | pyspellchecker (pure Python, frequency word lists); hunspell, through pyhunspell (compiled) or spylls (pure Python) | a second word list would disagree with the lexicon the cards come from, on forms, proper nouns and capitalisation. pyhunspell has no Termux wheel, and spylls would still need a German dictionary shipped to the phone. The lexicon already holds 1.2M German keys, lemmas and forms |
 | Note entry | **buy**: Textual `ModalScreen` with `Input(max_length=36)` | an inline row in the `SelectionList`; the `$EDITOR` template | the modal leaves the list alone and raises the keyboard for the note only (D28); `$EDITOR` is the edit path of issue 017 |
-| Audit | **build**: a stdlib `sqlite3` script in `dev/audit/` | Datasette; a notebook | read-only and one-off, on the desktop; no new dependency |
+| Audit | **build**: a stdlib `sqlite3` script in `dev/audit/` | Datasette; a notebook | read-only and one-off, run by hand on a backup copy; no new dependency |
 | Phrase search | **buy**: SQLite FTS5 (porter for English) | Whoosh, tantivy-py | FTS5 is present on both machines (Termux libsqlite has `--enable-fts5`); no dependency; whoosh is unmaintained; tantivy is compiled |
 | German phrase normalisation | **build**: lemmatise via the form index | snowballstemmer (pure), PyStemmer (C) | stemming can't relate `lief` to `laufen`; the form index already exists |
 | Downloads | **buy**: stdlib urllib | requests, httpx | GET with conditional headers and streaming is all it needs |
@@ -6607,8 +6888,10 @@ learner leaves the feedback screen). Nothing is prepared for it now.
 | Audit trail | **buy**: kohle's (`Operation` / `OperationGroup`, `crud_*`), with Harald filling `state` / `field` through a `before_flush` hook | a custom undo log; SQLAlchemy-Continuum (versioned tables) | the user wants kohle's mechanism for later rollbacks and undo. Continuum would add shadow tables and a dependency for one feature v1 doesn't deliver |
 | Benchmarking | **build**: `dev/bench/bench.py` with committed budgets and baselines | pytest-benchmark, asv | needs cold-process wall times, phone runs without a test runner, machine-state normalisation, and budget gates per metric. A ~200-line script against committed JSON does that; asv's web reports and pytest-benchmark's in-process focus don't fit cold-start measurement |
 | Error model and `Option` | **build**: `harald/core/result.py` and `harald/core/option.py` (2026-10-24), each a small port of kohle's | `result` (rustedpy; last release June 2024), `returns` (dry-python; maintained, with `Maybe`, but a family of containers plus a mypy plugin) | the user's choice of kohle's model; the same API across the user's projects; no extra dependency on the phone. `option.py` differs from kohle's only in typing and its picklable representation (§14.10) |
-| Parallel build | **buy**: stdlib `concurrent.futures.ProcessPoolExecutor` (forkserver) plus SQLite `ATTACH` | `multiprocessing.Pool.imap`; joblib, Dask, Ray | needs a bounded in-flight window, offset-based ordering and cancellation on the first failure, and the stdlib executor offers `cancel_futures`. `Pool.imap` consumes its input eagerly, which means unbounded memory on a 25 GB stream. The others are heavy dependencies for one desktop command |
+| Parallel build | **buy**: stdlib `concurrent.futures.ProcessPoolExecutor` (forkserver) plus SQLite `ATTACH` | `multiprocessing.Pool.imap`; joblib, Dask, Ray | needs a bounded in-flight window, offset-based ordering and cancellation on the first failure, and the stdlib executor offers `cancel_futures`. `Pool.imap` consumes its input eagerly, which means unbounded memory on a 25 GB stream. The others are heavy dependencies for one build command, and would have to install on Termux too |
 | JSON speed | stdlib `json` | orjson | measured: the English parse is 29 s inline and 16 s with workers, while the critical path is reading the gzip stream (45 s). A faster parser would not shorten the build |
+| Backup | **build**: SQLite's `VACUUM INTO`, an fsync and a rename (§10) | copying the file (`shutil.copy`); SQLite's online backup API (`sqlite3.Connection.backup`); Litestream | a file copy misses committed pages still in the `-wal` and can tear while the TUI writes. The backup API needs a target connection with the same partial-then-rename around it, and copies free pages too; `VACUUM INTO` is one statement, already used for the pre-migration backup, and gives one compact file. Litestream replicates continuously, an automatic copy the spec rules out, and is a Go binary |
+| Prune | **build**: about 50 lines in `build/prune.py` | `rm` by hand | the command knows the exact names the fetch writes, refuses without a working lexicon, and takes the build lock |
 
 ### 14.7 Abstractions introduced, each with its forcing problem
 
@@ -6740,6 +7023,12 @@ learner leaves the feedback screen). Nothing is prepared for it now.
     problem: the case rule and the slip distance compare in exactly the form
     `answer_matches` compares in.
 
+27. **`BackupError`** (§10). Forcing problem: four refusals exit 2 and a
+    failed copy exits 1, each with a message naming its path, and the CLI
+    handles the family in one `exit_code` arm. Backup and prune add nothing
+    else: no scheduler, no retention policy, no path setting. `Prunable` is
+    a plain record of a path and its size, for the listing.
+
 Nothing else: no service classes, no use-case base class or interface
 beyond kohle's `UnitOfWork`, no repository interfaces, no event bus, and no
 dependency-injection container.
@@ -6752,8 +7041,8 @@ dependency-injection container.
 | Storing `lexicon.db` row ids on cards | Ids change on every rebuild (kaikki has no stable ids). Re-resolvable hints instead |
 | Persisted link status, refreshed at startup | The spec puts nothing at startup, and a stored status goes stale. Computed in `check` |
 | `etymology_number` as the discriminator | Measured: two of Band's three entries share `etymology_number` 1 |
-| Building in place, or a temp file inside the synced folder | A partial file would reach the phone |
-| Fingerprint or build time inside `lexicon.db` | Would change bytes without changing content, and Syncthing would resend |
+| Building in place | An interrupted build would leave a partial file at the published path (spec) |
+| Fingerprint or build time inside `lexicon.db` | Would change bytes without changing content: the byte-for-byte criterion fails, and the sha256 no longer names the content (§3.5) |
 | Relying on byte determinism alone, without the fast path | Kept as the safety net. Without the fast path, every no-op costs minutes of rebuild |
 | WAL for `lexicon.db` | Readers would need `-shm`/`-wal`. Rollback mode plus `immutable=1` is lock-free |
 | Copy fallback when staging is on another filesystem | Not atomic. A clear error instead |
@@ -6797,11 +7086,11 @@ dependency-injection container.
 | platformdirs | Android detection under Termux gives surprising paths |
 | Scheduler abstraction, Renderer abstraction, SM-2, per-deck FSRS | Spec non-goals (the old design's choices) |
 | Hand-written two-layer Wikitext parser; seed CSV of irregular verbs | Spec non-goals (the old design's choices) |
-| Download resume (HTTP Range) | Not required. Restarting a failed fetch is acceptable for a deliberate desktop step |
+| Download resume (HTTP Range) | Not required. Restarting a failed fetch is acceptable for a deliberate step (about 200 s on the phone) |
 | A hand-rolled migration list with `PRAGMA user_version` (earlier draft) | Replaced by Alembic at the user's request (§7.6) |
 | Plain `sqlite3` for `learning.db`, SQLAlchemy only as Alembic's engine (earlier draft) | Reversed by the user: Harald and kohle will share a db package, so `learning.db` uses kohle's SQLAlchemy infrastructure (§7.7). The import cost it was avoiding (+241 ms at TUI start on the desktop) is accepted |
 | Stdlib `sqlite3` for `lexicon.db` reads (previous revision) | Rejected by the user in favour of one ORM data-access style. The cost is accepted under budgets, with a per-path Core fallback (§14.9) |
-| Core `Table`s with read-only classes mapped onto them for `lexicon.db` (previous revision) | Dropped by the user for one declarative style across both databases. The build imports the ORM to run `create_all`, which costs nothing on the desktop. The cost: a Core fallback can no longer drop the `sqlalchemy.orm` import from the one-shot path (§14.9) |
+| Core `Table`s with read-only classes mapped onto them for `lexicon.db` (previous revision) | Dropped by the user for one declarative style across both databases. The build imports the ORM to run `create_all`, which costs nothing in a build of minutes. The cost: a Core fallback can no longer drop the `sqlalchemy.orm` import from the one-shot path (§14.9) |
 | Stage tables declared as separate DDL in the build | That would be a second copy of every column list. Derived from the models instead (§3.5) |
 | Mapping the FTS5 virtual tables as ORM classes | `MATCH`, `rank` and `bm25()` have no ORM expression, `create_all` can't emit `CREATE VIRTUAL TABLE`, and the queries only need rowids. `text()` through the session instead |
 | Default lazy relationship loading | It invites N+1 queries in render loops. `lazy="raise"` with explicit `selectinload` makes every load visible |
@@ -6818,7 +7107,7 @@ dependency-injection container.
 | Resetting the schedule on every accepted change | Rewording a self-graded card rarely changes what is recalled. Reset is the default only for checked cards whose answer changed (§8.3) |
 | kohle's module-global engine with a hardcoded URL | Harald has two databases, a configurable path, and a lazy-import rule. An engine factory instead (§7.7) |
 | The `live_card` SQL view | With ORM access, SQLAlchemy's global criteria put the filter on every query, without mapping a view as well |
-| SQLAlchemy for the build's writes | Bulk `executemany`, ATTACH merges and `VACUUM INTO` on the desktop, where §3.7 measured the single writer as the bottleneck. The schema still comes from `Base.metadata.create_all` (§3.5) |
+| SQLAlchemy for the build's writes | Bulk `executemany`, ATTACH merges and `VACUUM INTO`, where §3.7 measured the single writer as the bottleneck. The schema still comes from `Base.metadata.create_all` (§3.5) |
 | An explicit `BEGIN IMMEDIATE` per write (earlier draft) | kohle's default pysqlite transaction handling, so `DbTransaction` behaves the same in both projects. With a single writer, an IMMEDIATE lock has nothing to guard against |
 | Alembic for `lexicon.db` | Rebuilt from scratch every time and never upgraded in place. An `alembic_version` table would add bytes to a file that must change only with its content. `SCHEMA_VERSION` equality is the whole check |
 | `harald.learning:migrations` resource-form script location | Alembic's own source marks that code path untested. An absolute path from `__file__` instead |
@@ -6867,6 +7156,16 @@ dependency-injection container.
 | Refusing a note that contains the word (Round 7) | The note is the learner's own; D31 warns and keeps it |
 | Writing a note into existing cards from Add word (Round 8) | That is a content edit, issue 017's, with its own use case and audit. D34 refuses `h` on rows that have cards |
 | `Check (enter)` as a relabelled Show answer button | A separate `#check` keeps `on_button_pressed` routing by id, and gives the guard and the `-narrow` rule a name of their own |
+| Syncthing, send-only: a desktop build carried to the phone, and the phone's backups carried back (the design until 2026-11-04) | A Pixel 9 builds in about 11 minutes, so each device builds its own lexicon, and a backup goes wherever `backup --to PATH` puts it. The channel put a second machine into every rebuild and would overwrite a phone-built lexicon. With it went staging outside the synced folder, the ignore rule for partial backups, and `lexicon.db` in shared storage |
+| A desktop-only build, kept off the phone's code paths (until 2026-11-04) | Measured: the phone runs the same forkserver pool and finishes in about 460 s (§0, §3.8). `harald.build` still stays off the runtime paths |
+| Automatic backups after each session and on TUI exit, into a `backup_dir`, keeping `backup_keep = 10` (confirmed in October, withdrawn by the spec on 2026-11-05) | The spec: Harald never makes a copy on its own. The folder is named on each run, and a user who wants a schedule runs the command from one (§10) |
+| Pruning old backups | Harald never deletes a user's copy, and with no automatic copies nothing piles up on its own |
+| A backup entry in the TUI | No configured folder to prefill, a path typed on a soft keyboard at 40 columns, and the command already runs beside the open TUI. Remembering the last folder would bring back the setting the spec removed (§10) |
+| Creating PATH when it doesn't exist | A typo would get a copy that no sync app watches, while the user believes it is safe. Refused, naming the path |
+| Backing up through `open_learning_db` | It creates a missing file and migrates an old one, with its own pre-migration copy, before anything is copied. A backup copies the file as it is |
+| A hard link (`os.link`) to publish with no chance of overwriting | Android shared storage, where a sync app's folder usually is, has no hard links. An exists check and a per-second UTC stamp instead; only two simultaneous runs can race (§14.3) |
+| `VACUUM INTO` a private file, then a byte copy into PATH | A second write for a failure not yet seen. It is the fallback if the Termux check finds that SQLite can't lock or sync its output in shared storage (§10) |
+| Local time in the backup's name | Names would sort out of time order at the autumn clock change. UTC, marked `Z` |
 
 ### 14.9 Performance: benchmark harness, budgets, and the Core fallback
 
@@ -6889,8 +7188,8 @@ dev/bench/results/              gitignored: one JSON per run, <date>-<machine>-<
 ```
 
 **Inputs.**
-- `--lexicon`: a real built `lexicon.db`. On the desktop that is the
-  published file; on the phone, the synced one. Without it, the harness
+- `--lexicon`: a real built `lexicon.db`, the published file on either
+  machine. Without it, the harness
   builds the fixture lexicon.
 - `--learning-db`: copied to a temporary file before anything runs, so the real
   `learning.db` is never written. Without it, the harness generates a fixture
@@ -7252,7 +7551,7 @@ and 004b (the parallel task graph, with the four criteria in its row).
 | 2 | 004a deterministic, atomic, versioned build (single process) | §3.5 steps 1–11: lock, fingerprint fast path, staging, byte compare, single-rename publish, version check; §3.7 jobs run inline (`build_workers = 0`) | criteria unchanged; the 004a tests in §3.5 (`--force` twice; Ctrl-C leaves the old file; schema mismatch refused) |
 | 3 | 004b parallel task graph | §3.7 graph executor, process pool (forkserver), per-worker shards, offset ids, ATTACH merges, cancellation; §3.5 determinism rules | depends on 001 and 004a. Criteria: output byte-identical for any `build_workers`; a failing task cancels the rest and nothing is published; no shard or staging file survives a failure or Ctrl-C; the build prints per-node timings |
 | 4 | 002 conjugation + inflected lookup | §3.2, §3.3 forms + unmapped + separable prefix, §3.7 `verb_form_stage`/`key_stage`, §4.1 kind 1, §6 conjugation (stacked tense blocks at 40 columns, TRENNBAR badge) | |
-| 5 | 009 TUI + Termux risks | §12 skeleton, §12.8 portrait layout, §14.3 | **verify on the phone and record in the issue**: (a) suspend/resume with `$EDITOR`; (b) startup time; plus three this design adds: (c) `sqlite3` FTS5 available in Termux Python; (d) lookup time with `lexicon.db` where Syncthing delivers it (shared storage if using the Syncthing app), opened `immutable`; (e) installing Harald's pure-Python dependencies on Termux; (f) taps and swipes reach Textual as mouse clicks and scrolling (§12.5); (g) in **portrait**: rows available with the soft keyboard up (designed for 40×12, §12.8), and every screen rendering at the phone's real width; (h) installing the migration stack on Termux: alembic, SQLAlchemy ≥ 2.1 (pure wheel), Mako, and MarkupSafe (compiles its speedups if clang is present, else plain Python), plus one `alembic upgrade` of a scratch file; (i) run `dev/bench/bench.py --machine phone` and write `baseline-phone.json`. This records the phone baseline against the confirmed budgets and replaces the assumed 3–5× factor (§14.9) with measurements, including `cold.lookup` (ORM; no `textual`) and `cold.tui_start` (no `alembic`), checked with `python -X importtime` |
+| 5 | 009 TUI + Termux risks | §12 skeleton, §12.8 portrait layout, §14.3 | **verify on the phone and record in the issue**: (a) suspend/resume with `$EDITOR`; (b) startup time; plus three this design adds: (c) `sqlite3` FTS5 available in Termux Python; (d) lookup time with the phone-built `lexicon.db` in Termux's home, opened `immutable`; (e) installing Harald's pure-Python dependencies on Termux; (f) taps and swipes reach Textual as mouse clicks and scrolling (§12.5); (g) in **portrait**: rows available with the soft keyboard up (designed for 40×12, §12.8), and every screen rendering at the phone's real width; (h) installing the migration stack on Termux: alembic, SQLAlchemy ≥ 2.1 (pure wheel), Mako, and MarkupSafe (compiles its speedups if clang is present, else plain Python), plus one `alembic upgrade` of a scratch file; (i) run `dev/bench/bench.py --machine phone` and write `baseline-phone.json`. This records the phone baseline against the confirmed budgets and replaces the assumed 3–5× factor (§14.9) with measurements, including `cold.lookup` (ORM; no `textual`) and `cold.tui_start` (no `alembic`), checked with `python -X importtime`; (j) the timed `harald-cli build --fetch`, done on 2026-11-03 (about 200 s of fetch and 460 s of build on a Pixel 9), with peak free space, peak memory and throttling still to record (§3.8) |
 | 6 | 003 fuzzy lookup | §3.3 keys, §3.7 `fuzzy` jobs + `fuzzy.merge`, §4.1 fuzzy, §4.4 candidate query, `fuzzy.py` | bench step: `warm.fuzzy_candidates`, `warm.read_3000_columns`, `warm.lookup_e2e`. measured 3.47M rows, 60 MB for the English keys, so the size lever (drop adjective-declension forms from `fuzzy_delete`) is unlikely to be needed |
 | 7 | 006 full English entry | §3.3 IPA, labels, examples; §4.1 display | bench step: re-run `warm.headword_load` (examples make the entity load heavier) |
 | 8 | 005 fetch, dates, attribution, coverage | §3.4, §3.6, `harald info` | fetch runs before the graph (§3.5 step 4); coverage counters come back from the parse jobs |
@@ -7269,7 +7568,8 @@ and 004b (the parallel task graph, with the four criteria in its row).
 | 18 | 018 Tatoeba search | §3.3 Tatoeba, §3.7 `tatoeba.parse` / `tatoeba.lemmas` / `tatoeba.merge`, §4.3, §4.4 FTS5 through `text()` | bench step: `warm.phrase_search` |
 | 19 | 019 save phrase card | §7.2, §7.3 transaction | |
 | 20 | 020 write phrase in `$EDITOR` | §9 | |
-| 21 | 022 backup | §10 | trigger points and retention confirmed |
+| 21 | 022 backup | §10, §14.2 `BackupError`, §14.3 | the explicit `harald-cli backup --to PATH` only (spec, 2026-11-05): no trigger, no retention, no setting, CLI only. Termux check: a backup into `~/storage/shared/...` while the TUI is open |
+| – | change: `harald-cli prune` | §3.8, §14.1 | done in b0eabbf through the `change` door, before the build moved to where Harald runs (7eef594) |
 | 22 | 021 `harald check` | §8 entire, §7.8 audited repairs, §12.8 Check screen, §11 CLI | depends on 004a and 010. Acceptance-criteria changes are listed in §8.4 |
 | – | 013 per-(tense, person) cards | §7.12, §7.2; §12.3, §12.4, §12.8 for the Stammformen front without its badge | **unblocked 2026-10-27**: open question 5 part 1 is resolved in §7.12. One slice after 012, before or after 015, in five commits; the first drops the Stammformen badge. Decision 7 (per-card refusal) confirmed by the user 2026-10-27 |
 | 3.1 | 023 check English → German answers | §5.1 rules 1–3 and the article, §7.1 and §7.6 (0001 in place), §7.2, §7.3, §7.4, §7.14, §8.1 gender, §12 checked frames, §12.5 tap guard | depends on 010, 013 and 014; removes the article card and recreates the dev `learning.db`; the Study preflight (F10); records the share of English senses with labels (F4). Four commits (§7.14) |
@@ -7298,10 +7598,9 @@ and 004b (the parallel task graph, with the four criteria in its row).
   `cold.lookup` ever breaches its budget, the options are a Core-only table
   module for that path, or stdlib `sqlite3` for it. Each undoes one of your
   decisions, so that call stays yours.
-- **The spec wording for your 2026-11-01 decisions needs a revision** (you
-  will unfreeze it; the wording is drafted in
-  `dev/inbox/spec-revision-typed-check-gaps.md`). The design and issues 023,
-  025 and 027 already follow them:
+- ~~**The spec wording for your 2026-11-01 decisions needs a revision.**~~
+  **Done** in the spec revision of 2026-11-04 (631f301). The design and
+  issues 023, 025 and 027 follow them:
   1. each card's gender comes from the entry its own sense came from,
      replacing "A noun's gender comes from the chosen English-edition entry
      or, when only German-edition senses are chosen, from the German entry"
@@ -7318,22 +7617,42 @@ and 004b (the parallel task graph, with the four criteria in its row).
   here. §12.8 designs the four-way test and predicts, by inference, that the
   note adds one row and that a three-row example overflows by three with a
   note. Which number the reading takes is read off the recorded rows.
-- **Readings change 3 takes provisionally**, each cheap to flip:
-  - "the previous answer also had a wrong article" includes a missing one;
-  - `sich` is accepted on verbs only, as the spec says, narrowing D2's "any
-    lemma";
+- **Readings change 3 took, now settled** against the code
+  (`learning/answers.py`, `learning/study.py`, `tui/study.py`; checked
+  2026-11-07). Code and design agree on each, so each is decided; flipping
+  one is still a one-line change:
+  - "the previous answer also had a wrong article" includes a missing one:
+    `_had_wrong_article` tests for `wrong` or `missing`. The spec's "also
+    had a wrong article" is read with the sentence before it, "a wrong or
+    missing article";
+  - a leading `sich` is accepted on verbs only (`_parse`, `pos == "verb"`),
+    as the spec says, narrowing D2's "any lemma". It is kept when the lemma
+    itself starts with `sich`;
   - `Word` labels every checked meaning card that isn't a noun with a
-    gender, verbs and adjectives included (D16 names the no-gender noun);
-  - rule 4's other-case test sees lemmas only, so `fliege` for `Fliege`
-    passes as a slip;
-  - a form of the card's own lemma is not "another word": `Hunde` for
-    `Hund` is Again, with no retry;
-  - D19 refusals leave no record, so the audit can't count them, although
-    the brief's Round 10 expected it to.
+    gender: verbs, adjectives, proper nouns and no-gender nouns
+    (`_field_label`; D16 names the no-gender noun);
+  - rule 4's other-case test sees lemma rows only (`not k.inflected`), so
+    `fliege` for `Fliege` passes as a slip;
+  - a form of the card's own lemma is not "another word" (rule 6 skips the
+    `known` rows whose lemma matches), so `Hunde` for `Hund` is Again by
+    rule 7, with no retry;
+  - a D19 refusal, like a retry's first try, writes nothing
+    (`_answer_checked` returns before `grade_card` when there is no
+    rating), so the audit can't count refusals, although the brief's Round
+    10 expected it to (§14.8).
+- **One gap the code check found: `sich` is matched case-sensitively.**
+  `_parse` drops `sich` only when it is typed exactly `sich`, while articles
+  are matched in any case because an autocapitalising keyboard types
+  `Der Hund` (§5.1). So `Sich beeilen` for `beeilen` is Again (no known
+  key, and 5 edits), while `Beeilen` alone passes as a case slip and
+  `Der Hund` passes (run against `check_meaning`). Recommendation: casefold
+  `sich` as the articles are, a one-line change in `_parse` through the
+  `change` door. Whether Termux's keyboard autocapitalises at all is one of
+  issue 009's checks; the decision is yours either way.
 - **Spec points change 3 does not cover:** none left. Your decisions of
   2026-11-01 closed the four that were listed (gender per card, articles on
   proper nouns, "card type" in burying, the recognised article words);
-  only their spec wording is outstanding (above).
+  their spec wording landed on 2026-11-04 (above).
 - **Measurements the brief names** (F4, F5): the share of English senses
   with labels (issue 023), the guard's hit rate on single-edit typos (024),
   German definitions containing their own lemma (025), and the Termux
@@ -7422,17 +7741,26 @@ and 004b (the parallel task graph, with the four criteria in its row).
     guard to every study button, §12.5.)
 
 **Spec and doc wording that must change** (user-owned):
-- **80 columns → portrait 40:** spec lines 36, 137 and 257; AGENTS.md line
-  8; issue 001 line 11, issue 002 line 10, issue 009 line 9. Exact
-  replacements are in §12.8.
-- **Old database names still in the spec:** lines 121 and 139
-  (`dictionary.db`), 190–197 (the "Two databases" block: `dictionary.db`,
-  `user.db`), 229–230 and 241. Generic "the dictionary" wording: lines 9, 16
-  and 30. "Dictionary mode" (line 39) names a mode and can stay. The issues
-  and AGENTS.md are already renamed.
+- ~~**80 columns → portrait 40**~~ and ~~**old database names**~~: done in
+  the spec, AGENTS.md and the issues. Generic "the dictionary" wording is
+  left in spec lines 9, 16 and 31; "Dictionary mode" (line 40) names a mode
+  and can stay.
+- **Mobile first and the explicit backup** are in the spec (2026-11-04 and
+  2026-11-05). Three issues still describe the desktop-and-sync setup:
+  - 004a, criterion 1: drop the clause about the sync channel having
+    nothing to resend;
+  - 009, the timed-build item: the build ran with `--fetch` on 2026-11-03
+    (about 200 s and 460 s on a Pixel 9), building on the phone is
+    supported, and what is left to record is peak free space, peak memory
+    and throttling (§3.8);
+  - 022: the title and criteria become the explicit `backup --to PATH` of
+    §10, with its Termux check and the restore steps for the user docs.
+- **The spec's Goals list `lookup`, `build` and `check` as the plain CLI
+  commands.** `prune` and `backup --to PATH` are named only in its Technical
+  Approach; adding them to the Goals list is spec wording for you.
 - **Proper nouns:** the spec is silent on them, so nothing needs to change,
-  apart from the optional article on names decided on 2026-11-01 (its
-  wording is under "Still open").
+  apart from the optional article on names decided on 2026-11-01, which
+  the spec carries since 2026-11-04.
 - **Issue 021's acceptance criteria** need the six changes listed in §8.4.
   Its "keeps a card's `note` and labels" is read in §8.3 as "loses
   neither".
@@ -7498,12 +7826,18 @@ and 004b (the parallel task graph, with the four criteria in its row).
   schedule by default.
 - **Touch buttons in Study**, with a 300 ms guard against double taps (§12.5,
   §12.8).
-- **Extra CLI commands.** The design adds `phrase`, `info` and `backup`, and
-  the `check` subcommands of §8.4.
+- **Extra CLI commands.** The design adds `phrase` and `info`, and the
+  `check` subcommands of §8.4. `prune` (§3.8, built) and `backup --to PATH`
+  (§10) are in the spec's Technical Approach but not in its Goals' CLI list
+  (above).
+- **Backup** (§10): CLI only, with no TUI entry; a missing PATH is refused,
+  not created; names are stamped in UTC; leftover partials of killed runs
+  are deleted from PATH, matching Harald's own names only.
 - **The Tatoeba licence** is displayed as CC BY 2.0 FR, the precise form of
   the spec's "CC-BY".
-- **Where files live on the phone** (§13). If the Syncthing Android app is
-  used, `lexicon.db` and the backup folder must sit in shared storage.
+- **Where files live on the phone** (§13). Everything Harald owns stays in
+  Termux's private home; only a backup's PATH may sit in shared storage,
+  for another app to pick up.
 - **Check scheduling defaults** (§8.3). Accepting upstream changes resets
   the schedule of checked cards whose answer changed and keeps it for
   self-graded cards, overridable per repair.
@@ -7541,7 +7875,9 @@ and 004b (the parallel task graph, with the four criteria in its row).
   tick, no `an|rufen` on the meaning card, and the conjugation front is
   `infinitive - hint`, tense, `ich [ ]` (§7.12, decision 6). Lookup keeps
   its badge;
-- backups after each session and on exit, plus `harald backup`, keeping 10;
+- ~~backups after each session and on exit, plus `harald backup`, keeping
+  10~~: withdrawn by the spec on 2026-11-05 for the explicit `harald-cli
+  backup --to PATH` only (§10);
 - a daily cap of 20; fuzzy matching for German and English → German but
   not phrases (D10, D39);
 - sibling burying per (word, card type) (D11, D40);
