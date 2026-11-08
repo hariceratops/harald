@@ -20,6 +20,7 @@ Open an entry (`l`, search, pick a result), then press `a`.
   ticked tense gives six **conjugation** cards, one per person.
 - Nouns get no article card. The article is part of the answer.
 
+<!-- docs: keys add-word -->
 | Key | Does |
 |---|---|
 | `space` | tick or untick a row |

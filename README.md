@@ -43,6 +43,7 @@ Planned: Tatoeba phrase search,
 
 ## Quick start
 
+<!-- docs: illustration -->
 ```sh
 uv sync
 uv run harald-cli build --fetch   # downloads several GB of sources; first build takes a while

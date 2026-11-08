@@ -1,5 +1,6 @@
 # Building the lexicon
 
+<!-- docs: illustration -->
 ```sh
 harald-cli build [--fetch] [--force]
 ```
@@ -28,6 +29,7 @@ recorded in the lexicon.
 The sources are about 3.4 GB and stay after a build, so you can rebuild
 without downloading again.
 
+<!-- docs: illustration -->
 ```sh
 harald-cli prune          # lists the files, asks, then deletes them
 harald-cli prune --yes    # no question

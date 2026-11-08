@@ -20,6 +20,7 @@ uv sync
 The phone builds its own lexicon and needs no dev tools. uv cannot download a
 Python on Android, so use the one Termux ships.
 
+<!-- docs: illustration -->
 ```sh
 pkg install python git
 export UV_PYTHON_DOWNLOADS=never
@@ -41,6 +42,7 @@ harald
 
 ## Build the lexicon
 
+<!-- docs: illustration -->
 ```sh
 uv run harald-cli build --fetch
 ```
@@ -52,12 +54,14 @@ sources do nothing. See [Building the lexicon](build.md).
 Free about 3.4 GB once the lexicon is built (a rebuild then needs `--fetch`
 again):
 
+<!-- docs: illustration -->
 ```sh
 uv run harald-cli prune
 ```
 
 ## Look something up
 
+<!-- docs: illustration -->
 ```sh
 uv run harald-cli lookup lief          # inflected form → laufen
 uv run harald-cli lookup --conj gehen  # every tense
@@ -70,6 +74,7 @@ uv run harald-cli lookup --en use      # English → German
 uv run harald
 ```
 
+<!-- docs: keys home -->
 | Key | Does |
 |---|---|
 | `l` | lookup |
@@ -86,6 +91,7 @@ Adding words and studying are in [Cards and study](study.md).
 
 ## See what you built from
 
+<!-- docs: illustration -->
 ```sh
 uv run harald-cli info
 ```

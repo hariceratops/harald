@@ -33,3 +33,10 @@ the device you study on.
 
 Output adapts to the terminal: 40 columns minimum (a phone in portrait), 80 or
 more on desktop and SSH.
+
+## About the examples
+
+Every console session in this guide is run by the test suite against a small
+sample lexicon built from a few hand-cut Wiktionary entries, at 80 columns, so
+the output shows that lexicon's words, counts and coverage. Source dates read
+2026-11-01 and build timings 0.0 s. A real lexicon gives longer entries.
