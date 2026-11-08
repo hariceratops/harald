@@ -50,10 +50,22 @@ def check_stammformen(content: dict[str, Any], given: tuple[str, str, str]) -> S
     return StammformenCheck(all(f.correct for f in fields), fields)
 
 
+REFLEXIVE_PRONOUN = {
+    "1sg": "mich", "2sg": "dich", "3sg": "sich", "1pl": "uns", "2pl": "euch", "3pl": "sich",
+}  # fmt: skip
+
+
 def check_conjugation(content: dict[str, Any], given: str) -> FieldCheck:
-    label = dict(PERSONS)[content["slot"].rsplit(".", 1)[1]]
+    person = content["slot"].rsplit(".", 1)[1]
     forms = content["forms"]
-    return FieldCheck(label, given, any(answer_matches(given, f) for f in forms), "/".join(forms))
+    accepted = list(forms)
+    if content.get("reflexive"):
+        # The stored forms carry no pronoun; it sits after the finite verb (`habe mich gefreut`).
+        for form in forms:
+            first, _, rest = form.partition(" ")
+            accepted.append(f"{first} {REFLEXIVE_PRONOUN[person]} {rest}".strip())
+    correct = any(answer_matches(given, f) for f in accepted)
+    return FieldCheck(dict(PERSONS)[person], given, correct, "/".join(forms))
 
 
 @dataclass(frozen=True)

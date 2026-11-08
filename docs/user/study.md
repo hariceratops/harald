@@ -67,7 +67,9 @@ summary ends the session.
   are typed without an article too, and the field reads `Word`.
 - A verb may start with `sich`: `sich beeilen`.
 - `ae`, `oe`, `ue`, `ss` count for `ä`, `ö`, `ü`, `ß`.
-- Conjugation cards: no pronoun. Type `rufe an`, not `ich rufe an`.
+- Conjugation cards: no subject pronoun. Type `rufe an`, not `ich rufe an`. On a
+  reflexive verb the reflexive pronoun is accepted after the first word:
+  `freue` and `freue mich` both count.
 - Stammformen cards: 3rd person singular, Präteritum, Perfekt, such as
   `ruft an`, `rief an`, `hat angerufen`. Move between fields with `enter`.
 

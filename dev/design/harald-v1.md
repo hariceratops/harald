@@ -2622,8 +2622,11 @@ built from the 2026-10-03 dump and queried read-only on 2026-10-27.
   `_answer_checked`. The grade is Good if the answer matches and Again
   otherwise, and the review's `answer` is the typed string. Since change 3
   the caller hands `_answer_checked` that rating (§7.14). Accepting the
-  reflexive pronoun after the first word (D3) is decided but not built; it
-  is a separate `change` (§16). These cards take no note (D35).
+  reflexive pronoun after the first word (D3) is built: a card whose entry
+  has any `reflexive` sense carries `reflexive: true`, and the check also
+  accepts each stored form with the person's pronoun after its first word.
+  Existing cards lack the field and keep today's behaviour. These cards
+  take no note (D35).
 - **Use case:** `AnswerConjugation(config).execute(card_id, given, now,
   session_id, duration_ms) -> Result[FieldCheck, LearningDbError]`, in
   `use_cases/study.py`. That module re-exports `FieldCheck` for the TUI, as
@@ -7663,7 +7666,7 @@ and 004b (the parallel task graph, with the four criteria in its row).
   **Resolved 2026-11-01** by the spec revision (change 3; §5.1, §7.14). It
   was raised with §7.13 on 2026-10-28. What stays from the findings below:
   D2 (a leading `sich`, now on verbs only), D3 (the conjugation check's
-  reflexive pronoun: decided, not built, a separate `change`) and D4 (the
+  reflexive pronoun: decided, built by a separate `change`) and D4 (the
   suspect auxiliaries are accepted). The findings, as recorded before the
   revision:
   - (checked 2026-10-30 against the real `lexicon.db`: simple reflexive verbs
@@ -7707,8 +7710,8 @@ and 004b (the parallel task graph, with the four criteria in its row).
     reflexive sense counts, so a verb like `freuen`, with reflexive and
     other senses, accepts both forms). Existing cards lack the field and
     read as not reflexive, so they keep today's behaviour. It does not touch
-    the suspect auxiliaries in the data. Not built yet: a `change` for 013's
-    code;)
+    the suspect auxiliaries in the data. Built 2026-11-07 by
+    `change/reflexive-conjugation`;)
   - (decided 2026-10-30: the suspect auxiliaries in the data, `bin beeilt`
     and the like, are accepted as they are, since about two entries of 342
     reflexive-only verbs are affected;)

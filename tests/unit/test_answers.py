@@ -108,6 +108,35 @@ def test_conjugation_accepts_umlaut_digraphs_but_not_a_missing_prefix() -> None:
     assert not check_conjugation(card, "fährst").correct
 
 
+def test_a_reflexive_conjugation_also_accepts_the_pronoun_after_the_first_word() -> None:
+    card = {"slot": "ind.perf.1sg", "forms": ["habe gefreut"], "reflexive": True}
+
+    assert check_conjugation(card, "habe gefreut").correct
+    assert check_conjugation(card, "habe mich gefreut").correct
+    assert not check_conjugation(card, "habe dich gefreut").correct
+    assert check_conjugation(card, "habe mich gefreut").expected == "habe gefreut"
+
+
+def test_each_person_takes_its_own_reflexive_pronoun() -> None:
+    wanted = {
+        "1sg": "mich",
+        "2sg": "dich",
+        "3sg": "sich",
+        "1pl": "uns",
+        "2pl": "euch",
+        "3pl": "sich",
+    }
+    for person, pronoun in wanted.items():
+        card = {"slot": f"ind.pres.{person}", "forms": ["freue"], "reflexive": True}
+        assert check_conjugation(card, f"freue {pronoun}").correct
+
+
+def test_a_non_reflexive_conjugation_refuses_the_pronoun() -> None:
+    card = {"slot": "ind.pres.1sg", "forms": ["koche"]}
+
+    assert not check_conjugation(card, "koche mich").correct
+
+
 def _noun(gender: str = "m", lemma: str = "Hund", pos: str = "noun") -> dict[str, Any]:
     return {"lemma": lemma, "pos": pos, "gender": gender}
 

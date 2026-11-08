@@ -73,6 +73,8 @@ def _conjugation_cards(
     names = dict(TENSES)
     cards: list[NewCard] = []
     missing: list[str] = []
+    # Any reflexive sense counts: `freuen` accepts both `freue` and `freue mich`.
+    reflexive = entry is not None and any("reflexive" in s.labels for s in entry.senses)
     for stem in tenses:
         gaps = []
         for suffix, label in PERSONS:
@@ -80,18 +82,16 @@ def _conjugation_cards(
             if not forms.get(slot):
                 gaps.append(label)
                 continue
-            cards.append(
-                NewCard(
-                    "conjugation",
-                    {
-                        "infinitive": headword.lemma,
-                        "hint": hint,
-                        "separable_prefix": (entry.separable_prefix if entry else "") or "",
-                        "slot": slot,
-                        "forms": list(forms[slot]),
-                    },
-                )
-            )
+            content: dict[str, Any] = {
+                "infinitive": headword.lemma,
+                "hint": hint,
+                "separable_prefix": (entry.separable_prefix if entry else "") or "",
+                "slot": slot,
+                "forms": list(forms[slot]),
+            }
+            if reflexive:
+                content["reflexive"] = True
+            cards.append(NewCard("conjugation", content))
         if gaps:
             what = "all persons" if len(gaps) == len(PERSONS) else ", ".join(gaps)
             missing.append(f"{names[stem]} ({what})")
