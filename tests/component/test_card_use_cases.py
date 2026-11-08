@@ -260,6 +260,21 @@ def test_conjugation_cards_do_not_need_a_sense(built: Workspace) -> None:
     assert plan.refusals == ()
 
 
+def test_a_verb_with_a_reflexive_sense_marks_its_conjugation_cards_reflexive(
+    built: Workspace,
+) -> None:
+    anrufen = _headword(built, "anrufen", "verb")
+    entry = anrufen.entries[0]
+    senses = (replace(entry.senses[0], labels=("reflexive",)), *entry.senses[1:])
+    sich_anrufen = replace(anrufen, entries=(replace(entry, senses=senses),))
+
+    plain = PlanWordCards(built.config).execute(anrufen, 0, [0], [], ["ind.pres"]).unwrap()
+    plan = PlanWordCards(built.config).execute(sich_anrufen, 0, [0], [], ["ind.pres"]).unwrap()
+
+    assert all("reflexive" not in c for c in _conjugation(plain).values())
+    assert all(c["reflexive"] is True for c in _conjugation(plan).values())
+
+
 def test_a_third_person_only_verb_gets_those_cards_and_names_the_rest(
     built: Workspace,
 ) -> None:
