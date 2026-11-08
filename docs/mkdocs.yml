@@ -31,21 +31,20 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
 
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    anchors: warn
+
 nav:
   - Overview: index.md
-  - User guide:
-      - Getting started: user/getting-started.md
-      - Cards and study: user/study.md
-      - Lookup: user/lookup.md
-      - Building the lexicon: user/build.md
-      - Configuration: user/configuration.md
-      - Data and licences: user/data.md
-  - Developer guide:
-      - Architecture: developer/architecture.md
-      - Testing: developer/testing.md
-      - Build internals: developer/build-internals.md
-      - Workflow: developer/workflow.md
-  - Roadmap: roadmap.md
+  - Getting started: user/getting-started.md
+  - Cards and study: user/study.md
+  - Lookup: user/lookup.md
+  - Building the lexicon: user/build.md
+  - Configuration: user/configuration.md
+  - Data and licences: user/data.md
 
 markdown_extensions:
   - admonition

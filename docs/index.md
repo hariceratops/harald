@@ -10,8 +10,6 @@ from reading, TV and conversation. It does two jobs:
 
 ## How this guide is organised
 
-**User guide**
-
 - **[Getting started](user/getting-started.md)** — install, build the lexicon,
   first lookup.
 - **[Cards and study](user/study.md)** — add a word, notes, typed answers, grades.
@@ -20,17 +18,6 @@ from reading, TV and conversation. It does two jobs:
 - **[Configuration](user/configuration.md)** — `config.toml` and file locations.
 - **[Data and licences](user/data.md)** — where the data comes from and what you
   may do with it.
-- **[Roadmap](roadmap.md)** — what works and what is next.
-
-**Developer guide**
-
-- **[Architecture](developer/architecture.md)** — layers, packages, error
-  handling.
-- **[Testing](developer/testing.md)** — test layers, fixtures, commands.
-- **[Build internals](developer/build-internals.md)** — the task graph,
-  determinism, schema versions.
-- **[Workflow](developer/workflow.md)** — `dev/`, conventions, adding a
-  command.
 
 ## Two databases
 
