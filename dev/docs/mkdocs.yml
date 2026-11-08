@@ -38,6 +38,7 @@ nav:
   - Testing: testing.md
   - Build internals: build-internals.md
   - Workflow: workflow.md
+  - Checked guide: guide.md
 
 markdown_extensions:
   - toc:
