@@ -2,7 +2,7 @@
 
 The README repeats the feature list and carries a second roadmap. Reduce it to a pitch that points to the guide.
 
-Depends on 029 and 030. Spec: `dev/specs/structured-documentation.md`
+Depends on 029, 030 and 035 (the published guide must exist for the link to work). Spec: `dev/specs/structured-documentation.md`
 
 ## Acceptance Criteria
 

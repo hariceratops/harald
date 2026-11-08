@@ -7,6 +7,7 @@ Depends on 028 and 030. Spec: `dev/specs/structured-documentation.md`
 ## Acceptance Criteria
 
 - `.github/workflows/docs.yml` deploys the guide to GitHub Pages on a push to `main`, after the strict build succeeds. A failed build publishes nothing.
+- The workflow also runs `uv run --frozen pytest tests/docs`, and the deploy is gated on it as well as on the strict build. This goes beyond the spec's strict-build gate, by the user's decision.
 - Pull requests build the guide strictly and do not publish.
 - CI uses the `uv run --with-requirements docs/requirements.txt` build command.
 - `dev/docs/` is not built or published by the workflow.

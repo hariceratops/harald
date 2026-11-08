@@ -13,3 +13,4 @@ Depends on 028. Spec: `dev/specs/structured-documentation.md`
 - Output is pinned to 80 columns, and any date or clock shown is pinned.
 - Output must match exactly, line by line, ignoring trailing whitespace. An example whose output changes fails the suite.
 - `docs/user/lookup.md` is converted as the first checked page.
+- Every other `harald-cli` fence in `docs/` and the README's Quick start is marked `illustration`, so the suite stays green. Issue 032 converts them.

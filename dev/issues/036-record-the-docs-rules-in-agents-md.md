@@ -2,7 +2,7 @@
 
 `AGENTS.md` says nothing about documentation, so the rules this sweep sets up are not stated where agents read them.
 
-Depends on 029 and 030. Spec: `dev/specs/structured-documentation.md`
+Depends on 028 to 035, since the section describes what they built. Spec: `dev/specs/structured-documentation.md`
 
 ## Acceptance Criteria
 
