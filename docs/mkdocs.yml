@@ -46,9 +46,11 @@ nav:
   - Building the lexicon: user/build.md
   - Configuration: user/configuration.md
   - Data and licences: user/data.md
+  - Command reference: reference.md
 
 markdown_extensions:
   - admonition
+  - mkdocs-click
   - toc:
       permalink: true
   - pymdownx.highlight

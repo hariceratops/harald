@@ -1,11 +1,7 @@
 # Building the lexicon
 
-<!-- docs: illustration -->
-```sh
-harald-cli build [--fetch] [--force]
-```
-
 `harald-cli build` reads the locally kept source files and writes `lexicon.db`.
+Every option is in the [command reference](../reference.md#build).
 
 ## Sources
 
@@ -58,10 +54,7 @@ harald-cli prune --yes    # no question
 - **Sanity check.** A build with fewer than `build_min_entries` entries is
   rejected rather than published.
 
-## Flags
-
-- `--fetch` — download the sources first.
-- `--force` — rebuild even if nothing changed.
+## What a build does
 
 The build runs as a parallel task graph; `build_workers` sets the number of
 worker processes. It prints per-stage timings, the entry and bad-line counts,

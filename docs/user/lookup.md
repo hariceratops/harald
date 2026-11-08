@@ -1,12 +1,7 @@
 # Lookup
 
-<!-- docs: illustration -->
-```sh
-harald-cli lookup [--conj] WORD...
-harald-cli lookup --en WORD...
-```
-
-Several words are joined into one query.
+Several words are joined into one query. Every option is in the
+[command reference](../reference.md#lookup).
 
 ## German lookup
 

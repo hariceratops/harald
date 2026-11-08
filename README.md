@@ -59,10 +59,8 @@ The full guide lives in [`docs/`](docs/index.md), split into a user guide and
 a developer guide, and renders as a site with mkdocs-material:
 
 ```sh
-pip install -r docs/requirements.txt
-
-mkdocs serve -f docs/mkdocs.yml   # live-reloading site on http://127.0.0.1:8000
-mkdocs build -f docs/mkdocs.yml   # or render once into site/
+uv run --with-requirements docs/requirements.txt mkdocs serve -f docs/mkdocs.yml   # live-reloading site on http://127.0.0.1:8000
+uv run --with-requirements docs/requirements.txt mkdocs build --strict -f docs/mkdocs.yml   # or render once into site/
 ```
 
 The pages are plain markdown with relative links, so they also read fine
