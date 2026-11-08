@@ -76,7 +76,7 @@ uv run mypy
 ```
 
 Test layers, build internals and workflow are in the
-[developer guide](docs/developer/workflow.md). Project rules are in
+[developer guide](dev/docs/workflow.md). Project rules are in
 [`AGENTS.md`](AGENTS.md); the spec, design and issues are under `dev/`.
 
 ## Roadmap

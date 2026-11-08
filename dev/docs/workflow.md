@@ -28,5 +28,5 @@ the code disagree on a name, `AGENTS.md` wins (`lexicon.db`, `learning.db`).
 2. Add a click command in `cli.py` (the `harald-cli` entry point; the TUI is the separate `harald` entry point in `tui/main.py`) that loads the config, calls the use case
    and maps errors to exit codes (1 failed, 2 refused).
 3. Render with `render.py`, which must fit 40 columns.
-4. Add a smoke test and update the [user docs](../user/getting-started.md)
-   and the [roadmap](../roadmap.md).
+4. Add a smoke test and update the user docs (`docs/user/getting-started.md`)
+   and the README roadmap.
