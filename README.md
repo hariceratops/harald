@@ -4,7 +4,8 @@ A personal, offline German vocabulary tool for a learner who picks German up
 from reading, TV and conversation rather than a course. Look a word up fast,
 keep what is worth keeping as a spaced-repetition card.
 
-<!-- The demo tape mirrors this block; keep them the same. -->
+![Looking up lief and use](docs/demo/taste.gif)
+
 ```console
 $ harald-cli lookup lief
 lief → laufen (verb)

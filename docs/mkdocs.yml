@@ -15,6 +15,7 @@ exclude_docs: |
   mkdocs.yml
   requirements.txt
   examples/
+  demo/*.tape
 
 theme:
   name: material
