@@ -8,6 +8,29 @@ from reading, TV and conversation. It does two jobs:
 - **Turn what is worth keeping into spaced-repetition cards** and study them,
   with typed, checked answers.
 
+Everything works offline once the lexicon is built. Often the lookup is all you
+need; when it is not, the word becomes a card. The lexicon is built from
+Wiktionary and Tatoeba data with one command, on the device you use. The app is
+mobile first: study happens on the phone (Termux), and the desktop works the
+same way.
+
+## What Harald does
+
+- **Build** the lexicon from locally kept sources: deterministic, atomic and
+  parallel, with `--fetch` to download new sources. See
+  [Building the lexicon](user/build.md).
+- **Report** sources, dates, attribution and data coverage with
+  `harald-cli info`, and free the downloaded sources with `harald-cli prune`.
+  See [Data and licences](user/data.md).
+- **Look up** German words, including inflected forms and typos, with English
+  glosses, German definitions, register labels, IPA and examples, or list
+  German words under each English sense. See [Lookup](user/lookup.md).
+- **Browse** lookups and entries in the TUI (`harald`), down to 40 columns. See
+  [Getting started](user/getting-started.md).
+- **Study** cards added from an entry, scheduled by FSRS, with typed and checked
+  answers for English → German and German → German and self-graded cards for
+  the rest. See [Cards and study](user/study.md).
+
 ## How this guide is organised
 
 - **[Getting started](user/getting-started.md)** — install, build the lexicon,
