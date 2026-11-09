@@ -36,8 +36,8 @@ def _problems(page: str) -> list[str]:
 )
 def test_docs_example(example: Example, home: Path) -> None:
     failure = run_example(example, home)
-    if failure.is_some:
-        pytest.fail(failure.unwrap(), pytrace=False)
+    if failure.is_err:
+        pytest.fail(str(failure.unwrap_err()), pytrace=False)
 
 
 def test_docs_pages_are_well_formed() -> None:
@@ -51,8 +51,8 @@ def test_lookup_page_is_a_checked_page() -> None:
 def test_wrong_block_fails_naming_page_line_and_diff(home: Path) -> None:
     example = _only_example("```console\n$ harald-cli lookup --en use\nnope\n```\n")
     failure = run_example(example, home)
-    assert failure.is_some
-    text = failure.unwrap()
+    assert failure.is_err
+    text = str(failure.unwrap_err())
     assert text.startswith("page.md:2: `harald-cli lookup --en use` printed something else")
     assert "-nope" in text
     assert "+use (verb)" in text
@@ -67,7 +67,7 @@ def test_right_block_passes_ignoring_trailing_whitespace(home: Path) -> None:
         "use (noun)\n  act of using\n    die Benutzung\n    der Gebrauch\n"
         "  die Anwendung\n```\n"
     )
-    assert run_example(example, home).is_none
+    assert run_example(example, home).is_ok
 
 
 def test_the_scratch_home_prints_as_tilde(home: Path) -> None:
@@ -84,14 +84,14 @@ def test_the_scratch_home_prints_as_tilde(home: Path) -> None:
         "    100.0 % (1/1)\n  nouns with a gender\n    0.0 % (0/0)\n"
         "  senses with a translated example\n    0.0 % (0/1)\n```\n"
     )
-    assert run_example(example, home).is_none
+    assert run_example(example, home).is_ok
 
 
 def test_a_failed_command_ends_the_example(home: Path) -> None:
     example = _only_example(
         "```console\n$ harald-cli lookup zzzz\nwrong\n$ harald-cli info\nwrong\n```\n"
     )
-    failure = run_example(example, home).unwrap()
+    failure = str(run_example(example, home).unwrap_err())
     assert "page.md:2:" in failure
     assert "page.md:4:" not in failure
 

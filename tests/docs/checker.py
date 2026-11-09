@@ -87,7 +87,7 @@ from textual.widgets import Input, OptionList, SelectionList
 import harald.build.graph
 import harald.build.run
 from harald.cli import cli, main
-from harald.core.option import Option
+from harald.core.result import Result
 from harald.tui.addword import AddWordScreen
 from harald.tui.app import HaraldApp
 from harald.tui.entry import EntryScreen
@@ -164,8 +164,9 @@ def _key_rows(tokens: list[Token], start: int) -> tuple[list[KeyRow], list[int]]
             first_cell = True
         elif tok.type == "inline" and in_body and first_cell:
             first_cell = False
-            line = (tok.map[0] if tok.map else 0) + 1
-            keys = tuple(c.content for c in tok.children or [] if c.type == "code_inline")
+            assert tok.map is not None and tok.children is not None
+            line = tok.map[0] + 1
+            keys = tuple(c.content for c in tok.children if c.type == "code_inline")
             if keys:
                 rows.append(KeyRow(line, keys))
             else:
@@ -199,7 +200,8 @@ def _command_problems(page: str, command: Command) -> list[str]:
 
 
 def _fence_commands(page: str, fence: Token) -> tuple[list[Command], list[str]]:
-    first = (fence.map[0] if fence.map else 0) + 2
+    assert fence.map is not None
+    first = fence.map[0] + 2
     commands: list[Command] = []
     problems: list[str] = []
     for offset, text in enumerate(fence.content.splitlines()):
@@ -223,6 +225,13 @@ def _fence_commands(page: str, fence: Token) -> tuple[list[Command], list[str]]:
     return commands, problems
 
 
+def _outside_console(page: str, number: int) -> str:
+    return (
+        f"{page}:{number + 1}: {PROGRAM} outside a console block; make it a "
+        f"console example or mark the fence `<!-- docs: illustration -->`"
+    )
+
+
 def parse_page(page: str, text: str) -> Parsed:
     lines = text.splitlines()
     tokens = MarkdownIt("commonmark").enable("table").parse(text)
@@ -230,7 +239,7 @@ def parse_page(page: str, text: str) -> Parsed:
     tables: list[KeyTable] = []
     problems: list[str] = []
     covered: set[int] = set()
-    starts: dict[int, str] = {}  # 0-based line of a block start -> its kind
+    starts: dict[int, str] = {}
 
     for index, tok in enumerate(tokens):
         if tok.map is None:
@@ -285,10 +294,7 @@ def parse_page(page: str, text: str) -> Parsed:
             marked = words[:1] == ["illustration"]
             for number in range(start, tok.map[1]):
                 if PROGRAM in lines[number].split() and not marked:
-                    problems.append(
-                        f"{page}:{number + 1}: {PROGRAM} outside a console block; make it a "
-                        f"console example or mark the fence `<!-- docs: illustration -->`"
-                    )
+                    problems.append(_outside_console(page, number))
                     break
         elif tok.type == "table_open" and starts[start] == "keytable":
             rows, keyless = _key_rows(tokens, index)
@@ -300,10 +306,7 @@ def parse_page(page: str, text: str) -> Parsed:
 
     for number, raw in enumerate(lines):
         if number not in covered and raw.lstrip().startswith("$ ") and PROGRAM in raw.split():
-            problems.append(
-                f"{page}:{number + 1}: {PROGRAM} outside a console block; make it a "
-                f"console example or mark the fence `<!-- docs: illustration -->`"
-            )
+            problems.append(_outside_console(page, number))
     return Parsed(examples, tables, problems)
 
 
@@ -344,7 +347,11 @@ def _run(args: list[str], home: Path) -> str:
     return text
 
 
-def run_example(example: Example, home: Path) -> Option[str]:
+class ExampleFailed(Exception):
+    pass
+
+
+def run_example(example: Example, home: Path) -> Result[None, ExampleFailed]:
     for command in example.commands:
         args = shlex.split(command.text, comments=True)[1:]
         actual = _normalise(_run(args, home), home)
@@ -353,15 +360,16 @@ def run_example(example: Example, home: Path) -> Option[str]:
             diff = difflib.unified_diff(
                 expected, actual, "expected (page)", "actual", lineterm="", n=2
             )
-            return Option.some(
-                f"{example.page}:{command.line}: `{command.text}` printed something else "
-                f"(example at line {example.line})\n" + "\n".join(diff)
+            return Result.err(
+                ExampleFailed(
+                    f"{example.page}:{command.line}: `{command.text}` printed something else "
+                    f"(example at line {example.line})\n" + "\n".join(diff)
+                )
             )
-    return Option.none()
+    return Result.ok(None)
 
 
-# The widgets whose own bindings a screen relies on: Input submits on `enter`,
-# OptionList selects on `enter`, SelectionList ticks on `space`.
+# These keys come from the widget, not the screen.
 KEY_SCREENS: dict[str, tuple[type[Screen[Any]], tuple[type[Widget], ...]]] = {
     "home": (HomeScreen, (OptionList,)),
     "lookup": (LookupScreen, (Input, OptionList)),
