@@ -76,3 +76,16 @@ columns. Source dates read 2026-11-01 because the sample writes each source's
 `harald.build.run` and `harald.build.graph` see a frozen clock. A new
 clock read in a CLI command shows up as a failing example; extend the pin in
 `tests/docs/checker.py`.
+
+## Publishing
+
+`.github/workflows/docs.yml` publishes the guide to
+<https://hariceratops.github.io/harald/> on every push to `main`. The `build`
+job runs `uv run --frozen pytest tests/docs`, then the strict build of
+`docs/mkdocs.yml`; only if both pass is the site uploaded and the `deploy` job
+run. Pull requests run the same tests and build but never publish. This
+`dev/docs/` site is not built or published by the workflow.
+
+One-time setting, done by hand and not by the workflow: in the repository's
+Settings > Pages, set the source to "GitHub Actions". Until it is set, the
+deploy job fails. Pages on a private repository needs a paid plan.

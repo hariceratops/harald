@@ -3,6 +3,9 @@
 #   mkdocs serve -f docs/mkdocs.yml
 site_name: Harald
 site_description: A personal, offline German vocabulary tool.
+site_url: https://hariceratops.github.io/harald/
+repo_url: https://github.com/hariceratops/harald
+edit_uri: edit/main/docs/
 
 # The pages sit next to this file, so the config and its requirements would
 # otherwise be copied into the built site as if they were content.

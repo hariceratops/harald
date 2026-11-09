@@ -55,8 +55,9 @@ Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ## Documentation
 
-The full guide lives in [`docs/`](docs/index.md), split into a user guide and
-a developer guide, and renders as a site with mkdocs-material:
+The full guide is published at <https://hariceratops.github.io/harald/>. Its
+sources live in [`docs/`](docs/index.md), and render as a site with
+mkdocs-material:
 
 ```sh
 uv run --with-requirements docs/requirements.txt mkdocs serve -f docs/mkdocs.yml   # live-reloading site on http://127.0.0.1:8000
