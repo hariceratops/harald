@@ -39,6 +39,7 @@ nav:
   - Build internals: build-internals.md
   - Workflow: workflow.md
   - Checked guide: guide.md
+  - Demo GIF: demo-gif.md
 
 markdown_extensions:
   - toc:
