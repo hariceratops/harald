@@ -61,24 +61,39 @@ normalised. The first mismatch ends the example, and the exit code is not
 compared.
 """
 
+import ast
 import contextlib
 import difflib
+import inspect
 import re
 import shlex
 import socket
+import textwrap
 import types
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from click.testing import CliRunner
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
+from textual.binding import Binding
+from textual.keys import format_key
+from textual.screen import Screen
+from textual.widget import Widget
+from textual.widgets import Input, OptionList, SelectionList
 
 import harald.build.graph
 import harald.build.run
 from harald.cli import cli, main
 from harald.core.option import Option
+from harald.tui.addword import AddWordScreen
+from harald.tui.app import HaraldApp
+from harald.tui.entry import EntryScreen
+from harald.tui.home import HomeScreen
+from harald.tui.lookup import LookupScreen
+from harald.tui.study import StudyScreen
 from tests.docs.sample import docs_env
 
 SCREENS = ("home", "lookup", "entry", "add-word", "study")
@@ -343,3 +358,79 @@ def run_example(example: Example, home: Path) -> Option[str]:
                 f"(example at line {example.line})\n" + "\n".join(diff)
             )
     return Option.none()
+
+
+# The widgets whose own bindings a screen relies on: Input submits on `enter`,
+# OptionList selects on `enter`, SelectionList ticks on `space`.
+KEY_SCREENS: dict[str, tuple[type[Screen[Any]], tuple[type[Widget], ...]]] = {
+    "home": (HomeScreen, (OptionList,)),
+    "lookup": (LookupScreen, (Input, OptionList)),
+    "entry": (EntryScreen, ()),
+    "add-word": (AddWordScreen, (SelectionList,)),
+    "study": (StudyScreen, (Input,)),
+}
+
+
+def _declared(cls: type) -> list[Binding]:
+    return list(Binding.make_bindings(cls.__dict__.get("BINDINGS", [])))
+
+
+def _bindings_of(cls: type) -> list[Binding]:
+    return [b for base in cls.__mro__ for b in _declared(base)]
+
+
+def handled_keys(screen: str) -> set[str]:
+    cls, widgets = KEY_SCREENS[screen]
+    owners: tuple[type, ...] = (cls, HaraldApp, *widgets)
+    return {format_key(b.key) for c in owners for b in _bindings_of(c)}
+
+
+def visible_keys(screen: str) -> dict[str, str]:
+    """Visible bound keys of the screen and the app, mapped to their description."""
+    cls, _ = KEY_SCREENS[screen]
+    return {
+        format_key(b.key): b.description
+        for c in (cls, HaraldApp)
+        for b in _bindings_of(c)
+        if b.show
+    }
+
+
+def table_keys(table: KeyTable) -> set[str]:
+    return {format_key(k) for row in table.rows for k in row.keys}
+
+
+def uncomposed_widgets(screen: str) -> list[str]:
+    cls, widgets = KEY_SCREENS[screen]
+    tree = ast.parse(textwrap.dedent(inspect.getsource(cls.compose)))
+    called: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            callee = node.func
+            if isinstance(callee, ast.Subscript):
+                callee = callee.value
+            if isinstance(callee, ast.Name):
+                called.add(callee.id)
+    return [w.__name__ for w in widgets if w.__name__ not in called]
+
+
+def key_table_problems(table: KeyTable) -> list[str]:
+    cls, widgets = KEY_SCREENS[table.screen]
+    problems: list[str] = []
+    handled = handled_keys(table.screen)
+    for row in table.rows:
+        for key in row.keys:
+            if format_key(key) not in handled:
+                declared = ", ".join(w.__name__ for w in widgets) or "none"
+                problems.append(
+                    f"{table.page}:{row.line}: `{key}` is not handled by {cls.__name__} "
+                    f"(or its declared widgets: {declared})"
+                )
+    shown = table_keys(table)
+    for key, description in visible_keys(table.screen).items():
+        if key not in shown:
+            problems.append(
+                f"{cls.__name__} binds `{key}` ({description}) visibly, but "
+                f"{table.page}:{table.line} has no row for it"
+            )
+    return problems
