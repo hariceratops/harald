@@ -3,7 +3,7 @@
 Everything here runs in the TUI:
 
 ```sh
-uv run harald
+harald
 ```
 
 Cards live in `learning.db`, created on first use. Harald refuses one written

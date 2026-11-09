@@ -49,7 +49,6 @@ nav:
   - Command reference: reference.md
 
 markdown_extensions:
-  - admonition
   - mkdocs-click
   - toc:
       permalink: true
