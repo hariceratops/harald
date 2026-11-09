@@ -84,7 +84,23 @@ uv run harald
 
 - In a lookup, `enter` searches, then pick a result to open the entry.
 - `esc` or `/` on the results returns to the query.
+
+<!-- docs: keys lookup -->
+| Key | Does |
+|---|---|
+| `enter` | search, then open the highlighted result |
+| `/` | back to the query |
+| `esc` | from the results, back to the query; otherwise back |
+
 - In an entry: `c` toggles full conjugation, `a` adds the word as cards, `esc` goes back.
+
+<!-- docs: keys entry -->
+| Key | Does |
+|---|---|
+| `c` | all tenses |
+| `a` | add the word as cards |
+| `esc` | back |
+
 - The layout adapts down to 40 columns.
 
 Adding words and studying are in [Cards and study](study.md).

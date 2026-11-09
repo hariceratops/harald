@@ -57,6 +57,14 @@ summary ends the session.
 | Stammformen | type three forms | Again or Good, by Harald |
 | Conjugation | type one form | Again or Good, by Harald |
 
+<!-- docs: keys study -->
+| Key | Does |
+|---|---|
+| `enter` | check the answer, then go on after the verdict |
+| `space` | go on after the verdict |
+| `1` / `2` | Again / Good on a self-graded card |
+| `esc` | end the session |
+
 - An empty answer counts as not knowing: Again.
 - On a touch screen the same actions are buttons.
 
