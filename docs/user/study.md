@@ -3,7 +3,7 @@
 Everything here runs in the TUI:
 
 ```sh
-uv run harald
+harald
 ```
 
 Cards live in `learning.db`, created on first use. Harald refuses one written
@@ -20,6 +20,7 @@ Open an entry (`l`, search, pick a result), then press `a`.
   ticked tense gives six **conjugation** cards, one per person.
 - Nouns get no article card. The article is part of the answer.
 
+<!-- docs: keys add-word -->
 | Key | Does |
 |---|---|
 | `space` | tick or untick a row |
@@ -55,6 +56,14 @@ summary ends the session.
 | German → English | type a guess, `enter`, then grade | `1` Again, `2` Good |
 | Stammformen | type three forms | Again or Good, by Harald |
 | Conjugation | type one form | Again or Good, by Harald |
+
+<!-- docs: keys study -->
+| Key | Does |
+|---|---|
+| `enter` | check the answer, then go on after the verdict |
+| `space` | go on after the verdict |
+| `1` / `2` | Again / Good on a self-graded card |
+| `esc` | end the session |
 
 - An empty answer counts as not knowing: Again.
 - On a touch screen the same actions are buttons.

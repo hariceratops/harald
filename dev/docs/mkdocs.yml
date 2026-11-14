@@ -1,0 +1,51 @@
+# Local only: never built in CI, never published. Serve from the repo root:
+#   uv run --with-requirements docs/requirements.txt mkdocs serve -f dev/docs/mkdocs.yml
+site_name: Harald developer notes
+
+# An output directory inside docs_dir is an error, so it sits at the repo root.
+docs_dir: .
+site_dir: ../../site-dev
+exclude_docs: |
+  mkdocs.yml
+
+theme:
+  name: material
+  features:
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    anchors: warn
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture.md
+  - Testing: testing.md
+  - Build internals: build-internals.md
+  - Workflow: workflow.md
+  - Checked guide: guide.md
+  - Demo GIF: demo-gif.md
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - tables
+
+strict: true

@@ -31,13 +31,14 @@ def _print(renderable: Any) -> None:
     Console().print(renderable)
 
 
-@click.group()
+@click.group(help="Look up German words and build the offline lexicon behind them.")
 @click.option(
     "--config",
     "config_path",
     type=click.Path(dir_okay=False, path_type=Path),
     envvar="HARALD_CONFIG",
-    help="path to config.toml",
+    show_envvar=True,
+    help="Path to config.toml, instead of the default location.",
 )
 @click.pass_context
 def cli(ctx: click.Context, config_path: Path | None) -> None:
@@ -45,9 +46,9 @@ def cli(ctx: click.Context, config_path: Path | None) -> None:
     ctx.obj = config_path
 
 
-@cli.command(help="build lexicon.db from the locally kept sources")
-@click.option("--fetch", is_flag=True, help="download the sources first")
-@click.option("--force", is_flag=True, help="rebuild even if nothing changed")
+@cli.command(help="Build lexicon.db from the locally kept sources.")
+@click.option("--fetch", is_flag=True, help="Download the sources first.")
+@click.option("--force", is_flag=True, help="Rebuild even if nothing changed.")
 @click.pass_obj
 def build(config_path: Path | None, fetch: bool, force: bool) -> int:
     from harald.render import render_info
@@ -84,8 +85,8 @@ def build(config_path: Path | None, fetch: bool, force: bool) -> int:
     return 0
 
 
-@cli.command(help="delete the downloaded sources, keeping lexicon.db")
-@click.option("--yes", is_flag=True, help="do not ask first")
+@cli.command(help="Delete the downloaded sources, keeping lexicon.db.")
+@click.option("--yes", is_flag=True, help="Delete without asking first.")
 @click.pass_obj
 def prune(config_path: Path | None, yes: bool) -> int:
     from harald.use_cases.prune import PruneSources
@@ -114,7 +115,7 @@ def prune(config_path: Path | None, yes: bool) -> int:
     return 0
 
 
-@cli.command(help="show sources, dates, attribution and coverage")
+@cli.command(help="Show sources, dates, attribution and coverage.")
 @click.pass_obj
 def info(config_path: Path | None) -> int:
     from harald.render import render_info
@@ -130,9 +131,9 @@ def info(config_path: Path | None) -> int:
     return 0
 
 
-@cli.command(help="look up a German word, or an English one with --en")
-@click.option("--conj", is_flag=True, help="show every tense")
-@click.option("--en", "english", is_flag=True, help="look up an English word, list German words")
+@cli.command(help="Look up a German word, or an English one with --en.")
+@click.option("--conj", is_flag=True, help="Show every tense.")
+@click.option("--en", "english", is_flag=True, help="Look up an English word, list German ones.")
 @click.argument("words", nargs=-1, required=True, metavar="WORD...")
 @click.pass_obj
 def lookup(config_path: Path | None, conj: bool, english: bool, words: tuple[str, ...]) -> int:

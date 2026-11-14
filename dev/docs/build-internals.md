@@ -1,6 +1,6 @@
 # Build internals
 
-The user-facing view is [Building the lexicon](../user/build.md). This page
+The user-facing view is Building the lexicon (`docs/user/build.md`). This page
 is for changing the build.
 
 ## Shape: workers write shards, one writer merges

@@ -14,6 +14,7 @@ uv run mypy
 | `tests/component/` | a package against a real SQLite file: build, lexicon queries, use cases, fetch, schema drift |
 | `tests/smoke/` | the `harald` command end to end, as a subprocess, at a fixed terminal width |
 | `tests/tui/` | Textual screens, driven headlessly with the pilot at 40x30, 40x12 and 100x30 |
+| `tests/docs/` | the `console` examples in the guide and README, run against a sample lexicon; see [Checked guide](guide.md) |
 
 `tests/unit/test_layering.py` enforces the dependency direction described in
 [Architecture](architecture.md): front-ends import only use cases.
@@ -27,7 +28,9 @@ with `build_min_entries = 0`; `built` runs a build on top. Nothing touches
 your real `~/.local/share/harald`.
 
 When a slice needs a new entry (a verb, an English word with translations),
-add it to the fixture rather than building a second one. Keep lines that a
+add it to the fixture rather than building a second one, except for the docs
+sample (`docs/examples/`), which the guide's pages own; see
+[Checked guide](guide.md). Keep lines that a
 test deliberately drops (for example the "drop the last line" test) last.
 
 ## Skipped tests

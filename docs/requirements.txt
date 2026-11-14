@@ -1,2 +1,4 @@
 # Documentation site only. Harald itself needs none of this.
 mkdocs-material==9.5.39
+mkdocs==1.6.1
+mkdocs-click==0.9.0

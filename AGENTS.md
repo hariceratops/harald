@@ -15,3 +15,22 @@ Broad exception catching at failure seams: `harald.infrastructure.uow.DbTransact
 ## Conventions
 
 A function whose "no value" is an expected outcome (a parser skipping a line, a lookup that may find nothing) returns `harald.core.option.Option`, not `X | None`; failures that carry a reason stay `Result`. Record and model fields that map to nullable columns stay `X | None`, converted at the boundary with `to_optional()`.
+
+## Documentation
+
+`docs/` is the user-facing description of behaviour, published to GitHub Pages from `main`; the README is only a pitch that points to it. A slice that changes user-visible behaviour updates the matching page in the same PR.
+
+Build the guide and the local-only developer notes (`dev/docs/`, never built in CI or published) strictly; `serve` instead of `build` reads either live:
+
+```sh
+uv run --with-requirements docs/requirements.txt mkdocs build --strict -f docs/mkdocs.yml
+uv run --with-requirements docs/requirements.txt mkdocs build --strict -f dev/docs/mkdocs.yml
+```
+
+CI runs `uv run --frozen pytest tests/docs` and the guide's strict build on every PR, and publishes only from `main` when both pass.
+
+Every `console` block in `docs/` and `README.md` is run by `uv run pytest`, against the sample lexicon built from `docs/examples/`. The module docstring of `tests/docs/checker.py` defines the example syntax, the `docs:` options and the key tables. Command output is shown only in console blocks. When an example's output changes, fix the page; never loosen the example.
+
+The README roadmap follows the briefs in `dev/inbox/`.
+
+Personal data: the user's own cards, notes, decks, review history, the words they are learning, and their own setup (devices, paths, sync arrangements) never appear in user-facing docs. Examples use the sample lexicon's words and invented notes.
