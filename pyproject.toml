@@ -24,7 +24,7 @@ requires = ["uv_build>=0.9.29,<0.10"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["pytest", "ruff", "mypy"]
+dev = ["pytest", "ruff", "mypy", "markdown-it-py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
