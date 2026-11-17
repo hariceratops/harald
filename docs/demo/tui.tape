@@ -24,19 +24,44 @@ Sleep 2s
 
 Type "l"
 Sleep 1s
-Type "lief"
+Type "Hund"
 Sleep 800ms
 Enter
 Sleep 2s
 Enter
 Sleep 2s
+
+Type "a"
+Sleep 2s
+Space
+Sleep 1500ms
+Type "n"
+Sleep 2500ms
 Type "c"
 Sleep 3s
+
 Escape
 Sleep 1s
 Escape
 Sleep 1s
 Escape
-Sleep 1s
+Sleep 1500ms
+
+Type "s"
+Sleep 2s
+Type "dog"
+Sleep 800ms
+Enter
+Sleep 2s
+Type "2"
+Sleep 2s
+Type "der Hund"
+Sleep 800ms
+Enter
+Sleep 2500ms
+Escape
+Sleep 3s
+Enter
+Sleep 1500ms
 Type "q"
 Sleep 1s
