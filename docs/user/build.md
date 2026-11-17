@@ -66,7 +66,7 @@ rebuilt identical bytes: published file left untouched
   fuzzy             0.0 s (jobs 0.0 s)
   fuzzy.merge       0.0 s
   finalize          0.0 s
-1 entries, 0 bad lines
+2 entries, 0 bad lines
 ~/.local/share/harald/lexicon.db (0.1 MB) in 0.0 s
 Lexicon schema 7
 Sources
@@ -83,9 +83,9 @@ Coverage (informational)
   verbs with complete Stammformen
     100.0 % (1/1)
   nouns with a gender
-    0.0 % (0/0)
+    100.0 % (1/1)
   senses with a translated example
-    0.0 % (0/1)
+    0.0 % (0/2)
 ```
 
 ## What a build does

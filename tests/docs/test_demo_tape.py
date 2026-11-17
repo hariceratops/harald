@@ -5,7 +5,7 @@ from tests.docs.sample import ROOT
 
 TAPE = ROOT / "docs" / "demo" / "taste.tape"
 TUI_TAPE = ROOT / "docs" / "demo" / "tui.tape"
-TUI_SCREENS = ("home", "lookup", "entry")
+TUI_SCREENS = ("home", "lookup", "entry", "add-word", "study")
 
 _TYPE = re.compile(r'Type(?:@\S+)?\s+(?:"(?P<dq>[^"]*)"|`(?P<bt>[^`]*)`)')
 

@@ -169,9 +169,9 @@ Coverage (informational)
   verbs with complete Stammformen
     100.0 % (1/1)
   nouns with a gender
-    0.0 % (0/0)
+    100.0 % (1/1)
   senses with a translated example
-    0.0 % (0/1)
+    0.0 % (0/2)
 ```
 
 Shows each source, its date, attribution and licence, and how complete the

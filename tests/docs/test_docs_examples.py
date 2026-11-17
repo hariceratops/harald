@@ -81,8 +81,8 @@ def test_the_scratch_home_prints_as_tilde(home: Path) -> None:
         "  Wiktionary (en)\n    2026-11-01   CC BY-SA 4.0\n"
         "    Wiktionary contributors, extracted by wiktextract (kaikki.org)\n"
         "Coverage (informational)\n  verbs with complete Stammformen\n"
-        "    100.0 % (1/1)\n  nouns with a gender\n    0.0 % (0/0)\n"
-        "  senses with a translated example\n    0.0 % (0/1)\n```\n"
+        "    100.0 % (1/1)\n  nouns with a gender\n    100.0 % (1/1)\n"
+        "  senses with a translated example\n    0.0 % (0/2)\n```\n"
     )
     assert run_example(example, home).is_ok
 
