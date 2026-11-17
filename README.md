@@ -4,6 +4,8 @@ A personal, offline German vocabulary tool for a learner who picks German up
 from reading, TV and conversation rather than a course. Look a word up fast,
 keep what is worth keeping as a spaced-repetition card.
 
+![Browsing lief in the TUI](docs/demo/tui.gif)
+
 ![Looking up lief and use](docs/demo/taste.gif)
 
 ```console
