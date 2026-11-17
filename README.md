@@ -6,6 +6,8 @@ keep what is worth keeping as a spaced-repetition card.
 
 ![Browsing lief in the TUI](docs/demo/tui.gif)
 
+![Adding Hund and studying it](docs/demo/study.gif)
+
 ![Looking up lief and use](docs/demo/taste.gif)
 
 ```console
