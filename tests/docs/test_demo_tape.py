@@ -1,11 +1,14 @@
 import re
+from pathlib import Path
+
+import pytest
 
 from tests.docs.checker import collect, table_keys
 from tests.docs.sample import ROOT
 
 TAPE = ROOT / "docs" / "demo" / "taste.tape"
-TUI_TAPE = ROOT / "docs" / "demo" / "tui.tape"
-TUI_SCREENS = ("home", "lookup", "entry")
+TUI_TAPES = [ROOT / "docs" / "demo" / "tui.tape", ROOT / "docs" / "demo" / "study.tape"]
+TUI_SCREENS = ("home", "lookup", "entry", "add-word", "study")
 
 _TYPE = re.compile(r'Type(?:@\S+)?\s+(?:"(?P<dq>[^"]*)"|`(?P<bt>[^`]*)`)')
 
@@ -34,8 +37,9 @@ def test_typed_while_shown_skips_the_hidden_prelude() -> None:
     assert _typed_while_shown(tape) == ["b c", "d"]
 
 
-def test_the_tui_tape_launches_harald_and_presses_only_documented_keys() -> None:
-    launch, *typed = _typed_while_shown(TUI_TAPE.read_text())
+@pytest.mark.parametrize("tape", TUI_TAPES, ids=lambda t: t.name)
+def test_a_tui_tape_launches_harald_and_presses_only_documented_keys(tape: Path) -> None:
+    launch, *typed = _typed_while_shown(tape.read_text())
     documented = set().union(
         *(table_keys(t) for t in collect(ROOT).tables if t.screen in TUI_SCREENS)
     )
