@@ -1,9 +1,11 @@
 import re
 
-from tests.docs.checker import collect
+from tests.docs.checker import collect, table_keys
 from tests.docs.sample import ROOT
 
 TAPE = ROOT / "docs" / "demo" / "taste.tape"
+TUI_TAPE = ROOT / "docs" / "demo" / "tui.tape"
+TUI_SCREENS = ("home", "lookup", "entry")
 
 _TYPE = re.compile(r'Type(?:@\S+)?\s+(?:"(?P<dq>[^"]*)"|`(?P<bt>[^`]*)`)')
 
@@ -30,3 +32,14 @@ def test_the_demo_tape_types_the_readme_taste_in_order() -> None:
 def test_typed_while_shown_skips_the_hidden_prelude() -> None:
     tape = 'Hide\nType "a" Enter\nShow\nType@50ms `b c` Enter\nType "d"\n'
     assert _typed_while_shown(tape) == ["b c", "d"]
+
+
+def test_the_tui_tape_launches_harald_and_presses_only_documented_keys() -> None:
+    launch, *typed = _typed_while_shown(TUI_TAPE.read_text())
+    documented = set().union(
+        *(table_keys(t) for t in collect(ROOT).tables if t.screen in TUI_SCREENS)
+    )
+    keys = [t for t in typed if len(t) == 1]
+    assert launch == "harald"
+    assert keys
+    assert set(keys) <= documented
